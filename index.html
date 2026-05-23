@@ -26,7 +26,8 @@
     .form-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
     .day-grid { grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); }
     .metric-label { color:var(--muted); font-size:13px; }
-    .metric-value { font-size:26px; font-weight:bold; margin-top:6px; }
+    .metric-value { font-size:24px; font-weight:bold; margin-top:6px; line-height:1.15; }
+    .metric-sub { font-size:13px; color:var(--muted); font-weight:normal; display:block; margin-top:4px; }
     button, select, input { border-radius:10px; border:1px solid var(--border); padding:9px 11px; font-size:14px; }
     input, select { width:100%; background:#fff; }
     label { font-size:13px; color:var(--muted); display:block; margin-bottom:4px; }
@@ -101,7 +102,6 @@
   <main>
     <div class="controls no-print">
       <button onclick="calculatePay()">Calculate Pay</button>
-      <button class="secondary" onclick="runPayroll()">Run Payroll / Save Payslips</button>
       <button class="secondary" onclick="runContractCheck()">Run Contract Check</button>
       <button class="success" onclick="exportData()">Export Data</button>
       <button class="secondary" onclick="document.getElementById('importFile').click()">Import Data</button>
@@ -126,6 +126,7 @@
 
     <section id="changeCentre" class="card">
       <h2>Change Centre</h2>
+      <p class="small-note">After pay close, changes dated inside a finalised pay period are locked. Enter a later effective date for prospective changes.</p>
       <h3>Employee master change</h3>
       <div class="grid form-grid">
         <div><label>Employee</label><select id="editEmpSelect"></select></div>
@@ -206,7 +207,7 @@
 
     <section id="history" class="card">
       <h2>Previous Payslips</h2>
-      <p class="small-note">Payslips are saved when you run payroll.</p>
+      <p class="small-note">Payslips are automatically saved after pay close. There is no manual finalise button.</p>
       <div id="payslipHistoryList"></div>
     </section>
 
@@ -219,7 +220,7 @@
       <h2>Settings / Updates</h2>
       <div class="update-box">
         <strong>Current app version:</strong> <span id="currentVersion"></span><br>
-        <span class="small-note">On GitHub Pages, Check for Updates looks for a file called <code>latest-version.json</code> in the same repository.</span>
+        <span class="small-note">On GitHub Pages, Check for Updates looks for <code>latest-version.json</code> in the same repository.</span>
       </div>
       <div class="controls"><button onclick="checkForUpdates()">Check for Updates</button></div>
       <div id="updateResult" class="small-note"></div>
@@ -262,7 +263,7 @@
 </div>
 
 <script>
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const standardWeeklyHours = 37.5;
 let employees = [], schedules = [], payRates = [], leaveBookings = [], payslipHistory = [], auditLog = ["System created with no demo employees."];
 let payrollResults = [];
@@ -290,6 +291,8 @@ function date(v) { return v ? new Date(v + "T00:00:00") : null; }
 function iso(d) { return d.toISOString().slice(0,10); }
 function money(v) { return new Intl.NumberFormat("en-AU", { style:"currency", currency:"AUD" }).format(v || 0); }
 function fmt(v) { return v ? new Intl.DateTimeFormat("en-AU", { day:"2-digit", month:"short", year:"numeric" }).format(date(v)) : ""; }
+function fmtShort(v) { return v ? new Intl.DateTimeFormat("en-AU", { day:"2-digit", month:"2-digit", year:"numeric" }).format(date(v)) : ""; }
+function ppeLabel(c) { return "PPE " + fmtShort(c.end); }
 function log(x) { auditLog.unshift(new Date().toLocaleString("en-AU") + " — " + x); saveData(); renderAudit(); }
 function v(id) { return document.getElementById(id)?.value || ""; }
 function num(id) { return Number(v(id) || 0); }
@@ -400,6 +403,39 @@ function getModalSchedule() { return { 1:num("newMon"), 2:num("newTue"), 3:num("
 function getScheduleForm() { return { 1:num("schMon"), 2:num("schTue"), 3:num("schWed"), 4:num("schThu"), 5:num("schFri"), 6:num("schSat"), 0:num("schSun") }; }
 function scheduleHoursMapTotal(map) { return Object.values(map || {}).reduce((s,x) => s + Number(x || 0), 0); }
 
+function cycleForDate(value) {
+  const d = date(value);
+  if (!d) return null;
+  return payCycles.find(c => date(c.start) <= d && d <= date(c.end));
+}
+function latestClosedCycle() {
+  return payCycles.filter(c => isCycleFinalised(c)).sort((a,b) => date(b.end) - date(a.end))[0];
+}
+function isCycleFinalised(c) {
+  return currentDateOnly() > date(c.closeDate);
+}
+function isDateLocked(value) {
+  const closed = latestClosedCycle();
+  return closed && date(value) <= date(closed.end);
+}
+function ensureDateChangeAllowed(value, label) {
+  if (!value) return true;
+  if (isDateLocked(value)) {
+    const closed = latestClosedCycle();
+    alert(`${label} falls on or before a finalised pay period (${ppeLabel(closed)}: ${fmt(closed.start)} - ${fmt(closed.end)}). Changes for that pay are locked. Enter a later effective date so it applies prospectively.`);
+    return false;
+  }
+  return true;
+}
+function ensureRangeChangeAllowed(start, end, label) {
+  const closed = latestClosedCycle();
+  if (closed && date(start) <= date(closed.end) && date(end) >= date(closed.start)) {
+    alert(`${label} overlaps a finalised pay period (${ppeLabel(closed)}: ${fmt(closed.start)} - ${fmt(closed.end)}). Changes for that pay are locked.`);
+    return false;
+  }
+  return true;
+}
+
 function addEmployee() {
   const id = v("newEmpId").trim();
   if (!id || employees.some(e => e.id === id)) return alert("Enter a unique Employee ID.");
@@ -409,6 +445,8 @@ function addEmployee() {
   const start = v("newEmpStart");
   const scheduleHours = getModalSchedule();
   if (!start) return alert("Enter a start date.");
+  if (!ensureDateChangeAllowed(start, "Employee commencement")) return;
+  if (type === "Fixed Term" && v("newEmpContractEnd") && !ensureDateChangeAllowed(v("newEmpContractEnd"), "Contract end date")) return;
   if (scheduleHoursMapTotal(scheduleHours) <= 0) return alert("Enter at least one working day/hour in the starting schedule.");
 
   const empObj = {
@@ -427,10 +465,14 @@ function updateEmployeeMaster() {
   const e = emp(v("editEmpSelect"));
   if (!e) return;
   const type = v("editEmpType");
+  const newStart = v("editEmpStart") || e.startDate;
+  const newContractEnd = type === "Fixed Term" ? v("editEmpContractEnd") : "";
   if (type === "Permanent" && v("editEmpContractEnd")) return alert("Permanent employees cannot have a contract end date.");
-  e.startDate = v("editEmpStart") || e.startDate;
+  if (!ensureDateChangeAllowed(newStart, "Employee master start date")) return;
+  if (newContractEnd && !ensureDateChangeAllowed(newContractEnd, "Contract end date")) return;
+  e.startDate = newStart;
   e.type = type;
-  e.contractEndDate = type === "Fixed Term" ? v("editEmpContractEnd") : "";
+  e.contractEndDate = newContractEnd;
   e.autoTerminate = type === "Fixed Term" && v("editEmpAutoTerm") === "true";
   e.status = v("editEmpStatus");
   saveData(); log("Employee master updated: " + e.name); init();
@@ -438,6 +480,7 @@ function updateEmployeeMaster() {
 function addScheduleChange() {
   const empId = v("scheduleEmpSelect"), eff = v("scheduleEffective"), hoursByDay = getScheduleForm();
   if (!empId || !eff || scheduleHoursMapTotal(hoursByDay) <= 0) return alert("Complete employee, effective date and at least one day of hours.");
+  if (!ensureDateChangeAllowed(eff, "Schedule effective date")) return;
   schedules.push({ empId, effectiveDate:eff, hoursByDay });
   saveData(); log("Schedule change added"); init();
 }
@@ -445,6 +488,8 @@ function addPayRateChange() {
   const empId = v("payRateEmpSelect"), type = v("payRateChangeType"), eff = v("payRateEffective"), end = v("payRateEnd"), position = v("payRatePosition"), rate = num("payRateAmount");
   if (!empId || !eff || !position || !rate) return alert("Complete all pay change fields.");
   if (type === "Temporary" && !end) return alert("Temporary changes require an end date.");
+  if (!ensureDateChangeAllowed(eff, "Position/pay effective date")) return;
+  if (type === "Temporary" && !ensureDateChangeAllowed(end, "Temporary position/pay end date")) return;
   payRates.push({ empId, type, effectiveDate:eff, endDate:type === "Temporary" ? end : "", position, hourlyRate:rate });
   saveData(); log(type + " position/pay change added"); init();
 }
@@ -473,6 +518,7 @@ function validateLeave(empId, start, end) {
 function bookLeave() {
   const empId = v("leaveEmpSelect"), type = v("leaveType"), start = v("leaveStart"), end = v("leaveEnd");
   if (!empId || !start || !end) return alert("Complete leave fields.");
+  if (!ensureRangeChangeAllowed(start, end, "Leave booking")) return;
   const validation = validateLeave(empId, start, end);
   if (!validation.ok) return alert(validation.msg);
   const e = emp(empId);
@@ -481,7 +527,7 @@ function bookLeave() {
   leaveBookings.push({ id:Date.now(), empId, type, startDate:start, endDate:end, hours:validation.hours, status:"Approved" });
   if (type === "Annual Leave") e.annualLeaveBalance -= validation.hours;
   if (type === "Personal Leave") e.personalLeaveBalance -= validation.hours;
-  saveData(); log(type + " booked for " + e.name); init();
+  saveData(); log(type + " booked for " + e.name + " using " + validation.hours.toFixed(2) + " hours"); init();
 }
 
 function activeSchedule(empId, onDate) {
@@ -503,46 +549,73 @@ function scheduledHoursInPeriod(empId, start, end) {
   }
   return total;
 }
-function currentCycle() { return payCycles[Number(document.getElementById("payPeriodSelect")?.value || 0)] || payCycles[0]; }
-function isCurrentPayFinalised(c) { return currentDateOnly() > date(c.closeDate); }
+function leaveInPeriod(empId, start, end) {
+  return leaveBookings.filter(l => l.empId === empId && date(l.startDate) <= date(end) && date(l.endDate) >= date(start));
+}
+function currentCycleByToday() {
+  const today = currentDateOnly();
+  return payCycles.find(c => date(c.start) <= today && today <= date(c.end)) || payCycles.find(c => today <= date(c.end)) || payCycles[payCycles.length - 1];
+}
+function currentCycle() {
+  const selector = document.getElementById("payPeriodSelect");
+  if (selector && selector.value !== "") return payCycles[Number(selector.value)] || currentCycleByToday();
+  return currentCycleByToday();
+}
+function isCurrentPayFinalised(c) { return isCycleFinalised(c); }
 
-function calculatePay() { calculatePayroll(); log("Calculate Pay run — current open payslip updated for changes"); }
-function calculatePayroll() {
-  const cycle = currentCycle();
-  payrollResults = employees.filter(e => e.status === "Active").map(e => {
+function calculateForCycle(cycle) {
+  return employees.filter(e => e.status === "Active").map(e => {
     const rate = activePayRate(e.id, cycle.start);
     const hours = scheduledHoursInPeriod(e.id, cycle.start, cycle.end);
-    const leave = leaveBookings.filter(l => l.empId === e.id && date(l.startDate) <= date(cycle.end) && date(l.endDate) >= date(cycle.start)).reduce((s,l) => s + Number(l.hours || 0), 0);
-    const base = hours * rate.hourlyRate;
-    const annualAccrual = hours * (4/52);
-    const personalAccrual = hours * (3/52);
+    const leaveRows = leaveInPeriod(e.id, cycle.start, cycle.end);
+    const annualLeaveTaken = leaveRows.filter(l => l.type === "Annual Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
+    const personalLeaveTaken = leaveRows.filter(l => l.type === "Personal Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
+    const lslTaken = leaveRows.filter(l => l.type === "Long Service Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
+    const lwopTaken = leaveRows.filter(l => l.type === "LWOP").reduce((s,l) => s + Number(l.hours || 0), 0);
+    const paidHours = Math.max(0, hours - lwopTaken);
+    const base = paidHours * rate.hourlyRate;
+    const annualAccrual = paidHours * (4/52);
+    const personalAccrual = paidHours * (3/52);
     const retro = 0;
     const gross = base + retro;
     const tax = gross * .22;
     const superAmt = gross * .115;
     const net = gross - tax;
-    return { emp:e, cycle, position:rate.position, rate:rate.hourlyRate, hours, leave, base, retro, gross, tax, superAmt, net, annualAccrual, personalAccrual, finalised:isCurrentPayFinalised(cycle) };
+    return { emp:e, cycle, position:rate.position, rate:rate.hourlyRate, hours:paidHours, scheduledHours:hours, leaveRows, annualLeaveTaken, personalLeaveTaken, lslTaken, lwopTaken, base, retro, gross, tax, superAmt, net, annualAccrual, personalAccrual, finalised:isCycleFinalised(cycle) };
   });
+}
+function calculatePay() {
+  autoProcessClosedPays();
+  calculatePayroll();
+  log("Calculate Pay run — current open payslip updated for changes");
+}
+function calculatePayroll() {
+  const cycle = currentCycle();
+  payrollResults = calculateForCycle(cycle);
   renderAll();
 }
-function runPayroll() {
-  calculatePayroll();
-  const cycle = currentCycle();
-  payrollResults.forEach(r => {
-    const existingIndex = payslipHistory.findIndex(p => p.empId === r.emp.id && p.cycle.id === cycle.id);
-    const employeeRecord = emp(r.emp.id);
-    if (existingIndex === -1) {
-      employeeRecord.annualLeaveBalance += r.annualAccrual;
-      employeeRecord.personalLeaveBalance += r.personalAccrual;
-    }
-    const refreshed = { ...r, emp:{ ...employeeRecord } };
-    if (existingIndex >= 0) {
-      payslipHistory[existingIndex] = { id:payslipHistory[existingIndex].id, empId:r.emp.id, employeeName:r.emp.name, cycle:{...cycle}, result:refreshed };
-    } else {
-      payslipHistory.unshift({ id:Date.now() + Math.random(), empId:r.emp.id, employeeName:r.emp.name, cycle:{...cycle}, result:refreshed });
-    }
+function autoProcessClosedPays() {
+  let processedCount = 0;
+  payCycles.filter(c => isCycleFinalised(c)).forEach(cycle => {
+    const results = calculateForCycle(cycle);
+    results.forEach(r => {
+      const existingIndex = payslipHistory.findIndex(p => p.empId === r.emp.id && p.cycle.id === cycle.id);
+      if (existingIndex === -1) {
+        const employeeRecord = emp(r.emp.id);
+        if (employeeRecord) {
+          employeeRecord.annualLeaveBalance += r.annualAccrual;
+          employeeRecord.personalLeaveBalance += r.personalAccrual;
+        }
+        const refreshed = { ...r, emp:{ ...(employeeRecord || r.emp) }, finalised:true };
+        payslipHistory.unshift({ id:Date.now() + Math.random(), empId:r.emp.id, employeeName:r.emp.name, cycle:{...cycle}, result:refreshed, autoProcessed:true });
+        processedCount++;
+      }
+    });
   });
-  saveData(); log("Payroll run saved for " + fmt(cycle.start) + " - " + fmt(cycle.end)); init();
+  if (processedCount > 0) {
+    auditLog.unshift(new Date().toLocaleString("en-AU") + " — Auto-processed finalised payslips: " + processedCount);
+    saveData();
+  }
 }
 
 function renderAll() {
@@ -587,10 +660,10 @@ function renderLsl() {
 function renderPayroll() {
   const c = currentCycle();
   const final = isCurrentPayFinalised(c);
-  html("payCloseNote", `Pay period ${fmt(c.start)} to ${fmt(c.end)}. Payment date ${fmt(c.paymentDate)}. Pay close ${fmt(c.closeDate)}. Status: ${final ? "Finalised — changes after close become retro" : "Open — Calculate Pay updates this payslip"}.`);
+  html("payCloseNote", `Current pay: ${ppeLabel(c)} (${fmt(c.start)} - ${fmt(c.end)}). Payment date ${fmt(c.paymentDate)}. Pay close ${fmt(c.closeDate)}. Status: ${final ? "Finalised — this pay was automatically processed after close" : "Open — Calculate Pay updates this payslip"}.`);
   html("payrollTable", table(
-    ["Employee","Position","Units / Fortnight Hours","Rate","Base","Retro","Gross","Tax","Super","Net"],
-    payrollResults.map(r => [r.emp.name, r.position, r.hours.toFixed(2), money(r.rate), money(r.base), money(r.retro), money(r.gross), money(r.tax), money(r.superAmt), money(r.net)])
+    ["Employee","Position","Units / Fortnight Hours","Leave Hours This Pay","Rate","Base","Retro","Gross","Tax","Super","Net"],
+    payrollResults.map(r => [r.emp.name, r.position, r.hours.toFixed(2), (r.annualLeaveTaken + r.personalLeaveTaken + r.lslTaken + r.lwopTaken).toFixed(2), money(r.rate), money(r.base), money(r.retro), money(r.gross), money(r.tax), money(r.superAmt), money(r.net)])
   ));
 }
 function renderPayslip() {
@@ -602,9 +675,23 @@ function renderPayslip() {
   const ytdTax = payslipHistory.filter(p => p.empId === id).reduce((s,p) => s + (p.result.tax || 0), 0) + r.tax;
   html("payslipCard", payslipHTML(r, ytd, ytdTax));
 }
+function leaveRowsHTML(r) {
+  const rows = [];
+  if (r.annualLeaveTaken) rows.push(`<tr><td>Annual Leave Taken</td><td class="right">${r.annualLeaveTaken.toFixed(4)}</td><td>Deducted from Annual Leave Balance (Hours)</td></tr>`);
+  if (r.personalLeaveTaken) rows.push(`<tr><td>Personal Leave Taken</td><td class="right">${r.personalLeaveTaken.toFixed(4)}</td><td>Deducted from Personal Leave Balance (Hours)</td></tr>`);
+  if (r.lslTaken) rows.push(`<tr><td>Long Service Leave Taken</td><td class="right">${r.lslTaken.toFixed(4)}</td><td>Recorded this pay</td></tr>`);
+  if (r.lwopTaken) rows.push(`<tr><td>Leave Without Pay</td><td class="right">${r.lwopTaken.toFixed(4)}</td><td>Reduces paid hours</td></tr>`);
+  if (!rows.length) rows.push(`<tr><td>No leave booked in this pay</td><td class="right">0.0000</td><td></td></tr>`);
+  return rows.join("");
+}
 function payslipHTML(r, ytd, ytdTax) {
   const status = r.finalised ? '<div class="payslip-status pay-final">This pay has been finalised</div>' : '<div class="payslip-status pay-open">This pay has not yet been finalised</div>';
-  return `<h2>Payslip Detail</h2>${status}
+  const annualOpening = Number(r.emp.annualLeaveBalance || 0) + Number(r.annualLeaveTaken || 0);
+  const personalOpening = Number(r.emp.personalLeaveBalance || 0) + Number(r.personalLeaveTaken || 0);
+  const annualProjectedClosing = Number(r.emp.annualLeaveBalance || 0) + Number(r.annualAccrual || 0);
+  const personalProjectedClosing = Number(r.emp.personalLeaveBalance || 0) + Number(r.personalAccrual || 0);
+  return `<h2>Payslip Detail — ${ppeLabel(r.cycle)}</h2>${status}
+  <p><strong>Pay Period:</strong> ${fmt(r.cycle.start)} - ${fmt(r.cycle.end)} &nbsp; <strong>Payment Date:</strong> ${fmt(r.cycle.paymentDate)}</p>
   <div class="section-title">⌄ Pay Summary</div>
   <table><tr><th></th><th>Gross</th><th>Tax</th><th>Net</th></tr>
   <tr><td>Current</td><td class="right">${r.gross.toFixed(2)}</td><td class="right">${r.tax.toFixed(2)}</td><td class="right">${r.net.toFixed(2)}</td></tr>
@@ -614,20 +701,27 @@ function payslipHTML(r, ytd, ytdTax) {
   <tr><td>Regular Pay</td><td class="right">${r.hours.toFixed(2)}</td><td class="right">${r.base.toFixed(2)}</td><td>${fmt(r.cycle.start)}</td><td>${fmt(r.cycle.end)}</td></tr>
   ${r.retro ? `<tr><td>Retro Adjustment</td><td></td><td class="right">${r.retro.toFixed(2)}</td><td>${fmt(r.cycle.start)}</td><td>${fmt(r.cycle.end)}</td></tr>` : ""}
   <tr><td><b>Total</b></td><td class="right"><b>${r.hours.toFixed(2)}</b></td><td class="right"><b>${r.gross.toFixed(2)}</b></td><td></td><td></td></tr></table>
+  <div class="section-title">⌄ Leave Booked This Pay</div>
+  <table><tr><th>Description</th><th>Hours Used</th><th>Credit/Balance Impact</th></tr>${leaveRowsHTML(r)}</table>
   <div class="section-title">⌄ Tax</div>
   <table><tr><th>Description</th><th>Amount</th></tr><tr><td>Marginal Tax Estimate</td><td class="right">${r.tax.toFixed(2)}</td></tr></table>
   <div class="section-title">⌄ Employer Superannuation</div>
   <table><tr><th>Description</th><th>Amount</th></tr><tr><td>Employer Super Contribution</td><td class="right">${r.superAmt.toFixed(2)}</td></tr></table>
   <div class="section-title">⌄ Leave Balances</div>
-  <table><tr><th>Description</th><th>Balance</th></tr>
-  <tr><td>Annual Leave Balance (Hours)</td><td class="right">${Number(r.emp.annualLeaveBalance || 0).toFixed(4)}</td></tr>
-  <tr><td>Personal Leave Balance (Hours)</td><td class="right">${Number(r.emp.personalLeaveBalance || 0).toFixed(4)}</td></tr>
+  <table><tr><th>Description</th><th>Hours</th></tr>
+  <tr><td>Annual Leave Opening Balance (Hours)</td><td class="right">${annualOpening.toFixed(4)}</td></tr>
+  <tr><td>Annual Leave Used This Pay (Hours)</td><td class="right">-${Number(r.annualLeaveTaken || 0).toFixed(4)}</td></tr>
   <tr><td>Annual Leave Projected Credit This Pay (Hours)</td><td class="right">${r.annualAccrual.toFixed(4)}</td></tr>
-  <tr><td>Personal Leave Projected Credit This Pay (Hours)</td><td class="right">${r.personalAccrual.toFixed(4)}</td></tr></table>`;
+  <tr><td><b>Annual Leave Projected Closing Balance (Hours)</b></td><td class="right"><b>${annualProjectedClosing.toFixed(4)}</b></td></tr>
+  <tr><td>Personal Leave Opening Balance (Hours)</td><td class="right">${personalOpening.toFixed(4)}</td></tr>
+  <tr><td>Personal Leave Used This Pay (Hours)</td><td class="right">-${Number(r.personalLeaveTaken || 0).toFixed(4)}</td></tr>
+  <tr><td>Personal Leave Projected Credit This Pay (Hours)</td><td class="right">${r.personalAccrual.toFixed(4)}</td></tr>
+  <tr><td><b>Personal Leave Projected Closing Balance (Hours)</b></td><td class="right"><b>${personalProjectedClosing.toFixed(4)}</b></td></tr></table>`;
 }
 function renderPayslipHistory() {
-  if (!payslipHistory.length) { html("payslipHistoryList", "<p>No previous payslips yet. Run payroll to save payslips.</p>"); return; }
-  html("payslipHistoryList", payslipHistory.map(p => `<div class="history-item" onclick="viewHistory('${p.id}')"><b>${p.employeeName}</b><br>${fmt(p.cycle.start)} - ${fmt(p.cycle.end)} | Gross ${money(p.result.gross)} | Net ${money(p.result.net)}</div>`).join(""));
+  autoProcessClosedPays();
+  if (!payslipHistory.length) { html("payslipHistoryList", "<p>No previous payslips yet. Payslips will automatically appear here after pay close.</p>"); return; }
+  html("payslipHistoryList", payslipHistory.map(p => `<div class="history-item" onclick="viewHistory('${p.id}')"><b>${p.employeeName}</b><br>${ppeLabel(p.cycle)} | ${fmt(p.cycle.start)} - ${fmt(p.cycle.end)} | Gross ${money(p.result.gross)} | Net ${money(p.result.net)}</div>`).join(""));
 }
 function viewHistory(id) {
   const p = payslipHistory.find(x => String(x.id) === String(id));
@@ -637,11 +731,12 @@ function viewHistory(id) {
 }
 function renderAudit() { html("auditLog", auditLog.map(a => `<div class="history-item">${a}</div>`).join("")); }
 function renderMetrics() {
+  const displayCycle = currentCycleByToday();
+  const selectedCycle = currentCycle();
   html("metricEmployees", employees.length);
   html("metricGross", money(payrollResults.reduce((s,r) => s + r.gross, 0)));
   html("metricRetro", money(payrollResults.reduce((s,r) => s + r.retro, 0)));
-  const c = currentCycle();
-  html("metricPayStatus", isCurrentPayFinalised(c) ? "Finalised" : "Open");
+  html("metricPayStatus", `${ppeLabel(displayCycle)}<span class="metric-sub">${isCurrentPayFinalised(displayCycle) ? "Finalised" : "Open"} | ${fmt(displayCycle.start)} - ${fmt(displayCycle.end)}</span>`);
 }
 function renderSelects() {
   const opts = employees.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join("");
@@ -649,8 +744,10 @@ function renderSelects() {
 }
 function init() {
   html("currentVersion", APP_VERSION);
-  html("payPeriodSelect", payCycles.map((p,i) => `<option value="${i}">${fmt(p.start)} - ${fmt(p.end)} | Pay ${fmt(p.paymentDate)}</option>`).join(""));
+  const todayCycle = currentCycleByToday();
+  html("payPeriodSelect", payCycles.map((p,i) => `<option value="${i}" ${p.id === todayCycle.id ? "selected" : ""}>${ppeLabel(p)} | ${fmt(p.start)} - ${fmt(p.end)} | Pay ${fmt(p.paymentDate)}</option>`).join(""));
   renderSelects();
+  autoProcessClosedPays();
   calculatePayroll();
   toggleContractEnd("newEmpType","newEmpContractEnd","newEmpAutoTerm");
   toggleContractEnd("editEmpType","editEmpContractEnd","editEmpAutoTerm");
