@@ -1,763 +1,163 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en-AU">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Payroll/HCM Prototype</title>
-  <style>
-    :root {
-      --bg:#f4f6f8; --card:#fff; --text:#1f2937; --muted:#64748b; --primary:#2563eb;
-      --danger:#dc2626; --success:#16a34a; --warning:#ca8a04; --border:#d8d8d8;
-      --section:#9a3412; --sidebar:#0f172a;
-    }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:Arial, sans-serif; background:var(--bg); color:var(--text); }
-    .app { display:grid; grid-template-columns:260px 1fr; min-height:100vh; }
-    .sidebar { background:var(--sidebar); color:#fff; padding:22px; position:sticky; top:0; height:100vh; overflow:auto; }
-    .sidebar h1 { font-size:20px; margin:0 0 8px; }
-    .sidebar p { font-size:13px; color:#cbd5e1; margin:0 0 18px; }
-    .nav { display:flex; flex-direction:column; gap:8px; }
-    .tab-btn { background:transparent; color:#e2e8f0; border:1px solid #334155; text-align:left; border-radius:12px; padding:11px; cursor:pointer; font-weight:bold; }
-    .tab-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
-    main { padding:22px; max-width:1450px; width:100%; margin:auto; }
-    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 8px 24px rgba(15,23,42,.06); margin-bottom:16px; }
-    .grid { display:grid; gap:14px; }
-    .metrics { grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); }
-    .form-grid { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); }
-    .day-grid { grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); }
-    .metric-label { color:var(--muted); font-size:13px; }
-    .metric-value { font-size:24px; font-weight:bold; margin-top:6px; line-height:1.15; }
-    .metric-sub { font-size:13px; color:var(--muted); font-weight:normal; display:block; margin-top:4px; }
-    button, select, input { border-radius:10px; border:1px solid var(--border); padding:9px 11px; font-size:14px; }
-    input, select { width:100%; background:#fff; }
-    label { font-size:13px; color:var(--muted); display:block; margin-bottom:4px; }
-    button { background:var(--primary); color:#fff; border:none; cursor:pointer; font-weight:bold; width:auto; }
-    button.secondary { background:#475569; }
-    button.danger { background:var(--danger); }
-    button.success { background:var(--success); }
-    button.warning { background:var(--warning); }
-    button:hover { opacity:.9; }
-    section { display:none; }
-    section.active { display:block; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th, td { border:1px solid var(--border); text-align:left; padding:10px; font-size:14px; vertical-align:top; }
-    th { background:#f8fafc; }
-    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
-    .badge { padding:5px 9px; border-radius:999px; font-size:12px; font-weight:bold; display:inline-block; }
-    .active-badge { background:#dcfce7; color:#166534; }
-    .term-badge { background:#fee2e2; color:#991b1b; }
-    .pending-badge { background:#fef3c7; color:#92400e; }
-    .approved-badge { background:#dbeafe; color:#1e40af; }
-    .small-note { color:var(--muted); font-size:13px; }
-    .divider { height:1px; background:var(--border); margin:18px 0; }
-    .hide { display:none!important; }
-    .right { text-align:right; }
-    .history-item { padding:10px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; background:#f8fafc; cursor:pointer; }
-    .payslip { background:#fff; border:1px solid #aaa; color:#000; padding:16px; }
-    .payslip h2 { margin:0 0 10px; }
-    .section-title { color:var(--section); font-weight:bold; border-top:1px solid #aaa; border-bottom:1px solid #ccc; padding:8px 4px; margin-top:12px; }
-    .payslip-status { padding:10px; border-radius:10px; font-weight:bold; margin:10px 0; }
-    .pay-open { background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; }
-    .pay-final { background:#ecfdf5; color:#166534; border:1px solid #bbf7d0; }
-    .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:10; align-items:flex-start; justify-content:center; padding:30px; overflow:auto; }
-    .modal-backdrop.open { display:flex; }
-    .modal { background:#fff; border-radius:18px; max-width:1050px; width:100%; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.25); }
-    .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
-    .modal-header h2 { margin:0; }
-    .close-btn { background:#64748b; }
-    .update-box { background:#eef2ff; border:1px solid #c7d2fe; padding:12px; border-radius:12px; margin-bottom:12px; }
-    @media(max-width:850px) {
-      .app { grid-template-columns:1fr; }
-      .sidebar { position:relative; height:auto; }
-      .nav { flex-direction:row; flex-wrap:wrap; }
-      .tab-btn { font-size:13px; }
-    }
-    @media print {
-      body * { visibility:hidden; }
-      #payslipCard, #payslipCard * { visibility:visible; }
-      #payslipCard { position:absolute; left:0; top:0; width:100%; box-shadow:none; }
-      .no-print { display:none!important; }
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payroll/HCM App</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--text:#1f2937;--muted:#64748b;--blue:#2563eb;--red:#dc2626;--green:#16a34a;--amber:#ca8a04;--line:#d8d8d8;--side:#0f172a;--section:#9a3412}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}.app{display:grid;grid-template-columns:260px 1fr;min-height:100vh}.side{background:var(--side);color:#fff;padding:22px;position:sticky;top:0;height:100vh;overflow:auto}.side h1{font-size:20px;margin:0}.side p{font-size:13px;color:#cbd5e1}.nav{display:flex;flex-direction:column;gap:8px}.nav button{background:transparent;color:#e2e8f0;border:1px solid #334155;text-align:left;border-radius:12px;padding:11px;cursor:pointer}.nav button.active{background:var(--blue);border-color:var(--blue)}
+main{padding:22px;max-width:1450px;width:100%;margin:auto}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 8px 24px rgba(15,23,42,.06);margin-bottom:16px}.grid{display:grid;gap:14px}.metrics{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}.forms{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.days{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+label{font-size:13px;color:var(--muted);display:block;margin-bottom:4px}input,select,button{border-radius:10px;border:1px solid var(--line);padding:9px 11px;font-size:14px}input,select{width:100%;background:#fff}button{background:var(--blue);color:#fff;border:none;cursor:pointer;font-weight:bold}button.secondary{background:#475569}button.success{background:var(--green)}button.warning{background:var(--amber)}button.danger{background:var(--red)}section{display:none}section.active{display:block}.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid var(--line);text-align:left;padding:10px;font-size:14px;vertical-align:top}th{background:#f8fafc}.small{color:var(--muted);font-size:13px}.metric-label{color:var(--muted);font-size:13px}.metric-value{font-size:24px;font-weight:bold;margin-top:6px}.metric-sub{font-size:13px;color:var(--muted);font-weight:normal;display:block;margin-top:4px}.hide{display:none!important}.right{text-align:right}.badge{padding:5px 9px;border-radius:999px;font-size:12px;font-weight:bold}.ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}.warn{background:#fef3c7;color:#92400e}
+.payslip{background:#fff;border:1px solid #aaa;color:#000;padding:16px}.payslip h2{margin:0 0 10px}.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.pgrid div{border:1px solid #ddd;background:#fafafa;padding:8px}.section-title{color:var(--section);font-weight:bold;border-top:1px solid #aaa;border-bottom:1px solid #ccc;padding:8px 4px;margin-top:12px}.status{padding:10px;border-radius:10px;font-weight:bold;margin:10px 0}.open{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}.final{background:#ecfdf5;color:#166534;border:1px solid #bbf7d0}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:5;align-items:flex-start;justify-content:center;padding:30px;overflow:auto}.modal-bg.open{display:flex}.modal{background:#fff;border-radius:18px;max-width:1050px;width:100%;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.25)}.modal-head{display:flex;justify-content:space-between;align-items:center}
+@media(max-width:850px){.app{grid-template-columns:1fr}.side{position:relative;height:auto}.nav{flex-direction:row;flex-wrap:wrap}.nav button{font-size:13px}}
+@media print{body *{visibility:hidden}#payslipCard,#payslipCard *{visibility:visible}#payslipCard{position:absolute;left:0;top:0;width:100%;box-shadow:none}.no-print{display:none!important}}
+</style>
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar no-print">
-    <h1>Payroll/HCM</h1>
-    <p>Single-file prototype</p>
-    <div class="nav">
-      <button class="tab-btn active" onclick="showTab('employees',this)">Employees</button>
-      <button class="tab-btn" onclick="showTab('changeCentre',this)">Change Centre</button>
-      <button class="tab-btn" onclick="showTab('schedules',this)">Schedules</button>
-      <button class="tab-btn" onclick="showTab('leave',this)">Leave</button>
-      <button class="tab-btn" onclick="showTab('lsl',this)">LSL Forecast</button>
-      <button class="tab-btn" onclick="showTab('payroll',this)">Payroll</button>
-      <button class="tab-btn" onclick="showTab('payslip',this)">Payslip</button>
-      <button class="tab-btn" onclick="showTab('history',this)">Previous Payslips</button>
-      <button class="tab-btn" onclick="showTab('audit',this)">Audit</button>
-      <button class="tab-btn" onclick="showTab('settings',this)">Settings / Updates</button>
-    </div>
-  </aside>
-
-  <main>
-    <div class="controls no-print">
-      <button onclick="calculatePay()">Calculate Pay</button>
-      <button class="secondary" onclick="runContractCheck()">Run Contract Check</button>
-      <button class="success" onclick="exportData()">Export Data</button>
-      <button class="secondary" onclick="document.getElementById('importFile').click()">Import Data</button>
-      <input id="importFile" type="file" accept="application/json" class="hide" onchange="importData(event)">
-      <button class="warning" onclick="checkForUpdates()">Check for Updates</button>
-      <button class="danger" onclick="clearAllData()">Clear Data</button>
-    </div>
-
-    <div class="grid metrics">
-      <div class="card"><div class="metric-label">Employees</div><div class="metric-value" id="metricEmployees">0</div></div>
-      <div class="card"><div class="metric-label">Current Pay Gross</div><div class="metric-value" id="metricGross">$0.00</div></div>
-      <div class="card"><div class="metric-label">Retro Adjustments</div><div class="metric-value" id="metricRetro">$0.00</div></div>
-      <div class="card"><div class="metric-label">Pay Cycle Status</div><div class="metric-value" id="metricPayStatus">Open</div></div>
-    </div>
-
-    <section id="employees" class="active card">
-      <h2>Employees</h2>
-      <p class="small-note">Starts blank. Add employees using the commencement popup. Permanent employees cannot have a contract end date.</p>
-      <div class="controls"><button onclick="openEmployeeModal()">Add New Employee</button></div>
-      <div id="employeesTable"></div>
-    </section>
-
-    <section id="changeCentre" class="card">
-      <h2>Change Centre</h2>
-      <p class="small-note">After pay close, changes dated inside a finalised pay period are locked. Enter a later effective date for prospective changes.</p>
-      <h3>Employee master change</h3>
-      <div class="grid form-grid">
-        <div><label>Employee</label><select id="editEmpSelect"></select></div>
-        <div><label>Start Date</label><input id="editEmpStart" type="date"></div>
-        <div><label>Employment Type</label><select id="editEmpType" onchange="toggleContractEnd('editEmpType','editEmpContractEnd','editEmpAutoTerm')"><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div>
-        <div><label>Contract End Date</label><input id="editEmpContractEnd" type="date" disabled></div>
-        <div><label>Auto Terminate?</label><select id="editEmpAutoTerm" disabled><option value="false">No</option><option value="true">Yes</option></select></div>
-        <div><label>Status</label><select id="editEmpStatus"><option>Active</option><option>Terminated</option></select></div>
-      </div>
-      <div class="controls" style="margin-top:14px"><button onclick="updateEmployeeMaster()">Save Master Change</button></div>
-
-      <div class="divider"></div>
-      <h3>Position / pay rate change</h3>
-      <p class="small-note">Permanent changes continue until another change is entered. Temporary changes revert automatically after the end date.</p>
-      <div class="grid form-grid">
-        <div><label>Employee</label><select id="payRateEmpSelect"></select></div>
-        <div><label>Change Type</label><select id="payRateChangeType" onchange="toggleTemporaryEnd()"><option value="Permanent">Permanent</option><option value="Temporary">Temporary</option></select></div>
-        <div><label>Effective Date</label><input id="payRateEffective" type="date"></div>
-        <div><label>Temporary End Date</label><input id="payRateEnd" type="date" disabled></div>
-        <div><label>New Position</label><input id="payRatePosition"></div>
-        <div><label>New Hourly Rate</label><input id="payRateAmount" type="number" step="0.01"></div>
-      </div>
-      <div class="controls" style="margin-top:14px"><button onclick="addPayRateChange()">Add Position/Pay Change</button></div>
-    </section>
-
-    <section id="schedules" class="card">
-      <h2>Effective-Dated Work Schedules</h2>
-      <p class="small-note">Enter hours for each day. Leave can only be booked on days with scheduled hours.</p>
-      <div class="grid form-grid">
-        <div><label>Employee</label><select id="scheduleEmpSelect"></select></div>
-        <div><label>Effective Date</label><input id="scheduleEffective" type="date"></div>
-      </div>
-      <div class="grid day-grid" style="margin-top:12px">
-        <div><label>Monday Hours</label><input id="schMon" type="number" step="0.01" value="0"></div>
-        <div><label>Tuesday Hours</label><input id="schTue" type="number" step="0.01" value="0"></div>
-        <div><label>Wednesday Hours</label><input id="schWed" type="number" step="0.01" value="0"></div>
-        <div><label>Thursday Hours</label><input id="schThu" type="number" step="0.01" value="0"></div>
-        <div><label>Friday Hours</label><input id="schFri" type="number" step="0.01" value="0"></div>
-        <div><label>Saturday Hours</label><input id="schSat" type="number" step="0.01" value="0"></div>
-        <div><label>Sunday Hours</label><input id="schSun" type="number" step="0.01" value="0"></div>
-      </div>
-      <div class="controls" style="margin-top:14px"><button onclick="addScheduleChange()">Add Schedule Change</button></div>
-      <div id="schedulesTable"></div>
-    </section>
-
-    <section id="leave" class="card">
-      <h2>Leave Booking and Accruals</h2>
-      <p class="small-note">Annual leave balance (Hours) and personal leave balance (Hours) accrue based on schedule. Leave can only be booked on scheduled work days.</p>
-      <div class="grid form-grid">
-        <div><label>Employee</label><select id="leaveEmpSelect"></select></div>
-        <div><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>LWOP</option></select></div>
-        <div><label>Start Date</label><input id="leaveStart" type="date"></div>
-        <div><label>End Date</label><input id="leaveEnd" type="date"></div>
-      </div>
-      <div class="controls" style="margin-top:14px"><button onclick="bookLeave()">Book Leave</button></div>
-      <div id="leaveBalancesTable"></div>
-      <div id="leaveTable"></div>
-    </section>
-
-    <section id="lsl" class="card">
-      <h2>Long Service Leave Forecast</h2>
-      <p class="small-note">This prototype shows the next 10-year service milestone based on the employee start date.</p>
-      <div id="lslTable"></div>
-    </section>
-
-    <section id="payroll" class="card">
-      <h2>Payroll Run</h2>
-      <div class="controls"><label>Pay Cycle</label><select id="payPeriodSelect" onchange="calculatePayroll()"></select></div>
-      <p id="payCloseNote" class="small-note"></p>
-      <div id="payrollTable"></div>
-    </section>
-
-    <section id="payslip" class="card">
-      <h2>Payslip Detail</h2>
-      <div class="controls no-print"><label>Employee</label><select id="payslipEmployee" onchange="renderPayslip()"></select><button onclick="window.print()">Print Payslip</button></div>
-      <div class="payslip" id="payslipCard"></div>
-    </section>
-
-    <section id="history" class="card">
-      <h2>Previous Payslips</h2>
-      <p class="small-note">Payslips are automatically saved after pay close. There is no manual finalise button.</p>
-      <div id="payslipHistoryList"></div>
-    </section>
-
-    <section id="audit" class="card">
-      <h2>Audit Log</h2>
-      <div id="auditLog"></div>
-    </section>
-
-    <section id="settings" class="card">
-      <h2>Settings / Updates</h2>
-      <div class="update-box">
-        <strong>Current app version:</strong> <span id="currentVersion"></span><br>
-        <span class="small-note">On GitHub Pages, Check for Updates looks for <code>latest-version.json</code> in the same repository.</span>
-      </div>
-      <div class="controls"><button onclick="checkForUpdates()">Check for Updates</button></div>
-      <div id="updateResult" class="small-note"></div>
-    </section>
-  </main>
+<aside class="side no-print"><h1>Payroll/HCM</h1><p>v1.0.3</p><div class="nav">
+<button class="active" onclick="tab('employees',this)">Employees</button>
+<button onclick="tab('changes',this)">Change Centre</button>
+<button onclick="tab('schedules',this)">Schedules</button>
+<button onclick="tab('leave',this)">Leave</button>
+<button onclick="tab('absence',this)">Absence Balance</button>
+<button onclick="tab('payroll',this)">Payroll</button>
+<button onclick="tab('payslip',this)">Payslip</button>
+<button onclick="tab('history',this)">Previous Payslips</button>
+<button onclick="tab('audit',this)">Audit</button>
+<button onclick="tab('settings',this)">Settings / Updates</button>
+</div></aside>
+<main>
+<div class="controls no-print">
+<button onclick="calcPay()">Calculate Pay</button><button class="secondary" onclick="contractCheck()">Run Contract Check</button>
+<button class="success" onclick="exportData()">Export Data</button><button class="secondary" onclick="importFile.click()">Import Data</button>
+<input id="importFile" class="hide" type="file" accept="application/json" onchange="importData(event)">
+<button class="warning" onclick="checkUpdates()">Check for Updates</button><button class="danger" onclick="clearData()">Clear Data</button>
+</div>
+<div class="grid metrics">
+<div class="card"><div class="metric-label">Employees</div><div class="metric-value" id="mEmp">0</div></div>
+<div class="card"><div class="metric-label">Current Pay Gross</div><div class="metric-value" id="mGross">$0.00</div></div>
+<div class="card"><div class="metric-label">Retro Adjustments</div><div class="metric-value" id="mRetro">$0.00</div></div>
+<div class="card"><div class="metric-label">Current Open Pay</div><div class="metric-value" id="mPay">Open</div></div>
 </div>
 
-<div id="employeeModal" class="modal-backdrop no-print">
-  <div class="modal">
-    <div class="modal-header"><h2>Commence New Employee</h2><button class="close-btn" onclick="closeEmployeeModal()">Close</button></div>
-    <p class="small-note">Enter employee details and their starting work schedule in the same commencement process.</p>
-    <div class="grid form-grid">
-      <div><label>Employee ID</label><input id="newEmpId"></div>
-      <div><label>First Name</label><input id="newEmpFirstName"></div>
-      <div><label>Last Name</label><input id="newEmpLastName"></div>
-      <div><label>Department</label><input id="newEmpDept"></div>
-      <div><label>Position</label><input id="newEmpPosition"></div>
-      <div><label>Employment Type</label><select id="newEmpType" onchange="toggleContractEnd('newEmpType','newEmpContractEnd','newEmpAutoTerm')"><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div>
-      <div><label>Start Date</label><input id="newEmpStart" type="date"></div>
-      <div><label>Contract End Date</label><input id="newEmpContractEnd" type="date" disabled></div>
-      <div><label>Auto Terminate?</label><select id="newEmpAutoTerm" disabled><option value="false">No</option><option value="true">Yes</option></select></div>
-      <div><label>Hourly Rate</label><input id="newEmpRate" type="number" step="0.01"></div>
-      <div><label>Initial Annual Leave Balance (Hours)</label><input id="newEmpAL" type="number" step="0.01" value="0"></div>
-      <div><label>Initial Personal Leave Balance (Hours)</label><input id="newEmpPL" type="number" step="0.01" value="0"></div>
-    </div>
+<section id="employees" class="active card"><h2>Employees</h2><p class="small">No demo data is included. Add employees using the commencement popup.</p><button onclick="openEmp()">Add New Employee</button><div id="empTable"></div></section>
 
-    <div class="divider"></div>
-    <h3>Starting Work Schedule</h3>
-    <div class="grid day-grid">
-      <div><label>Monday Hours</label><input id="newMon" type="number" step="0.01" value="0"></div>
-      <div><label>Tuesday Hours</label><input id="newTue" type="number" step="0.01" value="0"></div>
-      <div><label>Wednesday Hours</label><input id="newWed" type="number" step="0.01" value="0"></div>
-      <div><label>Thursday Hours</label><input id="newThu" type="number" step="0.01" value="0"></div>
-      <div><label>Friday Hours</label><input id="newFri" type="number" step="0.01" value="0"></div>
-      <div><label>Saturday Hours</label><input id="newSat" type="number" step="0.01" value="0"></div>
-      <div><label>Sunday Hours</label><input id="newSun" type="number" step="0.01" value="0"></div>
-    </div>
-    <div class="controls" style="margin-top:16px"><button onclick="addEmployee()">Commence Employee</button></div>
-  </div>
+<section id="changes" class="card"><h2>Change Centre</h2><p class="small">When a pay cycle closes, the next pay opens automatically. Late/backdated changes are flagged as retro in the current open pay.</p>
+<h3>Employee Master Change</h3><div class="grid forms">
+<div><label>Employee</label><select id="editEmp"></select></div><div><label>Start Date</label><input id="editStart" type="date"></div>
+<div><label>Employment Type</label><select id="editType" onchange="contractToggle('editType','editEnd','editAuto')"><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div>
+<div><label>Contract End Date</label><input id="editEnd" type="date" disabled></div><div><label>Auto Terminate?</label><select id="editAuto" disabled><option value="false">No</option><option value="true">Yes</option></select></div><div><label>Status</label><select id="editStatus"><option>Active</option><option>Terminated</option></select></div>
+</div><div class="controls" style="margin-top:14px"><button onclick="saveMaster()">Save Master Change</button></div>
+<hr>
+<h3>Position / Pay Rate Change</h3><div class="grid forms">
+<div><label>Employee</label><select id="rateEmp"></select></div><div><label>Change Type</label><select id="rateType" onchange="tempToggle()"><option>Permanent</option><option>Temporary</option></select></div>
+<div><label>Effective Date</label><input id="rateEff" type="date"></div><div><label>Temporary End Date</label><input id="rateEnd" type="date" disabled></div>
+<div><label>New Position</label><input id="ratePos"></div><div><label>New Hourly Rate</label><input id="rateAmt" type="number" step="0.01"></div>
+</div><div class="controls" style="margin-top:14px"><button onclick="addRate()">Add Position/Pay Change</button></div>
+</section>
+
+<section id="schedules" class="card"><h2>Effective-Dated Work Schedules</h2><div class="grid forms"><div><label>Employee</label><select id="schEmp"></select></div><div><label>Effective Date</label><input id="schEff" type="date"></div></div><div class="grid days" style="margin-top:12px" id="schDays"></div><div class="controls" style="margin-top:14px"><button onclick="addSchedule()">Add Schedule Change</button></div><div id="schTable"></div></section>
+
+<section id="leave" class="card"><h2>Leave Booking and Accruals</h2><p class="small">Leave can only be booked on days where the employee is scheduled to work.</p><div class="grid forms">
+<div><label>Employee</label><select id="leaveEmp"></select></div><div><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>LWOP</option></select></div>
+<div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div>
+</div><div class="controls" style="margin-top:14px"><button onclick="bookLeave()">Book Leave</button></div><div id="leaveBal"></div><div id="leaveTable"></div></section>
+
+<section id="absence" class="card"><h2>Absence Balance</h2><p class="small">Shows annual leave, personal leave, LSL accrued balance, LSL pro-rata towards the next entitlement and LSL date.</p><div id="absTable"></div></section>
+
+<section id="payroll" class="card"><h2>Payroll</h2><div class="controls"><label>Pay Cycle</label><select id="cycleSel" onchange="calcPayroll()"></select></div><p id="payNote" class="small"></p><div id="payTable"></div></section>
+<section id="payslip" class="card"><h2>Payslip</h2><div class="controls no-print"><label>Employee</label><select id="slipEmp" onchange="renderSlip()"></select><button onclick="window.print()">Print Payslip</button></div><div class="payslip" id="payslipCard"></div></section>
+<section id="history" class="card"><h2>Previous Payslips</h2><p class="small">Payslips are automatically saved after pay close. There is no manual finalise button.</p><div id="hist"></div></section>
+<section id="audit" class="card"><h2>Audit Log</h2><div id="auditLog"></div></section>
+<section id="settings" class="card"><h2>Settings / Updates</h2><p><b>Current app version:</b> <span id="ver"></span></p><button onclick="checkUpdates()">Check for Updates</button><p id="updateOut" class="small"></p><hr><h3>Western Australia Public Holidays</h3><p class="small">These run in the background. If a rostered day falls on a listed public holiday, the payslip shows Public Holiday.</p><div id="phTable"></div></section>
+</main>
 </div>
+
+<div id="empModal" class="modal-bg no-print"><div class="modal"><div class="modal-head"><h2>Commence New Employee</h2><button class="secondary" onclick="closeEmp()">Close</button></div>
+<div class="grid forms">
+<div><label>Employee ID</label><input id="newId"></div><div><label>First Name</label><input id="newFirst"></div><div><label>Last Name</label><input id="newLast"></div><div><label>Department</label><input id="newDept"></div><div><label>Position</label><input id="newPos"></div>
+<div><label>Employment Type</label><select id="newType" onchange="contractToggle('newType','newEnd','newAuto')"><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div><div><label>Start Date</label><input id="newStart" type="date"></div><div><label>Contract End Date</label><input id="newEnd" type="date" disabled></div><div><label>Auto Terminate?</label><select id="newAuto" disabled><option value="false">No</option><option value="true">Yes</option></select></div><div><label>Hourly Rate</label><input id="newRate" type="number" step="0.01"></div>
+<div><label>Initial Annual Leave Balance (Hours)</label><input id="newAL" type="number" step="0.01" value="0"></div><div><label>Initial Personal Leave Balance (Hours)</label><input id="newPL" type="number" step="0.01" value="0"></div><div><label>Initial LSL Accrued Balance (Hours)</label><input id="newLSL" type="number" step="0.01" value="0"></div>
+</div><h3>Starting Work Schedule</h3><div class="grid days" id="newDays"></div><div class="controls" style="margin-top:16px"><button onclick="addEmployee()">Commence Employee</button></div></div></div>
 
 <script>
-const APP_VERSION = "1.0.1";
-const standardWeeklyHours = 37.5;
-let employees = [], schedules = [], payRates = [], leaveBookings = [], payslipHistory = [], auditLog = ["System created with no demo employees."];
-let payrollResults = [];
-const payCycles = makePayCycles("2026-05-22", 26);
+const APP_VERSION='1.0.3', STD=37.5, LS_WEEKS=8.667;
+const PH=[
+['2026-01-01',"New Year's Day"],['2026-01-26','Australia Day'],['2026-03-02','Labour Day'],['2026-04-03','Good Friday'],['2026-04-05','Easter Sunday'],['2026-04-06','Easter Monday'],['2026-04-25','ANZAC Day'],['2026-04-27','ANZAC Day additional public holiday'],['2026-06-01','Western Australia Day'],['2026-09-28',"King's Birthday"],['2026-12-25','Christmas Day'],['2026-12-26','Boxing Day'],['2026-12-28','Boxing Day additional public holiday'],
+['2027-01-01',"New Year's Day"],['2027-01-26','Australia Day'],['2027-03-01','Labour Day'],['2027-03-26','Good Friday'],['2027-03-28','Easter Sunday'],['2027-03-29','Easter Monday'],['2027-04-25','ANZAC Day'],['2027-04-26','ANZAC Day additional public holiday'],['2027-06-07','Western Australia Day'],['2027-09-27',"King's Birthday"],['2027-12-25','Christmas Day'],['2027-12-26','Boxing Day'],['2027-12-27','Christmas Day additional public holiday'],['2027-12-28','Boxing Day additional public holiday']];
+let employees=[],schedules=[],rates=[],leaves=[],history=[],audit=['System created with no demo employees.'],results=[];
+const cycles=makeCycles('2026-05-22',30);load();migrate();init();
 
-loadData();
-init();
+function $(id){return document.getElementById(id)}function val(id){return $(id)?.value||''}function num(id){return Number(val(id)||0)}function html(id,x){if($(id))$(id).innerHTML=x}
+function D(x){return x?new Date(x+'T00:00:00'):null}function ISO(d){return d.toISOString().slice(0,10)}function today(){let d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate())}function todayISO(){return ISO(today())}
+function money(x){return new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD'}).format(x||0)}function fd(x){if(!x)return'';let d=D(x);return `${d.getDate()}/${d.getMonth()+1}/${String(d.getFullYear()).slice(-2)}`}function longd(x){return x?new Intl.DateTimeFormat('en-AU',{day:'2-digit',month:'short',year:'numeric'}).format(D(x)):''}
+function ppe(c){return 'PPE'+fd(c.end)}function uid(p){return p+'_'+Date.now()+'_'+Math.random().toString(16).slice(2)}function emp(id){return employees.find(e=>e.id===id)}function badge(x){let cls=x==='Active'||x==='Approved'?'ok':x==='Terminated'?'bad':'warn';return `<span class="badge ${cls}">${x}</span>`}
+function table(h,rows){return `<table><thead><tr>${h.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c??''}</td>`).join('')}</tr>`).join('')}</tbody></table>`}
+function log(x){audit.unshift(new Date().toLocaleString('en-AU')+' — '+x);save();renderAudit()}
+function makeCycles(start,n){let out=[],s=D(start);for(let i=0;i<n;i++){let e=new Date(s);e.setDate(e.getDate()+13);let close=new Date(e);close.setDate(close.getDate()-6);out.push({id:i+1,start:ISO(s),end:ISO(e),paymentDate:ISO(e),closeDate:ISO(close)});s.setDate(s.getDate()+14)}return out}
+function save(){localStorage.setItem('payrollAppData',JSON.stringify({employees,schedules,payRates:rates,leaveBookings:leaves,payslipHistory:history,auditLog:audit}))}
+function load(){try{let p=JSON.parse(localStorage.getItem('payrollAppData')||'{}');employees=p.employees||[];schedules=p.schedules||[];rates=p.payRates||p.rates||[];leaves=p.leaveBookings||p.leaves||[];history=p.payslipHistory||p.history||[];audit=p.auditLog||audit}catch(e){}}
+function migrate(){let ch=false;employees.forEach(e=>{if(e.lslBalance==null){e.lslBalance=0;ch=true}if(!e.name){e.name=((e.firstName||'')+' '+(e.lastName||'')).trim();ch=true}});rates.forEach(r=>{if(!r.id){r.id=uid('rate');ch=true}if(!r.createdAt){r.createdAt=r.effectiveDate||todayISO();ch=true}});schedules.forEach(s=>{if(!s.id){s.id=uid('sch');ch=true}if(!s.createdAt){s.createdAt=s.effectiveDate||todayISO();ch=true}});leaves.forEach(l=>{if(!l.id){l.id=uid('leave');ch=true}if(!l.createdAt){l.createdAt=l.startDate||todayISO();ch=true}});if(ch)save()}
+function exportData(){save();let b=new Blob([JSON.stringify({employees,schedules,payRates:rates,leaveBookings:leaves,payslipHistory:history,auditLog:audit},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='payroll-app-data.json';a.click();log('Data exported')}
+function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let p=JSON.parse(r.result);employees=p.employees||[];schedules=p.schedules||[];rates=p.payRates||p.rates||[];leaves=p.leaveBookings||p.leaves||[];history=p.payslipHistory||p.history||[];audit=p.auditLog||[];migrate();save();init();log('Data imported')}catch(err){alert('Import failed. Please choose a valid export file.')}};r.readAsText(f)}
+function clearData(){if(confirm('Clear all data? Export first if needed.')){employees=[];schedules=[];rates=[];leaves=[];history=[];audit=['All data cleared.'];save();init()}}
+async function checkUpdates(){html('updateOut','Checking...');try{let r=await fetch('./latest-version.json?ts='+Date.now()),j=await r.json();html('updateOut',j.version===APP_VERSION?'You are up to date.':'Update available: '+j.version+' — export data before replacing index.html.')}catch(e){html('updateOut','Could not check updates. Upload latest-version.json to GitHub Pages first.')}}
 
-function currentDateOnly() {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-function makePayCycles(start, n) {
-  let out = [];
-  let s = date(start);
-  for (let i = 0; i < n; i++) {
-    let e = new Date(s); e.setDate(e.getDate() + 13);
-    let close = new Date(e); close.setDate(close.getDate() - 6);
-    out.push({ id:i+1, start:iso(s), end:iso(e), paymentDate:iso(e), closeDate:iso(close) });
-    s.setDate(s.getDate() + 14);
-  }
-  return out;
-}
-function date(v) { return v ? new Date(v + "T00:00:00") : null; }
-function iso(d) { return d.toISOString().slice(0,10); }
-function money(v) { return new Intl.NumberFormat("en-AU", { style:"currency", currency:"AUD" }).format(v || 0); }
-function fmt(v) { return v ? new Intl.DateTimeFormat("en-AU", { day:"2-digit", month:"short", year:"numeric" }).format(date(v)) : ""; }
-function fmtShort(v) { return v ? new Intl.DateTimeFormat("en-AU", { day:"2-digit", month:"2-digit", year:"numeric" }).format(date(v)) : ""; }
-function ppeLabel(c) { return "PPE " + fmtShort(c.end); }
-function log(x) { auditLog.unshift(new Date().toLocaleString("en-AU") + " — " + x); saveData(); renderAudit(); }
-function v(id) { return document.getElementById(id)?.value || ""; }
-function num(id) { return Number(v(id) || 0); }
-function html(id, val) { const el = document.getElementById(id); if (el) el.innerHTML = val; }
-function emp(id) { return employees.find(e => e.id === id); }
-function badge(x) {
-  let cls = x === "Active" || x === "Approved" ? "active-badge" : x === "Terminated" ? "term-badge" : "pending-badge";
-  return `<span class="badge ${cls}">${x}</span>`;
-}
-function table(headers, rows) {
-  return `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-}
+function openEmp(){$('empModal').classList.add('open')}function closeEmp(){$('empModal').classList.remove('open')}
+function contractToggle(type,end,auto){let ok=val(type)==='Fixed Term';$(end).disabled=!ok;$(auto).disabled=!ok;if(!ok){$(end).value='';$(auto).value='false'}}
+function tempToggle(){let t=val('rateType')==='Temporary';$('rateEnd').disabled=!t;if(!t)$('rateEnd').value=''}
+function dayInputs(prefix){let names=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];return [1,2,3,4,5,6,0].map(i=>`<div><label>${names[i]} Hours</label><input id="${prefix}${i}" type="number" step="0.01" value="0"></div>`).join('')}
+function dayMap(prefix){return {1:num(prefix+'1'),2:num(prefix+'2'),3:num(prefix+'3'),4:num(prefix+'4'),5:num(prefix+'5'),6:num(prefix+'6'),0:num(prefix+'0')}}
+function weekHours(m){return Object.values(m||{}).reduce((s,x)=>s+Number(x||0),0)}
+function cycleOf(x){let d=D(x);return cycles.find(c=>D(c.start)<=d&&d<=D(c.end))}function finalised(c){return today()>D(c.closeDate)}
+function backdated(x){let c=cycleOf(x);return c&&finalised(c)}
+function openCycle(){return cycles.find(c=>today()<=D(c.closeDate))||cycles[cycles.length-1]}
+function selectedCycle(){return cycles[Number(val('cycleSel')||cycles.findIndex(c=>c.id===openCycle().id))]||openCycle()}
 
-function saveData() {
-  localStorage.setItem("payrollAppData", JSON.stringify({ employees, schedules, payRates, leaveBookings, payslipHistory, auditLog }));
-}
-function loadData() {
-  const raw = localStorage.getItem("payrollAppData");
-  if (!raw) return;
-  try {
-    const p = JSON.parse(raw);
-    employees = p.employees || [];
-    schedules = p.schedules || [];
-    payRates = p.payRates || [];
-    leaveBookings = p.leaveBookings || [];
-    payslipHistory = p.payslipHistory || [];
-    auditLog = p.auditLog || auditLog;
-  } catch (e) {
-    console.warn("Could not load saved data", e);
-  }
-}
-function exportData() {
-  saveData();
-  const blob = new Blob([JSON.stringify({ employees, schedules, payRates, leaveBookings, payslipHistory, auditLog }, null, 2)], { type:"application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "payroll-app-data.json";
-  a.click();
-  log("Data exported");
-}
-function importData(ev) {
-  const f = ev.target.files[0];
-  if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const d = JSON.parse(r.result);
-      employees = d.employees || [];
-      schedules = d.schedules || [];
-      payRates = d.payRates || [];
-      leaveBookings = d.leaveBookings || [];
-      payslipHistory = d.payslipHistory || [];
-      auditLog = d.auditLog || [];
-      saveData();
-      init();
-      log("Data imported");
-    } catch (e) {
-      alert("Import failed. Please select a valid payroll-app-data.json file.");
-    }
-  };
-  r.readAsText(f);
-}
-function clearAllData() {
-  if (!confirm("Clear all software data? Export first if needed.")) return;
-  employees = []; schedules = []; payRates = []; leaveBookings = []; payslipHistory = []; auditLog = ["All data cleared."];
-  saveData(); init();
-}
+function addEmployee(){let id=val('newId').trim(),type=val('newType');if(!id||employees.some(e=>e.id===id))return alert('Enter a unique Employee ID.');if(type==='Permanent'&&val('newEnd'))return alert('Permanent employees cannot have a contract end date.');let sched=dayMap('newDay'),start=val('newStart');if(!start)return alert('Enter a start date.');if(weekHours(sched)<=0)return alert('Enter starting work schedule hours.');let first=val('newFirst').trim(),last=val('newLast').trim();let e={id,firstName:first,lastName:last,name:(first+' '+last).trim(),department:val('newDept'),position:val('newPos'),type,startDate:start,contractEndDate:type==='Fixed Term'?val('newEnd'):'',autoTerminate:type==='Fixed Term'&&val('newAuto')==='true',hourlyRate:num('newRate'),annualLeaveBalance:num('newAL'),personalLeaveBalance:num('newPL'),lslBalance:num('newLSL'),status:'Active'};employees.push(e);rates.push({id:uid('rate'),empId:id,type:'Permanent',effectiveDate:start,endDate:'',position:e.position,hourlyRate:e.hourlyRate,createdAt:todayISO(),status:'Active'});schedules.push({id:uid('sch'),empId:id,effectiveDate:start,hoursByDay:sched,createdAt:todayISO(),status:'Active'});save();log('Employee commenced: '+e.name);closeEmp();init()}
+function saveMaster(){let e=emp(val('editEmp'));if(!e)return;let type=val('editType');if(type==='Permanent'&&val('editEnd'))return alert('Permanent employees cannot have a contract end date.');e.startDate=val('editStart')||e.startDate;e.type=type;e.contractEndDate=type==='Fixed Term'?val('editEnd'):'';e.autoTerminate=type==='Fixed Term'&&val('editAuto')==='true';e.status=val('editStatus');save();log('Employee master updated: '+e.name);init()}
+function addRate(){let empId=val('rateEmp'),eff=val('rateEff'),type=val('rateType');if(!empId||!eff||!val('ratePos')||!num('rateAmt'))return alert('Complete all pay change fields.');if(type==='Temporary'&&!val('rateEnd'))return alert('Temporary changes need an end date.');rates.push({id:uid('rate'),empId,type,effectiveDate:eff,endDate:type==='Temporary'?val('rateEnd'):'',position:val('ratePos'),hourlyRate:num('rateAmt'),createdAt:todayISO(),status:backdated(eff)?'Retro':'Active'});save();log((backdated(eff)?'Retro ':'')+type+' pay/position change added');init()}
+function addSchedule(){let empId=val('schEmp'),eff=val('schEff'),m=dayMap('schDay');if(!empId||!eff||weekHours(m)<=0)return alert('Complete employee, effective date and hours.');schedules.push({id:uid('sch'),empId,effectiveDate:eff,hoursByDay:m,createdAt:todayISO(),status:backdated(eff)?'Retro':'Active'});save();log((backdated(eff)?'Retro ':'')+'schedule change added');init()}
+function contractCheck(){let n=0;employees.forEach(e=>{if(e.type==='Fixed Term'&&e.autoTerminate&&e.contractEndDate&&D(e.contractEndDate)<=today()&&e.status!=='Terminated'){e.status='Terminated';n++}});save();log('Contract check completed. Auto-terminated employees: '+n);init()}
+function activeSched(empId,on,exclude){return schedules.filter(s=>s.empId===empId&&s.id!==exclude&&D(s.effectiveDate)<=D(on)).sort((a,b)=>D(b.effectiveDate)-D(a.effectiveDate))[0]}
+function activeRate(empId,on,exclude){return rates.filter(r=>r.empId===empId&&r.id!==exclude&&D(r.effectiveDate)<=D(on)&&(r.type==='Permanent'||!r.endDate||D(r.endDate)>=D(on))).sort((a,b)=>D(b.effectiveDate)-D(a.effectiveDate))[0]||{position:emp(empId)?.position||'',hourlyRate:emp(empId)?.hourlyRate||0}}
+function periodDays(start,end){let a=[];for(let d=new Date(D(start));d<=D(end);d.setDate(d.getDate()+1))a.push(ISO(d));return a}
+function scheduledHours(empId,start,end,exclude){return periodDays(start,end).reduce((s,x)=>{let sc=activeSched(empId,x,exclude);return s+Number(sc?.hoursByDay?.[D(x).getDay()]||0)},0)}
+function validateLeave(empId,start,end){let hrs=0;for(let x of periodDays(start,end)){let h=Number(activeSched(empId,x)?.hoursByDay?.[D(x).getDay()]||0);if(h<=0)return{ok:false,msg:'Leave can only be booked on scheduled work days. Non-working date: '+fd(x)};hrs+=h}return{ok:true,hrs}}
+function bookLeave(){let empId=val('leaveEmp'),type=val('leaveType'),start=val('leaveStart'),end=val('leaveEnd');if(!empId||!start||!end)return alert('Complete leave fields.');let v=validateLeave(empId,start,end);if(!v.ok)return alert(v.msg);let e=emp(empId);if(type==='Annual Leave'&&e.annualLeaveBalance<v.hrs)return alert('Insufficient annual leave.');if(type==='Personal Leave'&&e.personalLeaveBalance<v.hrs)return alert('Insufficient personal leave.');if(type==='Long Service Leave'&&Number(e.lslBalance||0)<v.hrs)return alert('Insufficient LSL accrued balance.');leaves.push({id:uid('leave'),empId,type,startDate:start,endDate:end,hours:v.hrs,status:backdated(start)?'Retro':'Approved',createdAt:todayISO()});if(type==='Annual Leave')e.annualLeaveBalance-=v.hrs;if(type==='Personal Leave')e.personalLeaveBalance-=v.hrs;if(type==='Long Service Leave')e.lslBalance=Number(e.lslBalance||0)-v.hrs;save();log((backdated(start)?'Retro ':'')+type+' booked for '+e.name);init()}
 
-async function checkForUpdates() {
-  html("updateResult", "Checking for updates...");
-  try {
-    const res = await fetch("./latest-version.json?ts=" + Date.now());
-    if (!res.ok) throw new Error("No latest-version.json found");
-    const latest = await res.json();
-    const current = APP_VERSION;
-    if (isNewerVersion(latest.version, current)) {
-      html("updateResult", `<strong>Update available:</strong> ${latest.version}<br>${latest.notes || ""}<br><br>Export your data first, then upload/replace index.html in GitHub Pages.<br>${latest.downloadUrl ? `<a href="${latest.downloadUrl}" target="_blank">Open latest version</a>` : ""}`);
-    } else {
-      html("updateResult", `You are up to date. Current version: ${current}.`);
-    }
-  } catch (e) {
-    html("updateResult", "Could not check updates. This works after you upload index.html and latest-version.json to GitHub Pages.");
-  }
-}
-function isNewerVersion(a, b) {
-  const pa = String(a || "0").split(".").map(Number), pb = String(b || "0").split(".").map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    if ((pa[i] || 0) > (pb[i] || 0)) return true;
-    if ((pa[i] || 0) < (pb[i] || 0)) return false;
-  }
-  return false;
-}
+function leaveRows(empId,c){return leaves.filter(l=>l.empId===empId&&D(l.startDate)<=D(c.end)&&D(l.endDate)>=D(c.start)).map(l=>{let hrs=0,dates=[];for(let x of periodDays(l.startDate,l.endDate)){if(D(x)<D(c.start)||D(x)>D(c.end))continue;let h=Number(activeSched(empId,x)?.hoursByDay?.[D(x).getDay()]||0);if(h>0){hrs+=h;dates.push(x)}}return{...l,hrs,dates}}).filter(l=>l.hrs>0)}
+function phRows(empId,c,leaveDates){return periodDays(c.start,c.end).map(x=>{let h=Number(activeSched(empId,x)?.hoursByDay?.[D(x).getDay()]||0),ph=PH.find(p=>p[0]===x);return h>0&&ph&&!leaveDates.has(x)?{date:x,name:ph[1],hours:h}:null}).filter(Boolean)}
+function retro(empId,c){let total=0,rows=[];let until=ISO(new Date(D(c.start).getTime()-86400000));rates.filter(r=>r.empId===empId&&r.status==='Retro'&&D(r.effectiveDate)<D(c.start)).forEach(r=>{let end=r.endDate&&D(r.endDate)<D(until)?r.endDate:until;if(D(end)<D(r.effectiveDate))return;let old=activeRate(empId,r.effectiveDate,r.id).hourlyRate||0,hrs=scheduledHours(empId,r.effectiveDate,end),amt=(r.hourlyRate-old)*hrs;if(amt){total+=amt;rows.push({desc:'Retro Pay Rate Adjustment',units:hrs,amount:amt,start:r.effectiveDate,end})}});schedules.filter(s=>s.empId===empId&&s.status==='Retro'&&D(s.effectiveDate)<D(c.start)).forEach(s=>{let diff=0;for(let x of periodDays(s.effectiveDate,until)){let nh=Number(s.hoursByDay?.[D(x).getDay()]||0),oh=Number(activeSched(empId,x,s.id)?.hoursByDay?.[D(x).getDay()]||0);diff+=nh-oh}let rate=activeRate(empId,s.effectiveDate).hourlyRate||0,amt=diff*rate;if(amt){total+=amt;rows.push({desc:'Retro Schedule Adjustment',units:diff,amount:amt,start:s.effectiveDate,end:until})}});leaves.filter(l=>l.empId===empId&&l.status==='Retro'&&l.type==='LWOP'&&D(l.startDate)<D(c.start)).forEach(l=>{let amt=-Number(l.hours||0)*(activeRate(empId,l.startDate).hourlyRate||0);total+=amt;rows.push({desc:'Retro LWOP Adjustment',units:Number(l.hours||0),amount:amt,start:l.startDate,end:l.endDate})});return{total,rows}}
+function calcFor(c){return employees.filter(e=>e.status==='Active').map(e=>{let ar=activeRate(e.id,c.start),sched=scheduledHours(e.id,c.start,c.end),lr=leaveRows(e.id,c),ld=new Set(lr.flatMap(l=>l.dates)),phr=phRows(e.id,c,ld),al=lr.filter(l=>l.type==='Annual Leave').reduce((s,l)=>s+l.hrs,0),pl=lr.filter(l=>l.type==='Personal Leave').reduce((s,l)=>s+l.hrs,0),lsl=lr.filter(l=>l.type==='Long Service Leave').reduce((s,l)=>s+l.hrs,0),lwop=lr.filter(l=>l.type==='LWOP').reduce((s,l)=>s+l.hrs,0),paidLeave=al+pl+lsl,phh=phr.reduce((s,p)=>s+p.hours,0),regular=Math.max(0,sched-paidLeave-lwop-phh),rr=regular*ar.hourlyRate,la=paidLeave*ar.hourlyRate,pha=phh*ar.hourlyRate,rt=c.id===openCycle().id?retro(e.id,c):{total:0,rows:[]},gross=rr+la+pha+rt.total,tax=gross*.22,superAmt=gross*.115;return{emp:e,cycle:c,position:ar.position,rate:ar.hourlyRate,scheduled:sched,regular,paidLeave,publicHolidayHours:phh,lwop,leaveRows:lr,phRows:phr,retroRows:rt.rows,retro:rt.total,regularAmount:rr,leaveAmount:la,phAmount:pha,base:rr+la+pha,gross,tax,superAmt,net:gross-tax,annualAccrual:(sched-lwop)*(4/52),personalAccrual:(sched-lwop)*(3/52),finalised:finalised(c)}})}
+function calcPay(){autoFinalise();calcPayroll();log('Calculate Pay run')}function calcPayroll(){let c=selectedCycle();results=calcFor(c);renderAll()}
+function autoFinalise(){let n=0;cycles.filter(finalised).forEach(c=>{calcFor(c).forEach(r=>{if(!history.some(h=>h.empId===r.emp.id&&h.cycle.id===c.id)){let e=emp(r.emp.id);e.annualLeaveBalance+=r.annualAccrual;e.personalLeaveBalance+=r.personalAccrual;history.unshift({id:Date.now()+Math.random(),empId:e.id,employeeName:e.name,cycle:{...c},result:{...r,emp:{...e},finalised:true}});n++}})});if(n){audit.unshift(new Date().toLocaleString('en-AU')+' — Auto-processed finalised payslips: '+n);save()}}
 
-function openEmployeeModal() { document.getElementById("employeeModal").classList.add("open"); }
-function closeEmployeeModal() { document.getElementById("employeeModal").classList.remove("open"); }
-function toggleContractEnd(typeId, endId, autoId) {
-  const allowed = v(typeId) === "Fixed Term";
-  document.getElementById(endId).disabled = !allowed;
-  document.getElementById(autoId).disabled = !allowed;
-  if (!allowed) { document.getElementById(endId).value = ""; document.getElementById(autoId).value = "false"; }
-}
-function toggleTemporaryEnd() {
-  const tmp = v("payRateChangeType") === "Temporary";
-  document.getElementById("payRateEnd").disabled = !tmp;
-  if (!tmp) document.getElementById("payRateEnd").value = "";
-}
-function getModalSchedule() { return { 1:num("newMon"), 2:num("newTue"), 3:num("newWed"), 4:num("newThu"), 5:num("newFri"), 6:num("newSat"), 0:num("newSun") }; }
-function getScheduleForm() { return { 1:num("schMon"), 2:num("schTue"), 3:num("schWed"), 4:num("schThu"), 5:num("schFri"), 6:num("schSat"), 0:num("schSun") }; }
-function scheduleHoursMapTotal(map) { return Object.values(map || {}).reduce((s,x) => s + Number(x || 0), 0); }
+function lslDate(e){if(!e.startDate)return'';let d=D(e.startDate);d.setFullYear(d.getFullYear()+10);return ISO(d)}
+function weekly(e){return weekHours((activeSched(e.id,todayISO())||activeSched(e.id,openCycle().start)||{}).hoursByDay||{})}
+function lslPro(e){if(!e.startDate)return 0;let days=Math.max(0,(today()-D(e.startDate))/86400000),ent=weekly(e)*LS_WEEKS;return Math.min(ent,ent*(days/(365.25*10)))}
 
-function cycleForDate(value) {
-  const d = date(value);
-  if (!d) return null;
-  return payCycles.find(c => date(c.start) <= d && d <= date(c.end));
-}
-function latestClosedCycle() {
-  return payCycles.filter(c => isCycleFinalised(c)).sort((a,b) => date(b.end) - date(a.end))[0];
-}
-function isCycleFinalised(c) {
-  return currentDateOnly() > date(c.closeDate);
-}
-function isDateLocked(value) {
-  const closed = latestClosedCycle();
-  return closed && date(value) <= date(closed.end);
-}
-function ensureDateChangeAllowed(value, label) {
-  if (!value) return true;
-  if (isDateLocked(value)) {
-    const closed = latestClosedCycle();
-    alert(`${label} falls on or before a finalised pay period (${ppeLabel(closed)}: ${fmt(closed.start)} - ${fmt(closed.end)}). Changes for that pay are locked. Enter a later effective date so it applies prospectively.`);
-    return false;
-  }
-  return true;
-}
-function ensureRangeChangeAllowed(start, end, label) {
-  const closed = latestClosedCycle();
-  if (closed && date(start) <= date(closed.end) && date(end) >= date(closed.start)) {
-    alert(`${label} overlaps a finalised pay period (${ppeLabel(closed)}: ${fmt(closed.start)} - ${fmt(closed.end)}). Changes for that pay are locked.`);
-    return false;
-  }
-  return true;
-}
-
-function addEmployee() {
-  const id = v("newEmpId").trim();
-  if (!id || employees.some(e => e.id === id)) return alert("Enter a unique Employee ID.");
-  const type = v("newEmpType");
-  if (type === "Permanent" && v("newEmpContractEnd")) return alert("Permanent employees cannot have a contract end date.");
-  const firstName = v("newEmpFirstName").trim(), lastName = v("newEmpLastName").trim();
-  const start = v("newEmpStart");
-  const scheduleHours = getModalSchedule();
-  if (!start) return alert("Enter a start date.");
-  if (!ensureDateChangeAllowed(start, "Employee commencement")) return;
-  if (type === "Fixed Term" && v("newEmpContractEnd") && !ensureDateChangeAllowed(v("newEmpContractEnd"), "Contract end date")) return;
-  if (scheduleHoursMapTotal(scheduleHours) <= 0) return alert("Enter at least one working day/hour in the starting schedule.");
-
-  const empObj = {
-    id, firstName, lastName, name:(firstName + " " + lastName).trim(),
-    department:v("newEmpDept"), position:v("newEmpPosition"), type, startDate:start,
-    contractEndDate:type === "Fixed Term" ? v("newEmpContractEnd") : "",
-    autoTerminate:type === "Fixed Term" && v("newEmpAutoTerm") === "true",
-    hourlyRate:num("newEmpRate"), annualLeaveBalance:num("newEmpAL"), personalLeaveBalance:num("newEmpPL"), status:"Active"
-  };
-  employees.push(empObj);
-  payRates.push({ empId:id, type:"Permanent", effectiveDate:start, endDate:"", position:empObj.position, hourlyRate:empObj.hourlyRate });
-  schedules.push({ empId:id, effectiveDate:start, hoursByDay:scheduleHours });
-  saveData(); log("Employee commenced: " + empObj.name); closeEmployeeModal(); init();
-}
-function updateEmployeeMaster() {
-  const e = emp(v("editEmpSelect"));
-  if (!e) return;
-  const type = v("editEmpType");
-  const newStart = v("editEmpStart") || e.startDate;
-  const newContractEnd = type === "Fixed Term" ? v("editEmpContractEnd") : "";
-  if (type === "Permanent" && v("editEmpContractEnd")) return alert("Permanent employees cannot have a contract end date.");
-  if (!ensureDateChangeAllowed(newStart, "Employee master start date")) return;
-  if (newContractEnd && !ensureDateChangeAllowed(newContractEnd, "Contract end date")) return;
-  e.startDate = newStart;
-  e.type = type;
-  e.contractEndDate = newContractEnd;
-  e.autoTerminate = type === "Fixed Term" && v("editEmpAutoTerm") === "true";
-  e.status = v("editEmpStatus");
-  saveData(); log("Employee master updated: " + e.name); init();
-}
-function addScheduleChange() {
-  const empId = v("scheduleEmpSelect"), eff = v("scheduleEffective"), hoursByDay = getScheduleForm();
-  if (!empId || !eff || scheduleHoursMapTotal(hoursByDay) <= 0) return alert("Complete employee, effective date and at least one day of hours.");
-  if (!ensureDateChangeAllowed(eff, "Schedule effective date")) return;
-  schedules.push({ empId, effectiveDate:eff, hoursByDay });
-  saveData(); log("Schedule change added"); init();
-}
-function addPayRateChange() {
-  const empId = v("payRateEmpSelect"), type = v("payRateChangeType"), eff = v("payRateEffective"), end = v("payRateEnd"), position = v("payRatePosition"), rate = num("payRateAmount");
-  if (!empId || !eff || !position || !rate) return alert("Complete all pay change fields.");
-  if (type === "Temporary" && !end) return alert("Temporary changes require an end date.");
-  if (!ensureDateChangeAllowed(eff, "Position/pay effective date")) return;
-  if (type === "Temporary" && !ensureDateChangeAllowed(end, "Temporary position/pay end date")) return;
-  payRates.push({ empId, type, effectiveDate:eff, endDate:type === "Temporary" ? end : "", position, hourlyRate:rate });
-  saveData(); log(type + " position/pay change added"); init();
-}
-function runContractCheck() {
-  const today = currentDateOnly();
-  let count = 0;
-  employees.forEach(e => {
-    if (e.type === "Fixed Term" && e.autoTerminate && e.contractEndDate && date(e.contractEndDate) <= today && e.status !== "Terminated") {
-      e.status = "Terminated"; count++;
-    }
-  });
-  saveData(); log("Contract check completed. Auto-terminated employees: " + count); init();
-}
-
-function validateLeave(empId, start, end) {
-  if (date(end) < date(start)) return { ok:false, msg:"End date cannot be before start date." };
-  let hours = 0;
-  for (let d = new Date(date(start)); d <= date(end); d.setDate(d.getDate() + 1)) {
-    const sched = activeSchedule(empId, iso(d));
-    const h = Number(sched?.hoursByDay?.[d.getDay()] || 0);
-    if (h <= 0) return { ok:false, msg:"Leave can only be booked on scheduled working days. Non-working date: " + fmt(iso(d)) };
-    hours += h;
-  }
-  return { ok:true, hours };
-}
-function bookLeave() {
-  const empId = v("leaveEmpSelect"), type = v("leaveType"), start = v("leaveStart"), end = v("leaveEnd");
-  if (!empId || !start || !end) return alert("Complete leave fields.");
-  if (!ensureRangeChangeAllowed(start, end, "Leave booking")) return;
-  const validation = validateLeave(empId, start, end);
-  if (!validation.ok) return alert(validation.msg);
-  const e = emp(empId);
-  if (type === "Annual Leave" && e.annualLeaveBalance < validation.hours) return alert("Insufficient annual leave balance.");
-  if (type === "Personal Leave" && e.personalLeaveBalance < validation.hours) return alert("Insufficient personal leave balance.");
-  leaveBookings.push({ id:Date.now(), empId, type, startDate:start, endDate:end, hours:validation.hours, status:"Approved" });
-  if (type === "Annual Leave") e.annualLeaveBalance -= validation.hours;
-  if (type === "Personal Leave") e.personalLeaveBalance -= validation.hours;
-  saveData(); log(type + " booked for " + e.name + " using " + validation.hours.toFixed(2) + " hours"); init();
-}
-
-function activeSchedule(empId, onDate) {
-  return schedules.filter(s => s.empId === empId && date(s.effectiveDate) <= date(onDate)).sort((a,b) => date(b.effectiveDate) - date(a.effectiveDate))[0];
-}
-function activePayRate(empId, onDate) {
-  const rows = payRates.filter(p =>
-    p.empId === empId &&
-    date(p.effectiveDate) <= date(onDate) &&
-    (p.type === "Permanent" || !p.endDate || date(p.endDate) >= date(onDate))
-  ).sort((a,b) => date(b.effectiveDate) - date(a.effectiveDate));
-  return rows[0] || { position:emp(empId)?.position || "", hourlyRate:emp(empId)?.hourlyRate || 0 };
-}
-function scheduledHoursInPeriod(empId, start, end) {
-  let total = 0;
-  for (let d = new Date(date(start)); d <= date(end); d.setDate(d.getDate() + 1)) {
-    const s = activeSchedule(empId, iso(d));
-    total += Number(s?.hoursByDay?.[d.getDay()] || 0);
-  }
-  return total;
-}
-function leaveInPeriod(empId, start, end) {
-  return leaveBookings.filter(l => l.empId === empId && date(l.startDate) <= date(end) && date(l.endDate) >= date(start));
-}
-function currentCycleByToday() {
-  const today = currentDateOnly();
-  return payCycles.find(c => date(c.start) <= today && today <= date(c.end)) || payCycles.find(c => today <= date(c.end)) || payCycles[payCycles.length - 1];
-}
-function currentCycle() {
-  const selector = document.getElementById("payPeriodSelect");
-  if (selector && selector.value !== "") return payCycles[Number(selector.value)] || currentCycleByToday();
-  return currentCycleByToday();
-}
-function isCurrentPayFinalised(c) { return isCycleFinalised(c); }
-
-function calculateForCycle(cycle) {
-  return employees.filter(e => e.status === "Active").map(e => {
-    const rate = activePayRate(e.id, cycle.start);
-    const hours = scheduledHoursInPeriod(e.id, cycle.start, cycle.end);
-    const leaveRows = leaveInPeriod(e.id, cycle.start, cycle.end);
-    const annualLeaveTaken = leaveRows.filter(l => l.type === "Annual Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
-    const personalLeaveTaken = leaveRows.filter(l => l.type === "Personal Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
-    const lslTaken = leaveRows.filter(l => l.type === "Long Service Leave").reduce((s,l) => s + Number(l.hours || 0), 0);
-    const lwopTaken = leaveRows.filter(l => l.type === "LWOP").reduce((s,l) => s + Number(l.hours || 0), 0);
-    const paidHours = Math.max(0, hours - lwopTaken);
-    const base = paidHours * rate.hourlyRate;
-    const annualAccrual = paidHours * (4/52);
-    const personalAccrual = paidHours * (3/52);
-    const retro = 0;
-    const gross = base + retro;
-    const tax = gross * .22;
-    const superAmt = gross * .115;
-    const net = gross - tax;
-    return { emp:e, cycle, position:rate.position, rate:rate.hourlyRate, hours:paidHours, scheduledHours:hours, leaveRows, annualLeaveTaken, personalLeaveTaken, lslTaken, lwopTaken, base, retro, gross, tax, superAmt, net, annualAccrual, personalAccrual, finalised:isCycleFinalised(cycle) };
-  });
-}
-function calculatePay() {
-  autoProcessClosedPays();
-  calculatePayroll();
-  log("Calculate Pay run — current open payslip updated for changes");
-}
-function calculatePayroll() {
-  const cycle = currentCycle();
-  payrollResults = calculateForCycle(cycle);
-  renderAll();
-}
-function autoProcessClosedPays() {
-  let processedCount = 0;
-  payCycles.filter(c => isCycleFinalised(c)).forEach(cycle => {
-    const results = calculateForCycle(cycle);
-    results.forEach(r => {
-      const existingIndex = payslipHistory.findIndex(p => p.empId === r.emp.id && p.cycle.id === cycle.id);
-      if (existingIndex === -1) {
-        const employeeRecord = emp(r.emp.id);
-        if (employeeRecord) {
-          employeeRecord.annualLeaveBalance += r.annualAccrual;
-          employeeRecord.personalLeaveBalance += r.personalAccrual;
-        }
-        const refreshed = { ...r, emp:{ ...(employeeRecord || r.emp) }, finalised:true };
-        payslipHistory.unshift({ id:Date.now() + Math.random(), empId:r.emp.id, employeeName:r.emp.name, cycle:{...cycle}, result:refreshed, autoProcessed:true });
-        processedCount++;
-      }
-    });
-  });
-  if (processedCount > 0) {
-    auditLog.unshift(new Date().toLocaleString("en-AU") + " — Auto-processed finalised payslips: " + processedCount);
-    saveData();
-  }
-}
-
-function renderAll() {
-  renderEmployees(); renderSelects(); renderSchedules(); renderLeave(); renderLsl(); renderPayroll(); renderPayslip(); renderPayslipHistory(); renderAudit(); renderMetrics();
-}
-function renderEmployees() {
-  html("employeesTable", table(
-    ["ID","First Name","Last Name","Type","Department","Position","Start","Contract End","Rate","Annual Leave Balance (Hours)","Personal Leave Balance (Hours)","Status"],
-    employees.map(e => [e.id, e.firstName || "", e.lastName || "", e.type, e.department, e.position, fmt(e.startDate), fmt(e.contractEndDate), money(e.hourlyRate), Number(e.annualLeaveBalance || 0).toFixed(2), Number(e.personalLeaveBalance || 0).toFixed(2), badge(e.status)])
-  ));
-}
-function renderSchedules() {
-  html("schedulesTable", table(
-    ["Employee","Effective","Mon","Tue","Wed","Thu","Fri","Sat","Sun","Weekly Hours","FTE"],
-    schedules.map(s => {
-      const e = emp(s.empId), m = s.hoursByDay || {};
-      const weekly = scheduleHoursMapTotal(m);
-      return [e?.name || s.empId, fmt(s.effectiveDate), m[1] || 0, m[2] || 0, m[3] || 0, m[4] || 0, m[5] || 0, m[6] || 0, m[0] || 0, weekly.toFixed(2), (weekly / standardWeeklyHours).toFixed(2)];
-    })
-  ));
-}
-function renderLeave() {
-  html("leaveBalancesTable", table(
-    ["Employee","Annual Leave Balance (Hours)","Personal Leave Balance (Hours)"],
-    employees.map(e => [e.name, Number(e.annualLeaveBalance || 0).toFixed(2), Number(e.personalLeaveBalance || 0).toFixed(2)])
-  ));
-  html("leaveTable", table(
-    ["Employee","Type","Start","End","Hours","Status"],
-    leaveBookings.map(l => [emp(l.empId)?.name || l.empId, l.type, fmt(l.startDate), fmt(l.endDate), Number(l.hours || 0).toFixed(2), badge(l.status)])
-  ));
-}
-function renderLsl() {
-  html("lslTable", table(
-    ["Employee","Start Date","Next LSL Due","Days Remaining"],
-    employees.map(e => {
-      const due = date(e.startDate); if (due) due.setFullYear(due.getFullYear() + 10);
-      const remaining = due ? Math.max(0, Math.ceil((due - currentDateOnly()) / 86400000)) : "";
-      return [e.name, fmt(e.startDate), due ? new Intl.DateTimeFormat("en-AU", {day:"2-digit", month:"short", year:"numeric"}).format(due) : "", remaining];
-    })
-  ));
-}
-function renderPayroll() {
-  const c = currentCycle();
-  const final = isCurrentPayFinalised(c);
-  html("payCloseNote", `Current pay: ${ppeLabel(c)} (${fmt(c.start)} - ${fmt(c.end)}). Payment date ${fmt(c.paymentDate)}. Pay close ${fmt(c.closeDate)}. Status: ${final ? "Finalised — this pay was automatically processed after close" : "Open — Calculate Pay updates this payslip"}.`);
-  html("payrollTable", table(
-    ["Employee","Position","Units / Fortnight Hours","Leave Hours This Pay","Rate","Base","Retro","Gross","Tax","Super","Net"],
-    payrollResults.map(r => [r.emp.name, r.position, r.hours.toFixed(2), (r.annualLeaveTaken + r.personalLeaveTaken + r.lslTaken + r.lwopTaken).toFixed(2), money(r.rate), money(r.base), money(r.retro), money(r.gross), money(r.tax), money(r.superAmt), money(r.net)])
-  ));
-}
-function renderPayslip() {
-  const id = v("payslipEmployee") || employees[0]?.id;
-  if (!id) { html("payslipCard", "<p>No employee selected.</p>"); return; }
-  const r = payrollResults.find(x => x.emp.id === id);
-  if (!r) { html("payslipCard", "<p>No payroll result for this employee.</p>"); return; }
-  const ytd = payslipHistory.filter(p => p.empId === id).reduce((s,p) => s + (p.result.gross || 0), 0) + r.gross;
-  const ytdTax = payslipHistory.filter(p => p.empId === id).reduce((s,p) => s + (p.result.tax || 0), 0) + r.tax;
-  html("payslipCard", payslipHTML(r, ytd, ytdTax));
-}
-function leaveRowsHTML(r) {
-  const rows = [];
-  if (r.annualLeaveTaken) rows.push(`<tr><td>Annual Leave Taken</td><td class="right">${r.annualLeaveTaken.toFixed(4)}</td><td>Deducted from Annual Leave Balance (Hours)</td></tr>`);
-  if (r.personalLeaveTaken) rows.push(`<tr><td>Personal Leave Taken</td><td class="right">${r.personalLeaveTaken.toFixed(4)}</td><td>Deducted from Personal Leave Balance (Hours)</td></tr>`);
-  if (r.lslTaken) rows.push(`<tr><td>Long Service Leave Taken</td><td class="right">${r.lslTaken.toFixed(4)}</td><td>Recorded this pay</td></tr>`);
-  if (r.lwopTaken) rows.push(`<tr><td>Leave Without Pay</td><td class="right">${r.lwopTaken.toFixed(4)}</td><td>Reduces paid hours</td></tr>`);
-  if (!rows.length) rows.push(`<tr><td>No leave booked in this pay</td><td class="right">0.0000</td><td></td></tr>`);
-  return rows.join("");
-}
-function payslipHTML(r, ytd, ytdTax) {
-  const status = r.finalised ? '<div class="payslip-status pay-final">This pay has been finalised</div>' : '<div class="payslip-status pay-open">This pay has not yet been finalised</div>';
-  const annualOpening = Number(r.emp.annualLeaveBalance || 0) + Number(r.annualLeaveTaken || 0);
-  const personalOpening = Number(r.emp.personalLeaveBalance || 0) + Number(r.personalLeaveTaken || 0);
-  const annualProjectedClosing = Number(r.emp.annualLeaveBalance || 0) + Number(r.annualAccrual || 0);
-  const personalProjectedClosing = Number(r.emp.personalLeaveBalance || 0) + Number(r.personalAccrual || 0);
-  return `<h2>Payslip Detail — ${ppeLabel(r.cycle)}</h2>${status}
-  <p><strong>Pay Period:</strong> ${fmt(r.cycle.start)} - ${fmt(r.cycle.end)} &nbsp; <strong>Payment Date:</strong> ${fmt(r.cycle.paymentDate)}</p>
-  <div class="section-title">⌄ Pay Summary</div>
-  <table><tr><th></th><th>Gross</th><th>Tax</th><th>Net</th></tr>
-  <tr><td>Current</td><td class="right">${r.gross.toFixed(2)}</td><td class="right">${r.tax.toFixed(2)}</td><td class="right">${r.net.toFixed(2)}</td></tr>
-  <tr><td>YTD</td><td class="right">${ytd.toFixed(2)}</td><td class="right">${ytdTax.toFixed(2)}</td><td class="right">${(ytd-ytdTax).toFixed(2)}</td></tr></table>
-  <div class="section-title">⌄ Earnings</div>
-  <table><tr><th>Description</th><th>Units</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr>
-  <tr><td>Regular Pay</td><td class="right">${r.hours.toFixed(2)}</td><td class="right">${r.base.toFixed(2)}</td><td>${fmt(r.cycle.start)}</td><td>${fmt(r.cycle.end)}</td></tr>
-  ${r.retro ? `<tr><td>Retro Adjustment</td><td></td><td class="right">${r.retro.toFixed(2)}</td><td>${fmt(r.cycle.start)}</td><td>${fmt(r.cycle.end)}</td></tr>` : ""}
-  <tr><td><b>Total</b></td><td class="right"><b>${r.hours.toFixed(2)}</b></td><td class="right"><b>${r.gross.toFixed(2)}</b></td><td></td><td></td></tr></table>
-  <div class="section-title">⌄ Leave Booked This Pay</div>
-  <table><tr><th>Description</th><th>Hours Used</th><th>Credit/Balance Impact</th></tr>${leaveRowsHTML(r)}</table>
-  <div class="section-title">⌄ Tax</div>
-  <table><tr><th>Description</th><th>Amount</th></tr><tr><td>Marginal Tax Estimate</td><td class="right">${r.tax.toFixed(2)}</td></tr></table>
-  <div class="section-title">⌄ Employer Superannuation</div>
-  <table><tr><th>Description</th><th>Amount</th></tr><tr><td>Employer Super Contribution</td><td class="right">${r.superAmt.toFixed(2)}</td></tr></table>
-  <div class="section-title">⌄ Leave Balances</div>
-  <table><tr><th>Description</th><th>Hours</th></tr>
-  <tr><td>Annual Leave Opening Balance (Hours)</td><td class="right">${annualOpening.toFixed(4)}</td></tr>
-  <tr><td>Annual Leave Used This Pay (Hours)</td><td class="right">-${Number(r.annualLeaveTaken || 0).toFixed(4)}</td></tr>
-  <tr><td>Annual Leave Projected Credit This Pay (Hours)</td><td class="right">${r.annualAccrual.toFixed(4)}</td></tr>
-  <tr><td><b>Annual Leave Projected Closing Balance (Hours)</b></td><td class="right"><b>${annualProjectedClosing.toFixed(4)}</b></td></tr>
-  <tr><td>Personal Leave Opening Balance (Hours)</td><td class="right">${personalOpening.toFixed(4)}</td></tr>
-  <tr><td>Personal Leave Used This Pay (Hours)</td><td class="right">-${Number(r.personalLeaveTaken || 0).toFixed(4)}</td></tr>
-  <tr><td>Personal Leave Projected Credit This Pay (Hours)</td><td class="right">${r.personalAccrual.toFixed(4)}</td></tr>
-  <tr><td><b>Personal Leave Projected Closing Balance (Hours)</b></td><td class="right"><b>${personalProjectedClosing.toFixed(4)}</b></td></tr></table>`;
-}
-function renderPayslipHistory() {
-  autoProcessClosedPays();
-  if (!payslipHistory.length) { html("payslipHistoryList", "<p>No previous payslips yet. Payslips will automatically appear here after pay close.</p>"); return; }
-  html("payslipHistoryList", payslipHistory.map(p => `<div class="history-item" onclick="viewHistory('${p.id}')"><b>${p.employeeName}</b><br>${ppeLabel(p.cycle)} | ${fmt(p.cycle.start)} - ${fmt(p.cycle.end)} | Gross ${money(p.result.gross)} | Net ${money(p.result.net)}</div>`).join(""));
-}
-function viewHistory(id) {
-  const p = payslipHistory.find(x => String(x.id) === String(id));
-  if (!p) return;
-  showTab("payslip", document.querySelectorAll(".tab-btn")[6]);
-  html("payslipCard", payslipHTML(p.result, p.result.gross, p.result.tax));
-}
-function renderAudit() { html("auditLog", auditLog.map(a => `<div class="history-item">${a}</div>`).join("")); }
-function renderMetrics() {
-  const displayCycle = currentCycleByToday();
-  const selectedCycle = currentCycle();
-  html("metricEmployees", employees.length);
-  html("metricGross", money(payrollResults.reduce((s,r) => s + r.gross, 0)));
-  html("metricRetro", money(payrollResults.reduce((s,r) => s + r.retro, 0)));
-  html("metricPayStatus", `${ppeLabel(displayCycle)}<span class="metric-sub">${isCurrentPayFinalised(displayCycle) ? "Finalised" : "Open"} | ${fmt(displayCycle.start)} - ${fmt(displayCycle.end)}</span>`);
-}
-function renderSelects() {
-  const opts = employees.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join("");
-  ["editEmpSelect","payRateEmpSelect","scheduleEmpSelect","leaveEmpSelect","payslipEmployee"].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
-}
-function init() {
-  html("currentVersion", APP_VERSION);
-  const todayCycle = currentCycleByToday();
-  html("payPeriodSelect", payCycles.map((p,i) => `<option value="${i}" ${p.id === todayCycle.id ? "selected" : ""}>${ppeLabel(p)} | ${fmt(p.start)} - ${fmt(p.end)} | Pay ${fmt(p.paymentDate)}</option>`).join(""));
-  renderSelects();
-  autoProcessClosedPays();
-  calculatePayroll();
-  toggleContractEnd("newEmpType","newEmpContractEnd","newEmpAutoTerm");
-  toggleContractEnd("editEmpType","editEmpContractEnd","editEmpAutoTerm");
-}
-function showTab(id, btn) {
-  document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  if (btn) btn.classList.add("active");
-}
+function renderAll(){renderEmp();renderSelects();renderSchedules();renderLeave();renderAbsence();renderPayroll();renderSlip();renderHist();renderAudit();renderMetrics();renderSettings()}
+function renderEmp(){html('empTable',table(['ID','First Name','Last Name','Type','Department','Position','Start','Contract End','Rate','Annual Leave (Hours)','Personal Leave (Hours)','LSL Balance (Hours)','Status'],employees.map(e=>[e.id,e.firstName||'',e.lastName||'',e.type,e.department,e.position,longd(e.startDate),longd(e.contractEndDate),money(e.hourlyRate),Number(e.annualLeaveBalance||0).toFixed(2),Number(e.personalLeaveBalance||0).toFixed(2),Number(e.lslBalance||0).toFixed(2),badge(e.status)])))}
+function renderSchedules(){html('schTable',table(['Employee','Effective','Status','Mon','Tue','Wed','Thu','Fri','Sat','Sun','Weekly Hours','FTE'],schedules.map(s=>{let m=s.hoursByDay||{},w=weekHours(m);return[emp(s.empId)?.name||s.empId,longd(s.effectiveDate),badge(s.status||'Active'),m[1]||0,m[2]||0,m[3]||0,m[4]||0,m[5]||0,m[6]||0,m[0]||0,w.toFixed(2),(w/STD).toFixed(2)]})))}
+function renderLeave(){html('leaveBal',table(['Employee','Annual Leave Balance (Hours)','Personal Leave Balance (Hours)','LSL Balance (Hours)'],employees.map(e=>[e.name,Number(e.annualLeaveBalance||0).toFixed(2),Number(e.personalLeaveBalance||0).toFixed(2),Number(e.lslBalance||0).toFixed(2)])));html('leaveTable',table(['Employee','Type','Start','End','Hours','Status'],leaves.map(l=>[emp(l.empId)?.name||l.empId,l.type,longd(l.startDate),longd(l.endDate),Number(l.hours||0).toFixed(2),badge(l.status||'Approved')])))}
+function renderAbsence(){html('absTable',table(['Employee','Annual Leave Balance (Hours)','Personal Leave Balance (Hours)','LSL Accrued Balance (Hours)','LSL Pro-rata to Next Entitlement (Hours)','LSL Entitlement Date'],employees.map(e=>[e.name,Number(e.annualLeaveBalance||0).toFixed(2),Number(e.personalLeaveBalance||0).toFixed(2),Number(e.lslBalance||0).toFixed(2),lslPro(e).toFixed(2),longd(lslDate(e))])))}
+function renderPayroll(){let c=selectedCycle();html('payNote',`Current pay: ${ppe(c)} (${fd(c.start)} - ${fd(c.end)}). Payment date ${fd(c.paymentDate)}. Pay close ${fd(c.closeDate)}. Status: ${finalised(c)?'Finalised — automatically processed after close':'Open — Calculate Pay updates this payslip'}.`);html('payTable',table(['Employee','Position','Regular Units','Leave Units','Public Holiday Units','Rate','Base','Retro','Gross','Tax','Super','Net'],results.map(r=>[r.emp.name,r.position,r.regular.toFixed(2),r.paidLeave.toFixed(2),r.publicHolidayHours.toFixed(2),money(r.rate),money(r.base),money(r.retro),money(r.gross),money(r.tax),money(r.superAmt),money(r.net)])))}
+function renderSlip(){let id=val('slipEmp')||employees[0]?.id;if(!id){html('payslipCard','<p>No employee selected.</p>');return}let r=results.find(x=>x.emp.id===id);if(!r){html('payslipCard','<p>No payroll result for this employee.</p>');return}let ytd=history.filter(h=>h.empId===id).reduce((s,h)=>s+(h.result.gross||0),0)+r.gross,ytdTax=history.filter(h=>h.empId===id).reduce((s,h)=>s+(h.result.tax||0),0)+r.tax;html('payslipCard',slipHTML(r,ytd,ytdTax))}
+function earnHTML(r){let rows=[];if(r.regular>0)rows.push(`<tr><td>Regular Pay</td><td class="right">${r.regular.toFixed(2)}</td><td class="right">${r.regularAmount.toFixed(2)}</td><td>${fd(r.cycle.start)}</td><td>${fd(r.cycle.end)}</td></tr>`);r.phRows.forEach(p=>rows.push(`<tr><td>Public Holiday</td><td class="right">${p.hours.toFixed(2)}</td><td class="right">${(p.hours*r.rate).toFixed(2)}</td><td>${fd(p.date)}</td><td>${fd(p.date)}</td></tr>`));r.leaveRows.forEach(l=>rows.push(`<tr><td>${l.type}</td><td class="right">${l.hrs.toFixed(2)}</td><td class="right">${(l.type==='LWOP'?0:l.hrs*r.rate).toFixed(2)}</td><td>${fd(l.startDate)}</td><td>${fd(l.endDate)}</td></tr>`));r.retroRows.forEach(x=>rows.push(`<tr><td>${x.desc}</td><td class="right">${x.units.toFixed(2)}</td><td class="right">${x.amount.toFixed(2)}</td><td>${fd(x.start)}</td><td>${fd(x.end)}</td></tr>`));return rows.join('')||'<tr><td>No earnings</td><td class="right">0.00</td><td class="right">0.00</td><td></td><td></td></tr>'}
+function slipHTML(r,ytd,ytdTax){let e=r.emp,ph=r.publicHolidayHours>0?`<tr><td>Public Holiday</td><td class="right">${r.publicHolidayHours.toFixed(2)} hours</td><td class="right">${r.phAmount.toFixed(2)}</td><td></td><td></td></tr>`:'';return `<h2>Payslip Detail — ${ppe(r.cycle)}</h2><div class="status ${r.finalised?'final':'open'}">${r.finalised?'This pay has been finalised':'This pay has not yet been finalised'}</div><div class="pgrid"><div><b>Employee Name</b><br>${e.name||''}</div><div><b>Employee ID number</b><br>${e.id||''}</div><div><b>Department</b><br>${e.department||''}</div><div><b>Position</b><br>${r.position||e.position||''}</div><div><b>Pay Period</b><br>${fd(r.cycle.start)} - ${fd(r.cycle.end)}</div><div><b>Payment Date</b><br>${fd(r.cycle.paymentDate)}</div><div><b>LSL Entitlement Date</b><br>${longd(lslDate(e))}</div></div><div class="section-title">⌄ Pay Summary</div><table><tr><th></th><th>Units</th><th>Gross</th><th>Tax</th><th>Net</th></tr><tr><td>Current</td><td class="right">${(r.regular+r.paidLeave+r.publicHolidayHours).toFixed(2)}</td><td class="right">${r.gross.toFixed(2)}</td><td class="right">${r.tax.toFixed(2)}</td><td class="right">${r.net.toFixed(2)}</td></tr>${ph}<tr><td>YTD</td><td></td><td class="right">${ytd.toFixed(2)}</td><td class="right">${ytdTax.toFixed(2)}</td><td class="right">${(ytd-ytdTax).toFixed(2)}</td></tr></table><div class="section-title">⌄ Earnings</div><table><tr><th>Description</th><th>Units</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr>${earnHTML(r)}<tr><td><b>Total</b></td><td class="right"><b>${(r.regular+r.paidLeave+r.publicHolidayHours).toFixed(2)}</b></td><td class="right"><b>${r.gross.toFixed(2)}</b></td><td></td><td></td></tr></table><div class="section-title">⌄ Tax</div><table><tr><th>Description</th><th>Amount</th></tr><tr><td>Marginal Tax Estimate</td><td class="right">${r.tax.toFixed(2)}</td></tr></table><div class="section-title">⌄ Employer Superannuation</div><table><tr><th>Description</th><th>Amount</th></tr><tr><td>Employer Super Contribution</td><td class="right">${r.superAmt.toFixed(2)}</td></tr></table><div class="section-title">⌄ Leave Balances</div><table><tr><th>Description</th><th>Balance</th></tr><tr><td>Annual Leave Balance (Hours)</td><td class="right">${Number(e.annualLeaveBalance||0).toFixed(4)}</td></tr><tr><td>Personal Leave Balance (Hours)</td><td class="right">${Number(e.personalLeaveBalance||0).toFixed(4)}</td></tr></table>`}
+function renderHist(){autoFinalise();if(!history.length){html('hist','<p>No previous payslips yet. Payslips will automatically appear here after pay close.</p>');return}html('hist',history.map(h=>`<div class="history-item" onclick="viewHist('${h.id}')"><b>${h.employeeName}</b><br>${ppe(h.cycle)} | ${fd(h.cycle.start)} - ${fd(h.cycle.end)} | Gross ${money(h.result.gross)} | Net ${money(h.result.net)}</div>`).join(''))}
+function viewHist(id){let h=history.find(x=>String(x.id)===String(id));if(!h)return;tab('payslip',document.querySelectorAll('.nav button')[6]);html('payslipCard',slipHTML(h.result,h.result.gross,h.result.tax))}
+function renderAudit(){html('auditLog',audit.map(a=>`<div class="history-item">${a}</div>`).join(''))}
+function renderMetrics(){let c=openCycle();html('mEmp',employees.length);html('mGross',money(results.reduce((s,r)=>s+r.gross,0)));html('mRetro',money(results.reduce((s,r)=>s+r.retro,0)));html('mPay',`${ppe(c)}<span class="metric-sub">${finalised(c)?'Finalised':'Open'} | ${fd(c.start)} - ${fd(c.end)}</span>`)}
+function renderSelects(){let opts=employees.map(e=>`<option value="${e.id}">${e.name} (${e.id})</option>`).join('');['editEmp','rateEmp','schEmp','leaveEmp','slipEmp'].forEach(id=>html(id,opts))}
+function renderSettings(){html('ver',APP_VERSION);html('phTable',table(['Date','Public Holiday'],PH.map(p=>[fd(p[0]),p[1]])))}
+function init(){html('newDays',dayInputs('newDay'));html('schDays',dayInputs('schDay'));let oc=openCycle();html('cycleSel',cycles.map((c,i)=>`<option value="${i}" ${c.id===oc.id?'selected':''}>${ppe(c)} | ${fd(c.start)} - ${fd(c.end)} | Pay ${fd(c.paymentDate)}</option>`).join(''));renderSelects();contractToggle('newType','newEnd','newAuto');contractToggle('editType','editEnd','editAuto');autoFinalise();calcPayroll()}
+function tab(id,btn){document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));if(btn)btn.classList.add('active')}
 </script>
 </body>
 </html>
