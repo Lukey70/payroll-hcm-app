@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const DataStore = require('./data-store.js');
 const E = require('./payroll-engine.js');
 
@@ -23,6 +25,18 @@ function addRate(state, empId, effectiveDate='2026-05-22', position='Officer', r
 }
 function totalUnitsByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).filter(r=>r.description===desc).reduce((s,r)=>s+r.units,0); }
 function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).filter(r=>r.description===desc).reduce((s,r)=>s+r.amount,0); }
+
+
+(function testAppVersionAndLoginStrings(){
+  const root = __dirname;
+  const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
+  const app = fs.readFileSync(path.join(root,'app.js'),'utf8');
+  const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
+  assert(html.includes('id="loginButton"'), 'index.html must include the login button');
+  assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
+  assert(html.includes('v1.1.1'), 'sidebar/version label must show v1.1.1');
+  assert(data.includes("APP_VERSION = '1.1.1'"), 'data-store version must be 1.1.0');
+})();
 
 (function testAnchorPayCycle(){
   const c = E.ANCHOR_CYCLE;
@@ -95,6 +109,34 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(totalAmountByDesc(payslips,'Overtime 1.5'), 120, 'Overtime 1.5 should use effective rate times 1.5');
 })();
 
+
+(function testRetroCutoffPriorProcessingLimit(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2020-01-01',originalStartDate:'2020-01-01',lslServiceDate:'2020-01-01'}); addSchedule(state,e.id,'2020-01-01'); addRate(state,e.id,'2020-01-01','Officer',40);
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  const retroRows=payslips.flatMap(p=>p.rows).filter(r=>r.description==='Regular Pay Retro');
+  assert(retroRows.length > 0, 'Backdated commencement should still create retro after go-live cut-off');
+  assert(retroRows.every(r=>E.compare(r.startDate,E.RETRO_PROCESSING_START)>=0), 'Retro rows must not start before 03/05/2026');
+})();
+
+(function testTaxDetailsAndStsl(){
+  const state=baseState(); const e=addEmployee(state,{hourlyRate:90}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',90);
+  state.taxDetails.push({id:'t1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:true});
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert(payslips[0].marginalTax > 0, 'Marginal Tax should be calculated');
+  assert(payslips[0].stsl > 0, 'STSL repayment should be calculated when STSL is yes and income exceeds threshold');
+  assert.strictEqual(E.activeTaxDetails(state,e.id,'2026-06-04').taxFileNumber, '123456789');
+})();
+
+(function testPayslipNoLslProrataAndCertificationNoSuper(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const payslipSection = app.slice(app.indexOf('function payslipHtml'), app.indexOf('function renderCertification'));
+  assert(!payslipSection.includes("['LSL Pro-rata (Hours)'"), 'Payslip should not show LSL pro-rata');
+  assert(payslipSection.includes("['LSL Accrued Balance (Hours)'"), 'Payslip should still show LSL accrued');
+  assert(!app.includes("'Gross','Tax','Super','Net','Certify'"), 'Certification report should not contain Super column');
+  assert(app.includes('data-tab="taxDetails"') || fs.readFileSync(path.join(__dirname,'index.html'),'utf8').includes('data-tab="taxDetails"'), 'Tax Details tab should exist');
+})();
+
+console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
 console.log('PASS: Payment date is 4/6/26');
@@ -107,3 +149,6 @@ console.log('PASS: No zero-gross payslips are generated');
 console.log('PASS: Position changes create separate payslips');
 console.log('PASS: Backdated commencement retro includes all scheduled days');
 console.log('PASS: Additional earnings only pay once saved and use effective rates');
+console.log('PASS: Retro prior-processing cut-off prevents payments before 03/05/2026');
+console.log('PASS: Tax Details, Marginal Tax and STSL calculations are present');
+console.log('PASS: Payslip removes LSL pro-rata and Certification Report removes Super');

@@ -1,3 +1,4 @@
+PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
 PASS: Payment date is 4/6/26
@@ -10,3 +11,6 @@ PASS: No zero-gross payslips are generated
 PASS: Position changes create separate payslips
 PASS: Backdated commencement retro includes all scheduled days
 PASS: Additional earnings only pay once saved and use effective rates
+PASS: Retro prior-processing cut-off prevents payments before 03/05/2026
+PASS: Tax Details, Marginal Tax and STSL calculations are present
+PASS: Payslip removes LSL pro-rata and Certification Report removes Super

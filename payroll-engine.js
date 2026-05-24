@@ -2,8 +2,9 @@
   'use strict';
   const STANDARD_WEEKLY_HOURS = 37.5;
   const ANCHOR_CYCLE = { id: 1, start: '2026-05-22', end: '2026-06-04', paymentDate: '2026-06-04', closeDate: '2026-05-29' };
-  const TAX_RATE = 0.22;
+  const RETRO_PROCESSING_START = '2026-05-03';
   const SUPER_RATE = 0.115;
+  const PAY_PERIODS_PER_YEAR = 26;
   const PUBLIC_HOLIDAYS_WA = [
     ['2026-01-01', "New Year's Day"], ['2026-01-26', 'Australia Day'], ['2026-03-02', 'Labour Day'],
     ['2026-04-03', 'Good Friday'], ['2026-04-06', 'Easter Monday'], ['2026-04-25', 'ANZAC Day'],
@@ -106,6 +107,58 @@
     if(ent && compare(ent,asOf)<=0) return { accrued: round4(Number(e.lslAccruedBalance||0) + pro), proRata: 0, entitlementDate: ent };
     return { accrued: round4(Number(e.lslAccruedBalance||0)), proRata: round4(pro), entitlementDate: ent };
   }
+
+  function activeTaxDetails(state, empId, onDate){
+    const rows = (state.taxDetails||[]).filter(t=>t.empId===empId && compare(t.effectiveDate,onDate)<=0)
+      .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate));
+    const e = (state.employees||[]).find(x=>x.id===empId) || {};
+    return rows[0] || { empId, effectiveDate:e.startDate||onDate, taxFileNumber:'', claimTaxFreeThreshold:true, stsl:false };
+  }
+  function residentAnnualTax(annualIncome, claimTaxFreeThreshold=true){
+    const x = Math.max(0, Number(annualIncome||0));
+    if(!claimTaxFreeThreshold){
+      if(x <= 45000) return round2(x * 0.16);
+      if(x <= 135000) return round2(7200 + (x-45000) * 0.30);
+      if(x <= 190000) return round2(34200 + (x-135000) * 0.37);
+      return round2(54550 + (x-190000) * 0.45);
+    }
+    if(x <= 18200) return 0;
+    if(x <= 45000) return round2((x-18200) * 0.16);
+    if(x <= 135000) return round2(4288 + (x-45000) * 0.30);
+    if(x <= 190000) return round2(31288 + (x-135000) * 0.37);
+    return round2(51638 + (x-190000) * 0.45);
+  }
+  function stslAnnualRepayment(annualIncome){
+    const x = Math.max(0, Number(annualIncome||0));
+    if(x <= 67000) return 0;
+    if(x <= 125000) return round2((x-67000) * 0.15);
+    if(x <= 179285) return round2(8700 + (x-125000) * 0.17);
+    return round2(17928.45 + (x-179285) * 0.19);
+  }
+  function taxForGross(state,e,gross,onDate,claimOverride){
+    const tax = activeTaxDetails(state,e.id,onDate || e.startDate || ANCHOR_CYCLE.start);
+    const claim = claimOverride === undefined ? tax.claimTaxFreeThreshold !== false : !!claimOverride;
+    const annual = Math.max(0, Number(gross||0)) * PAY_PERIODS_PER_YEAR;
+    return round2(residentAnnualTax(annual, claim) / PAY_PERIODS_PER_YEAR);
+  }
+  function stslForGross(state,e,gross,onDate){
+    const tax = activeTaxDetails(state,e.id,onDate || e.startDate || ANCHOR_CYCLE.start);
+    if(tax.stsl !== true) return 0;
+    const annual = Math.max(0, Number(gross||0)) * PAY_PERIODS_PER_YEAR;
+    return round2(stslAnnualRepayment(annual) / PAY_PERIODS_PER_YEAR);
+  }
+  function calculateTaxComponents(state,e,rows,c){
+    const currentRows = rows.filter(r=>r.kind !== 'retro');
+    const retroRowsOnly = rows.filter(r=>r.kind === 'retro');
+    const currentGross = round2(currentRows.reduce((s,r)=>s+Number(r.amount||0),0));
+    const retroGross = round2(retroRowsOnly.reduce((s,r)=>s+Number(r.amount||0),0));
+    const marginalTax = taxForGross(state,e,currentGross,c.end);
+    const marginalTaxRetro = retroGross > 0 ? taxForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
+    const stsl = stslForGross(state,e,currentGross,c.end);
+    const stslRetro = retroGross > 0 ? stslForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
+    return { marginalTax, marginalTaxRetro, stsl, stslRetro, totalTax:round2(marginalTax + marginalTaxRetro + stsl + stslRetro) };
+  }
+
   function validateLeaveBooking(state, empId, leaveType, startDate, endDate){
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e || !startDate || !endDate) return { ok:false, hours:0, message:'Complete leave fields.' };
@@ -215,21 +268,23 @@
   }
   function retroRows(state,e,c){
     const rows = [];
-    PAY_CYCLES.filter(x=>x.id < c.id && isFinalised(state,x)).forEach(prev=>{
-      const expected = expectedGross(state,e,prev);
+    PAY_CYCLES.filter(x=>x.id < c.id && isFinalised(state,x) && compare(x.end,RETRO_PROCESSING_START)>=0).forEach(prev=>{
+      const retroPrev = Object.assign({}, prev, { start: compare(prev.start, RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : prev.start });
+      const expected = expectedGross(state,e,retroPrev);
       const paid = (state.payslips||[]).filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised);
       const paidGross = paid.reduce((s,p)=>s+Number(p.gross||0),0);
       const paidUnits = paid.reduce((s,p)=>s+Number(p.units||0),0);
       const delta = round2(expected.gross - paidGross);
       if(Math.abs(delta) >= 0.01){
-        rows.push({ description:'Regular Pay Retro', units:round4(expected.units-paidUnits), amount:delta, startDate:prev.start, endDate:prev.end, rate:0, position:e.position, kind:'retro' });
+        rows.push({ description:'Regular Pay Retro', units:round4(expected.units-paidUnits), amount:delta, startDate:retroPrev.start, endDate:retroPrev.end, rate:0, position:e.position, kind:'retro' });
       }
     });
     const anyPriorFinalised = PAY_CYCLES.some(x=>x.id < c.id && isFinalised(state,x));
     if(e.startDate && compare(e.startDate,c.start)<0 && !anyPriorFinalised){
       const priorEnd = addDays(c.start,-1);
       const priorRows = [];
-      daysBetween(e.startDate,priorEnd).forEach(d=>{
+      const retroStart = compare(e.startDate,RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : e.startDate;
+      daysBetween(retroStart,priorEnd).forEach(d=>{
         if(!isEmployedOn(e,d)) return;
         const sched = activeSchedule(state,e.id,d);
         const hours = Number((sched && sched.hoursByDay && sched.hoursByDay[parseDate(d).getDay()]) || 0);
@@ -241,9 +296,10 @@
     }
     return rows;
   }
-  function makePayslip(e,c,rows,position,rate,segmentIndex,segmentCount,finalised){
+  function makePayslip(state,e,c,rows,position,rate,segmentIndex,segmentCount,finalised){
     const gross = round2(rows.reduce((s,r)=>s+Number(r.amount||0),0));
-    const tax = round2(gross * TAX_RATE);
+    const taxParts = calculateTaxComponents(state,e,rows,c);
+    const tax = taxParts.totalTax;
     const superAmt = round2(Math.max(0,gross) * SUPER_RATE);
     const net = round2(gross-tax);
     const ordinary = ordinaryHours(rows);
@@ -251,7 +307,7 @@
     const personalAccrual = e.type === 'Casual' ? 0 : round4(ordinary*3/52);
     const balances = projectedBalances({ employees:[e], schedules:[], payRates:[], leaveBookings:[], additionalEarnings:[] }, e, c, false);
     const retro = round2(rows.filter(r=>r.kind==='retro').reduce((s,r)=>s+Number(r.amount||0),0));
-    return { id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(e), employeeSnapshot:JSON.parse(JSON.stringify(e)), cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, superAmt, net, units:round4(rows.reduce((s,r)=>s+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) };
+    return { id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(e), employeeSnapshot:JSON.parse(JSON.stringify(e)), cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, marginalTax:taxParts.marginalTax, marginalTaxRetro:taxParts.marginalTaxRetro, stsl:taxParts.stsl, stslRetro:taxParts.stslRetro, superAmt, net, units:round4(rows.reduce((s,r)=>s+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) };
   }
   function splitIntoPayslips(state,e,c,rows,finalised){
     const mainRows = rows.filter(r=>r.kind !== 'retro');
@@ -265,7 +321,7 @@
     });
     if(!groups.length && retro.length) groups.push({ key:'retro', position:e.position, rate:e.hourlyRate, rows:[] });
     if(groups.length) groups[0].rows.push(...retro);
-    return groups.map((g,i)=>makePayslip(e,c,g.rows,g.position,g.rate,i+1,groups.length,finalised)).filter(p=>Math.abs(p.gross)>0.004);
+    return groups.map((g,i)=>makePayslip(state,e,c,g.rows,g.position,g.rate,i+1,groups.length,finalised)).filter(p=>Math.abs(p.gross)>0.004);
   }
   function calculateEmployee(state, empId, cycleId, finalised=false){
     const e = (state.employees||[]).find(x=>x.id===empId);
@@ -322,7 +378,7 @@
   }
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, projectedBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activeTaxDetails, residentAnnualTax, stslAnnualRepayment, taxForGross, stslForGross, calculateTaxComponents, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, projectedBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

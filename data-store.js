@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.1.1';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -11,6 +11,7 @@
       payRates: [],
       leaveBookings: [],
       additionalEarnings: [],
+      taxDetails: [],
       jobEvents: [],
       payResults: {},
       payslips: [],
@@ -46,7 +47,7 @@
   function migrate(state){
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','additionalEarnings','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','additionalEarnings','taxDetails','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['payResults','certifications','finalisedCycles'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
 
@@ -61,11 +62,20 @@
       if(e.annualLeaveBalance === undefined) e.annualLeaveBalance = 0;
       if(e.personalLeaveBalance === undefined) e.personalLeaveBalance = 0;
       if(e.lslAccruedBalance === undefined) e.lslAccruedBalance = e.lslBalance || 0;
+      if(!e.personalDetailsHistory) e.personalDetailsHistory = [];
+      if(e.dateOfBirth === undefined) e.dateOfBirth = '';
+      if(e.email === undefined) e.email = '';
+      if(e.phone === undefined) e.phone = '';
+      if(e.address === undefined) e.address = '';
+      if(!e.personalDetailsHistory.length && (e.dateOfBirth || e.email || e.phone || e.address)){
+        e.personalDetailsHistory.push({ id:uid('personal'), effectiveDate:e.startDate || '', dateOfBirth:e.dateOfBirth || '', email:e.email || '', phone:e.phone || '', address:e.address || '' });
+      }
     });
     state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
     state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; });
     state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(a.saved === undefined) a.saved = true; });
+    state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });
     state.version = APP_VERSION;
     return state;
   }
