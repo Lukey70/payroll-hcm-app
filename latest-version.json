@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "releaseDate": "2026-05-23",
-  "notes": "Initial GitHub Pages version with employee commencement, schedules, leave, payroll, payslips, and import/export.",
-  "downloadUrl": "./index.html"
+  "version": "1.0.11",
+  "releaseDate": "2026-05-24",
+  "notes": "Emergency bug fix: repaired a JavaScript syntax error that prevented the login button from working. Existing payroll data remains compatible.",
+  "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/index.html"
 }
