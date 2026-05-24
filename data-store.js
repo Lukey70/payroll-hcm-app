@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.1';
+  const APP_VERSION = '1.1.2';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -74,7 +74,7 @@
     state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
     state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; });
-    state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(a.saved === undefined) a.saved = true; });
+    state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(!a.earningType) a.earningType = 'Additional Day'; if(a.saved === undefined) a.saved = true; });
     state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });
     state.version = APP_VERSION;
     return state;

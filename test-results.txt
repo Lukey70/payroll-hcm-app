@@ -1,3 +1,10 @@
+Payroll/HCM App v1.1.2 test results
+Generated: 2026-05-24T06:00:26Z
+
+PASS: data-store.js syntax check
+PASS: payroll-engine.js syntax check
+PASS: app.js syntax check
+
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -14,3 +21,10 @@ PASS: Additional earnings only pay once saved and use effective rates
 PASS: Retro prior-processing cut-off prevents payments before 03/05/2026
 PASS: Tax Details, Marginal Tax and STSL calculations are present
 PASS: Payslip removes LSL pro-rata and Certification Report removes Super
+PASS: Partial-day leave deducts only entered hours and pays the remaining day as Regular Pay
+PASS: Overlapping leave bookings are prevented
+PASS: Current-pay additional earnings stay on the same payslip
+PASS: SG rate is 12% of ordinary time earnings and excludes overtime
+PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows
+PASS: Prior-pay additional earnings use the original earnings type plus Retro
+PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present

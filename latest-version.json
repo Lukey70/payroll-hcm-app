@@ -1,6 +1,6 @@
 {
-  "version": "1.1.1",
+  "version": "1.1.2",
   "releaseDate": "2026-05-24",
-  "notes": "Adds prior-processing retro cut-off from 03/05/2026, Tax Details with masked TFN/effective-dated tax settings, personal details capture and updates, public holidays on absence calendar, certification report without Super, LSL pro-rata removed from payslips, and Settings public holiday button moved to a new line.",
+  "notes": "Fixes payslip Pay Summary layout, current-pay additional earnings grouping, Additional Day descriptions, financial-year YTD, 12% SG on OTE, Employer Super Contribution Retro, STSL Yes handling, detailed retro lines for leave/additional earnings, leave-calendar priorities, overlapping leave validation, and partial-day leave booking.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }

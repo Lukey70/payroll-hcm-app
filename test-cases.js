@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.1'), 'sidebar/version label must show v1.1.1');
-  assert(data.includes("APP_VERSION = '1.1.1'"), 'data-store version must be 1.1.0');
+  assert(html.includes('v1.1.2'), 'sidebar/version label must show v1.1.2');
+  assert(data.includes("APP_VERSION = '1.1.2'"), 'data-store version must be 1.1.2');
 })();
 
 (function testAnchorPayCycle(){
@@ -136,6 +136,75 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('data-tab="taxDetails"') || fs.readFileSync(path.join(__dirname,'index.html'),'utf8').includes('data-tab="taxDetails"'), 'Tax Details tab should exist');
 })();
 
+
+
+(function testPartialDayLeaveKeepsRegularRemainder(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  const result=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-05-25','2026-05-25',4);
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.hours, 4, 'Single-day partial leave should save the entered absence duration');
+  state.leaveBookings.push({id:'l_partial',empId:e.id,type:'Personal Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:4,status:'Approved'});
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(totalUnitsByDesc(payslips,'Personal Leave'), 4, 'Partial leave should only deduct/pay leave for entered hours');
+  assert.strictEqual(totalUnitsByDesc(payslips,'Regular Pay'), 63.5, 'Remaining non-public-holiday scheduled hours should stay as regular pay');
+  assert.strictEqual(totalUnitsByDesc(payslips,'Public Holiday'), 7.5, 'Public holiday should still be paid separately');
+})();
+
+(function testOverlappingLeavePrevented(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'l1',empId:e.id,type:'Personal Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const result=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-05-25','2026-05-25');
+  assert.strictEqual(result.ok, false, 'Overlapping leave should be prevented');
+  assert(result.message.includes('overlaps'), 'Overlap warning should explain that the date is already booked');
+})();
+
+(function testAdditionalEarningsStayOnSamePayslip(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'a1',empId:e.id,cycleId:1,earningType:'Overtime 1.5',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(payslips.length, 1, 'Current-pay overtime should stay on the same payslip when there is no position split');
+  assert.strictEqual(totalUnitsByDesc(payslips,'Overtime 1.5'), 2);
+})();
+
+(function testSuperRateIs12PercentOfOTEAndOvertimeExcluded(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'a1',empId:e.id,cycleId:1,earningType:'Overtime 1.5',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(E.SUPER_RATE, 0.12, 'SG rate should be 12%');
+  assert.strictEqual(p.superCurrent, 360, 'Super should be 12% of ordinary time earnings and exclude overtime');
+})();
+
+(function testPriorFinalisedLeaveRetroReplacementRows(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.finalisedCycles['1']=true;
+  const paid=E.calculateEmployee(state,e.id,1,true);
+  state.payslips.push(...paid.map(p=>Object.assign({},p,{finalised:true})));
+  state.currentCycleId=2;
+  state.leaveBookings.push({id:'l_retro',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const next=E.calculateEmployee(state,e.id,2,false);
+  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Regular Pay Retro' && r.amount < 0), 'Leave booked into finalised pay should reverse regular pay as Regular Pay Retro');
+  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Annual Leave Retro' && r.amount > 0), 'Leave booked into finalised pay should add Annual Leave Retro');
+})();
+
+(function testPriorFinalisedAdditionalEarningsRetroDescription(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.finalisedCycles['1']=true;
+  const paid=E.calculateEmployee(state,e.id,1,true);
+  state.payslips.push(...paid.map(p=>Object.assign({},p,{finalised:true})));
+  state.currentCycleId=2;
+  state.additionalEarnings.push({id:'a_retro',empId:e.id,cycleId:1,earningType:'Additional Day',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  const next=E.calculateEmployee(state,e.id,2,false);
+  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Additional Day Retro' && r.amount > 0), 'Prior-pay additional earnings should appear as Additional Day Retro in the current open pay');
+})();
+
+(function testPayslipSummaryAndSuperRetroTextInApp(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("['','Gross','Tax','Net']"), 'Payslip Pay Summary should have Gross, Tax and Net columns');
+  assert(app.includes("['Current'"), 'Payslip Pay Summary should use Current as a row');
+  assert(app.includes('Employer Super Contribution Retro'), 'Payslip should include Employer Super Contribution Retro row when applicable');
+  assert(app.includes('financialYearBounds'), 'Payslip YTD should use financial-year logic');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -152,3 +221,10 @@ console.log('PASS: Additional earnings only pay once saved and use effective rat
 console.log('PASS: Retro prior-processing cut-off prevents payments before 03/05/2026');
 console.log('PASS: Tax Details, Marginal Tax and STSL calculations are present');
 console.log('PASS: Payslip removes LSL pro-rata and Certification Report removes Super');
+console.log('PASS: Partial-day leave deducts only entered hours and pays the remaining day as Regular Pay');
+console.log('PASS: Overlapping leave bookings are prevented');
+console.log('PASS: Current-pay additional earnings stay on the same payslip');
+console.log('PASS: SG rate is 12% of ordinary time earnings and excludes overtime');
+console.log('PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows');
+console.log('PASS: Prior-pay additional earnings use the original earnings type plus Retro');
+console.log('PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present');
