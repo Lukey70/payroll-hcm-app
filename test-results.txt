@@ -1,10 +1,3 @@
-Payroll/HCM App v1.1.2 test results
-Generated: 2026-05-24T06:00:26Z
-
-PASS: data-store.js syntax check
-PASS: payroll-engine.js syntax check
-PASS: app.js syntax check
-
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -28,3 +21,9 @@ PASS: SG rate is 12% of ordinary time earnings and excludes overtime
 PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows
 PASS: Prior-pay additional earnings use the original earnings type plus Retro
 PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present
+PASS: No TFN fallback tax and payslip No TFN label are present
+PASS: Tax-free-threshold Yes/No and STSL Yes affect pay calculations
+PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip
+PASS: Zero-net prior-period leave retro replacement remains visible
+PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly
+PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present

@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.2'), 'sidebar/version label must show v1.1.2');
-  assert(data.includes("APP_VERSION = '1.1.2'"), 'data-store version must be 1.1.2');
+  assert(html.includes('v1.1.3'), 'sidebar/version label must show v1.1.3');
+  assert(data.includes("APP_VERSION = '1.1.3'"), 'data-store version must be 1.1.3');
 })();
 
 (function testAnchorPayCycle(){
@@ -205,6 +205,73 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('financialYearBounds'), 'Payslip YTD should use financial-year logic');
 })();
 
+
+(function testNoTfnTaxAndStslLocationStrings(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'',claimTaxFreeThreshold:true,stsl:true});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(p.marginalTax, 1350, 'No TFN should withhold 45% of $3000 gross');
+  assert.strictEqual(p.noTfn, true, 'Payslip result should flag No TFN Provided');
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Marginal Tax - No TFN Provided'), 'Payslip Tax section should label No TFN Provided');
+  assert(app.includes('STSL Repayment'), 'STSL repayment should be rendered in the Tax section');
+})();
+
+(function testTaxThresholdAndStslEffectiveDetails(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const withThreshold=E.calculateEmployee(state,e.id,1,false)[0];
+  state.taxDetails[0].claimTaxFreeThreshold=false;
+  state.taxDetails[0].stsl=true;
+  const noThresholdStsl=E.calculateEmployee(state,e.id,1,false)[0];
+  assert(noThresholdStsl.marginalTax > withThreshold.marginalTax, 'Tax-free threshold No should calculate more tax than Yes');
+  assert(noThresholdStsl.stsl > 0, 'STSL should calculate when STSL is Yes and a TFN exists');
+})();
+
+(function testLeaveWithoutPayDisplayedButFullPeriodSuppressed(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'lwop',empId:e.id,type:'LWOP',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert(p.rows.some(r=>r.description==='Leave Without Pay' && r.units===7.5 && r.amount===0), 'LWOP should appear under Earnings with hours and zero amount');
+  const state2=baseState(); const e2=addEmployee(state2); addSchedule(state2,e2.id,'2026-05-22',{1:0,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}); addRate(state2,e2.id);
+  state2.leaveBookings.push({id:'lwopfull',empId:e2.id,type:'LWOP',startDate:'2026-05-22',endDate:'2026-06-04',hours:75,status:'Approved'});
+  assert.strictEqual(E.calculateEmployee(state2,e2.id,1,false).length, 0, 'Full-period LWOP with no payable earnings should not generate a payslip');
+})();
+
+(function testZeroNetPriorLeaveRetroStillVisible(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  state.finalisedCycles['1']=true;
+  const paid=E.calculateEmployee(state,e.id,1,true);
+  state.payslips.push(...paid.map(p=>Object.assign({},p,{finalised:true})));
+  state.currentCycleId=2;
+  state.leaveBookings.push({id:'l_retro',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  // Make the employee inactive for the current cycle so the only output is zero-net leave replacement retro.
+  e.terminationDate='2026-06-04'; e.status='Terminated';
+  const next=E.calculateEmployee(state,e.id,2,false);
+  assert(next.length >= 1, 'Zero-net leave retro replacement should still produce a visible current payslip entry');
+  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Annual Leave Retro'), 'Annual Leave Retro row should be visible');
+})();
+
+(function testAdditionalEarningsAmountAndOverpayment(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'add1',empId:e.id,cycleId:1,earningType:'Additional Day',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  state.additionalEarnings.push({id:'op1',empId:e.id,cycleId:1,earningType:'Overpayment Adjustment',startDate:'2026-05-22',endDate:'2026-06-04',hours:0,amount:-50,saved:true});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert(p.rows.some(r=>r.description==='Additional Day' && r.amount===80), 'Additional Earnings amount should calculate from rate x hours');
+  assert(p.rows.some(r=>r.description==='Overpayment Adjustment' && r.units===0 && r.amount===-50 && r.ote===false), 'Overpayment Adjustment should use zero hours and entered amount');
+})();
+
+(function testCommencementTaxAndReadonlyBalanceUiStrings(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const html = fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  assert(html.indexOf('Tax Details') < html.indexOf('Additional Earnings'), 'Tax Details tab should be above Additional Earnings');
+  assert(app.includes('newTaxFileNumber'), 'Commencement popup should include Tax File Number');
+  assert(app.includes('state.taxDetails.push'), 'Commencement should save initial tax details');
+  assert(app.includes('readonly class="readonly" value="0.00"'), 'Commencement/rehire leave balances should be read-only');
+  assert(!app.includes('Date of Birth changes should only be processed'), 'Date of Birth warning should be removed');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -228,3 +295,10 @@ console.log('PASS: SG rate is 12% of ordinary time earnings and excludes overtim
 console.log('PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows');
 console.log('PASS: Prior-pay additional earnings use the original earnings type plus Retro');
 console.log('PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present');
+
+console.log('PASS: No TFN fallback tax and payslip No TFN label are present');
+console.log('PASS: Tax-free-threshold Yes/No and STSL Yes affect pay calculations');
+console.log('PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip');
+console.log('PASS: Zero-net prior-period leave retro replacement remains visible');
+console.log('PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly');
+console.log('PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present');
