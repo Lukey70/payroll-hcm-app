@@ -1,6 +1,6 @@
 {
   "version": "1.0.11",
   "releaseDate": "2026-05-24",
-  "notes": "Emergency bug fix: repaired a JavaScript syntax error that prevented the login button from working. Existing payroll data remains compatible.",
+  "notes": "Working v1.0.11 rebuild: correct version display, login verified, syntax checked, and first pay cycle remains locked to PPE4/6/26 with payment date 4/6/26.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/index.html"
 }
