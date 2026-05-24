@@ -1,0 +1,12 @@
+PASS: Current pay is PPE4/6/26
+PASS: Period is 22/5/26 - 4/6/26
+PASS: Payment date is 4/6/26
+PASS: Pay close is 29/5/26
+PASS: Monday-Friday 7.5 hours pays 37.5 hours
+PASS: Commencement date is included in pay
+PASS: Leave over non-working days only deducts scheduled work days
+PASS: Leave over public holiday does not deduct credits and pays Public Holiday
+PASS: No zero-gross payslips are generated
+PASS: Position changes create separate payslips
+PASS: Backdated commencement retro includes all scheduled days
+PASS: Additional earnings only pay once saved and use effective rates

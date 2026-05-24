@@ -1,6 +1,6 @@
 {
-  "version": "1.0.11",
+  "version": "1.1.0",
   "releaseDate": "2026-05-24",
-  "notes": "Working v1.0.11 rebuild: correct version display, login verified, syntax checked, and first pay cycle remains locked to PPE4/6/26 with payment date 4/6/26.",
-  "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/index.html"
+  "notes": "Structured GitHub Pages rebuild with separate files, locked PPE4/6/26 pay cycle, employee-selected Calculate Pay, updated retro/date tests, leave/public holiday handling, Additional Earnings, Certification Report, Change Notes and manual Finalise Pay.",
+  "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }

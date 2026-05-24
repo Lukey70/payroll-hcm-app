@@ -1,0 +1,83 @@
+(function(global){
+  'use strict';
+  const APP_VERSION = '1.1.0';
+  const STORAGE_KEY = 'payrollAppData';
+
+  function emptyState(){
+    return {
+      version: APP_VERSION,
+      employees: [],
+      schedules: [],
+      payRates: [],
+      leaveBookings: [],
+      additionalEarnings: [],
+      jobEvents: [],
+      payResults: {},
+      payslips: [],
+      certifications: {},
+      finalisedCycles: {},
+      currentCycleId: 1,
+      lastOvernightDate: '',
+      auditLog: ['System created with no demo employees.']
+    };
+  }
+
+  function clone(value){ return JSON.parse(JSON.stringify(value)); }
+
+  function load(){
+    const base = emptyState();
+    if(typeof localStorage === 'undefined') return base;
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return base;
+      const parsed = JSON.parse(raw);
+      return migrate(Object.assign(base, parsed));
+    }catch(err){
+      console.error('Failed to load saved payroll data', err);
+      return base;
+    }
+  }
+
+  function save(state){
+    state.version = APP_VERSION;
+    if(typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function migrate(state){
+    const blank = emptyState();
+    Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
+    ['employees','schedules','payRates','leaveBookings','additionalEarnings','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['payResults','certifications','finalisedCycles'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
+    state.currentCycleId = Number(state.currentCycleId || 1);
+
+    state.employees.forEach(e=>{
+      if(!e.id) e.id = String(Date.now());
+      if(!e.firstName && e.name) e.firstName = String(e.name).split(' ')[0] || '';
+      if(!e.lastName && e.name) e.lastName = String(e.name).split(' ').slice(1).join(' ') || '';
+      e.name = `${e.firstName || ''} ${e.lastName || ''}`.trim();
+      if(!e.status) e.status = 'Active';
+      if(!e.originalStartDate) e.originalStartDate = e.startDate || '';
+      if(!e.lslServiceDate) e.lslServiceDate = e.startDate || '';
+      if(e.annualLeaveBalance === undefined) e.annualLeaveBalance = 0;
+      if(e.personalLeaveBalance === undefined) e.personalLeaveBalance = 0;
+      if(e.lslAccruedBalance === undefined) e.lslAccruedBalance = e.lslBalance || 0;
+    });
+    state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
+    state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
+    state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; });
+    state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(a.saved === undefined) a.saved = true; });
+    state.version = APP_VERSION;
+    return state;
+  }
+
+  function uid(prefix){
+    return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+
+  function exportJson(state){ return JSON.stringify(state, null, 2); }
+  function importJson(text){ return migrate(Object.assign(emptyState(), JSON.parse(text))); }
+
+  const api = { APP_VERSION, STORAGE_KEY, emptyState, load, save, migrate, uid, exportJson, importJson, clone };
+  global.DataStore = api;
+  if(typeof module !== 'undefined') module.exports = api;
+})(typeof window !== 'undefined' ? window : globalThis);
