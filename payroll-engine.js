@@ -91,7 +91,9 @@
     return (state.leaveBookings||[]).find(l=>l.empId===empId && compare(l.startDate,dateIso)<=0 && compare(dateIso,l.endDate)<=0);
   }
   function lslEntitlementDate(e){
-    if(!e || !e.lslServiceDate) return '';
+    if(!e) return '';
+    if(e.lslEntitlementDateOverride) return e.lslEntitlementDateOverride;
+    if(!e.lslServiceDate) return '';
     const d = parseDate(e.lslServiceDate); d.setFullYear(d.getFullYear()+10); return iso(d);
   }
   function lslProRataHours(state,e,asOf){
@@ -103,7 +105,7 @@
   }
   function lslBalances(state,e,asOf){
     const ent = lslEntitlementDate(e);
-    const pro = lslProRataHours(state,e,asOf);
+    const pro = e.lslProRataOverride !== undefined && e.lslProRataOverride !== '' ? Number(e.lslProRataOverride||0) : lslProRataHours(state,e,asOf);
     if(ent && compare(ent,asOf)<=0) return { accrued: round4(Number(e.lslAccruedBalance||0) + pro), proRata: 0, entitlementDate: ent };
     return { accrued: round4(Number(e.lslAccruedBalance||0)), proRata: round4(pro), entitlementDate: ent };
   }
@@ -146,6 +148,11 @@
     const annual = Math.max(0, Number(gross||0)) * PAY_PERIODS_PER_YEAR;
     return round2(residentAnnualTax(annual, claim) / PAY_PERIODS_PER_YEAR);
   }
+  function signedTaxForGross(state,e,gross,onDate,claimOverride){
+    const amount = Number(gross||0);
+    if(amount < 0) return -taxForGross(state,e,Math.abs(amount),onDate,claimOverride);
+    return taxForGross(state,e,amount,onDate,claimOverride);
+  }
   function stslForGross(state,e,gross,onDate){
     const tax = activeTaxDetails(state,e.id,onDate || e.startDate || ANCHOR_CYCLE.start);
     if(!hasTfn(tax)) return 0;
@@ -154,18 +161,23 @@
     const annual = Math.max(0, Number(gross||0)) * PAY_PERIODS_PER_YEAR;
     return round2(stslAnnualRepayment(annual) / PAY_PERIODS_PER_YEAR);
   }
+  function signedStslForGross(state,e,gross,onDate){
+    const amount = Number(gross||0);
+    if(amount < 0) return -stslForGross(state,e,Math.abs(amount),onDate);
+    return stslForGross(state,e,amount,onDate);
+  }
   function calculateTaxComponents(state,e,rows,c){
     const currentRows = rows.filter(r=>r.kind !== 'retro');
     const retroRowsOnly = rows.filter(r=>r.kind === 'retro');
     const currentGross = round2(currentRows.reduce((s,r)=>s+Number(r.amount||0),0));
     const retroGross = round2(retroRowsOnly.reduce((s,r)=>s+Number(r.amount||0),0));
-    const marginalTax = taxForGross(state,e,currentGross,c.end);
-    const marginalTaxRetro = retroGross > 0 ? taxForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
-    const stsl = stslForGross(state,e,currentGross,c.end);
-    const stslRetro = retroGross > 0 ? stslForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
+    const marginalTax = signedTaxForGross(state,e,currentGross,c.end);
+    const marginalTaxRetro = Math.abs(retroGross) > 0.004 ? signedTaxForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
+    const stsl = signedStslForGross(state,e,currentGross,c.end);
+    const stslRetro = Math.abs(retroGross) > 0.004 ? signedStslForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
     const currentTaxRecord = activeTaxDetails(state,e.id,c.end);
     const retroTaxRecord = activeTaxDetails(state,e.id,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end);
-    return { marginalTax, marginalTaxRetro, stsl, stslRetro, noTfn:!hasTfn(currentTaxRecord), noTfnRetro:retroGross>0 && !hasTfn(retroTaxRecord), totalTax:round2(marginalTax + marginalTaxRetro + stsl + stslRetro) };
+    return { marginalTax, marginalTaxRetro, stsl, stslRetro, noTfn:!hasTfn(currentTaxRecord), noTfnRetro:Math.abs(retroGross)>0.004 && !hasTfn(retroTaxRecord), totalTax:round2(marginalTax + marginalTaxRetro + stsl + stslRetro) };
   }
 
   function validateLeaveBooking(state, empId, leaveType, startDate, endDate, requestedHours, excludeLeaveId){
@@ -269,6 +281,12 @@
         rows.push({ description:earningType, units:Number(a.hours||0), amount:round2(amount), startDate:a.startDate, endDate:a.endDate || a.startDate, rate:round2(Number(baseRate.hourlyRate||0)*multiplier), baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:isOte });
       });
     }
+    (state.cashOutRequests||[]).filter(cash=>cash.empId===e.id && Number(cash.cycleId)===Number(c.id) && cash.saved !== false && cash.deleted !== true).forEach(cash=>{
+      const rate = activePayRate(state,e.id,cash.effectiveDate || c.start);
+      const desc = cash.leaveType === 'Long Service Leave' ? 'Long Service Leave Cash Out' : 'Annual Leave Cash Out';
+      rows.push({ description:desc, units:Number(cash.hours||0), amount:round2(Number(cash.hours||0)*Number(rate.hourlyRate||0)), startDate:cash.effectiveDate || c.start, endDate:cash.effectiveDate || c.start, rate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', leaveType:cash.leaveType, ote:false });
+    });
+
     if(includePayouts){
       const end = employmentEnd(e);
       if(end && between(end,c.start,c.end)){
@@ -305,8 +323,8 @@
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+r.units,0);
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+r.units,0);
       lslAccrued -= rows.filter(r=>r.description==='Long Service Leave').reduce((s,r)=>s+r.units,0);
-      annual -= rows.filter(r=>r.description==='Annual Leave Payout').reduce((s,r)=>s+r.units,0);
-      lslAccrued -= rows.filter(r=>r.description==='Accrued LSL Payout').reduce((s,r)=>s+r.units,0);
+      annual -= rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+r.units,0);
+      lslAccrued -= rows.filter(r=>r.description==='Accrued LSL Payout' || r.description==='Long Service Leave Cash Out').reduce((s,r)=>s+r.units,0);
     }
     return { annual:round4(Math.max(0,annual)), personal:round4(Math.max(0,personal)), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(lslInfo.proRata), lslEntitlementDate:lslInfo.entitlementDate };
   }
@@ -416,12 +434,13 @@
   }
   function autoProcessContractExpiries(state, upToDate){
     (state.employees||[]).forEach(e=>{
-      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && e.status !== 'Terminated'){
-        e.status = 'Terminated';
+      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && e.terminationReason !== 'Expiry of Fixed Term Contract'){
         e.terminationDate = e.contractEndDate;
         e.terminationReason = 'Expiry of Fixed Term Contract';
+        if(compare(iso(new Date()), e.contractEndDate)>0) e.status = 'Terminated';
         if(Array.isArray(state.jobEvents)) state.jobEvents.push({ id:uid('job'), empId:e.id, type:'Termination', effectiveDate:e.contractEndDate, description:'Expiry of Fixed Term Contract', refKind:'employee', refId:e.id });
       }
+      if(e.terminationDate && compare(iso(new Date()), e.terminationDate)>0) e.status='Terminated';
     });
   }
   function commitBalancesOnFinalise(state, c, payslips){
@@ -437,9 +456,9 @@
         e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + ordinary*4/52);
         e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + ordinary*3/52);
       }
-      e.annualLeaveBalance = round4(Math.max(0, Number(e.annualLeaveBalance||0) - rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+r.units,0) - rows.filter(r=>r.description==='Annual Leave Payout').reduce((s,r)=>s+r.units,0)));
+      e.annualLeaveBalance = round4(Math.max(0, Number(e.annualLeaveBalance||0) - rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+r.units,0) - rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+r.units,0)));
       e.personalLeaveBalance = round4(Math.max(0, Number(e.personalLeaveBalance||0) - rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+r.units,0)));
-      const lslTaken = rows.filter(r=>r.description==='Long Service Leave' || r.description==='Accrued LSL Payout').reduce((s,r)=>s+r.units,0);
+      const lslTaken = rows.filter(r=>r.description==='Long Service Leave' || r.description==='Accrued LSL Payout' || r.description==='Long Service Leave Cash Out').reduce((s,r)=>s+r.units,0);
       e.lslAccruedBalance = round4(Math.max(0, Number(e.lslAccruedBalance||0) - lslTaken));
     });
   }
@@ -455,7 +474,7 @@
   }
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, taxForGross, stslForGross, calculateTaxComponents, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, projectedBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, projectedBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

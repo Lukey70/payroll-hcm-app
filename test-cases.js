@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.3'), 'sidebar/version label must show v1.1.3');
-  assert(data.includes("APP_VERSION = '1.1.3'"), 'data-store version must be 1.1.3');
+  assert(html.includes('v1.1.4'), 'sidebar/version label must show v1.1.4');
+  assert(data.includes("APP_VERSION = '1.1.4'"), 'data-store version must be 1.1.4');
 })();
 
 (function testAnchorPayCycle(){

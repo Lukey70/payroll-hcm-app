@@ -1,6 +1,6 @@
 {
-  "version": "1.1.3",
+  "version": "1.1.4",
   "releaseDate": "2026-05-24",
-  "notes": "Adds commencement tax details, read-only calculated commencement/rehire leave balances, No TFN Provided 45% tax handling, Leave Without Pay and Leave Without Pay Retro payslip display, improved zero-net retro leave visibility, Tax Details above Additional Earnings, Additional Earnings Amount and Overpayment Adjustment, combined Regular Pay rows, and post-termination Non Rostered Day calendar handling.",
+  "notes": "Adds active-employee default selectors with show-terminated options, Cash Out Leave, Absence Balance manual adjustments with Job Summary comments, finalised leave deletion credit return/retro support, fixed-term/rehire auto-terminate defaults, future termination status handling, Additional Earnings date validation, copied TFN for new tax records, and tax/STSL retro adjustment improvements.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }

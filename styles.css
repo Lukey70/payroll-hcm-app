@@ -26,3 +26,4 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 .tax-record-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tax-record-list button{background:#fff;color:#111827;border:1px solid var(--border)}.tax-record-list button.active{background:var(--primary);color:#fff}.personal-card{line-height:1.7}
 
 .readonly,input[readonly].readonly{background:#f1f5f9;color:#475569;cursor:not-allowed}
+.inline-check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:0}.inline-check input{width:auto}.leave-action-row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.right-controls{margin-left:auto}.readonly{background:#f1f5f9;color:#475569}
