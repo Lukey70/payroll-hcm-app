@@ -1,6 +1,6 @@
 {
   "version": "1.1.5",
   "releaseDate": "2026-05-26",
-  "notes": "Adds uploaded ATO Fortnightly PAYG and STSL tax table lookups, tax-free-threshold/STSL column selection, nearest-lower earnings lookup, 45% fallback only when no Tax Details record exists, and Absence Calendar navigation up to one year ahead.",
+  "notes": "Adds uploaded ATO Fortnightly PAYG and STSL tax table lookups, tax-free-threshold/STSL column selection, nearest-lower earnings lookup, 45% fallback only when no Tax Details record exists, and Absence Calendar navigation up to one year ahead. Repackaged with cache-busting file references so GitHub Pages does not continue serving cached v1.1.4 JavaScript/CSS.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }
