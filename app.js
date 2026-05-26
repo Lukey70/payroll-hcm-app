@@ -9,6 +9,7 @@
   let leaveFilterEmp = '';
   let selectedPayslipKey = '';
   let selectedCalendarEmp = '';
+  let selectedCalendarYear = null;
   let additionalPeriodOffset = 0;
   let additionalDraftRows = [];
   let additionalDirty = false;
@@ -437,11 +438,16 @@
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
-  function openCalendarSelect(){ modal('Select Employee', `${showTerminatedControl('calendarShowTerminated','leave')}<label>Employee</label><select id="calendarEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="openCalendar">Open Calendar</button>`, true); bindShowTerminated('calendarShowTerminated','leave',openCalendarSelect); $('openCalendar').addEventListener('click',()=>{ selectedCalendarEmp=v('calendarEmp'); if(!selectedCalendarEmp) return alert('Select an employee.'); closeModal(); openAbsenceCalendar(); }); }
+  function openCalendarSelect(){ modal('Select Employee', `${showTerminatedControl('calendarShowTerminated','leave')}<label>Employee</label><select id="calendarEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="openCalendar">Open Calendar</button>`, true); bindShowTerminated('calendarShowTerminated','leave',openCalendarSelect); $('openCalendar').addEventListener('click',()=>{ selectedCalendarEmp=v('calendarEmp'); selectedCalendarYear=E.parseDate(currentCycle().start).getFullYear(); if(!selectedCalendarEmp) return alert('Select an employee.'); closeModal(); openAbsenceCalendar(); }); }
   function openAbsenceCalendar(){
     const e=emp(selectedCalendarEmp); if(!e) return;
-    const year=E.parseDate(currentCycle().start).getFullYear();
-    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div><div class="calendar">`;
+    const defaultYear=E.parseDate(currentCycle().start).getFullYear();
+    const maxYear=defaultYear + 1;
+    selectedCalendarYear = selectedCalendarYear || defaultYear;
+    if(selectedCalendarYear < defaultYear) selectedCalendarYear = defaultYear;
+    if(selectedCalendarYear > maxYear) selectedCalendarYear = maxYear;
+    const year=selectedCalendarYear;
+    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div><div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div><div class="calendar">`;
     for(let m=0;m<12;m++){
       const first=new Date(year,m,1); const last=new Date(year,m+1,0);
       body+=`<div class="month"><h4>${first.toLocaleDateString('en-AU',{month:'long'})}</h4><div class="month-grid">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('')}`;
@@ -461,6 +467,9 @@
       body+='</div></div>';
     }
     body+='</div>'; modal('Absence Calendar', body, '', false);
+    const prev=$('prevCalendarYear'); const next=$('nextCalendarYear');
+    if(prev) prev.addEventListener('click',()=>{ selectedCalendarYear=Math.max(defaultYear, selectedCalendarYear-1); openAbsenceCalendar(); });
+    if(next) next.addEventListener('click',()=>{ selectedCalendarYear=Math.min(maxYear, selectedCalendarYear+1); openAbsenceCalendar(); });
   }
 
 
@@ -597,6 +606,13 @@
   function renderSettings(){ h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="checkUpdates">Check for Updates</button><button id="changeNotes" class="secondary">Change Notes</button><button id="overnight" class="secondary">Check Overnight Processing</button><button id="finalisePay" class="warning">Finalise Pay</button></div><div class="controls"><button id="publicHolidays" class="secondary">View WA Public Holidays</button></div><div id="settingsOutput" class="small-note"></div>`); $('checkUpdates').addEventListener('click',checkForUpdates); $('changeNotes').addEventListener('click',openChangeNotes); $('overnight').addEventListener('click',()=>checkOvernightProcessing(true)); $('finalisePay').addEventListener('click',openFinalisePay); $('publicHolidays').addEventListener('click',openPublicHolidays); }
   async function checkForUpdates(){ h('settingsOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.5',notes:[
+      'Replaced estimated tax logic with lookups from the uploaded ATO Fortnightly Tax Table and STSL Tax Table PDFs.',
+      'PAYG now uses the tax-free-threshold or no-tax-free-threshold column based on the employee\'s effective Tax Details record, using the nearest lower earnings row when needed.',
+      'STSL now uses the uploaded STSL table only when the employee\'s effective Tax Details record has STSL set to Yes, including retro calculations where applicable.',
+      'No Tax Details at all still applies the Marginal Tax - No TFN Provided fallback at 45% for that employee only.',
+      'Updated the Absence Calendar so it defaults to the current year and can navigate up to one year into the future.'
+    ]},
     {version:'v1.1.4',notes:[
       'Added active-employee-only dropdowns by default in Change Centre, Job Summary, Tax Details, Additional Earnings, Leave, Absence Balance and Payslips, with show-terminated options where needed.',
       'Added Cash Out Leave in the Leave tab, including previous requests, deletion confirmation, current-pay payout lines and finalised-pay recovery support.',

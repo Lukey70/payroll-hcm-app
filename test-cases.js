@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.4'), 'sidebar/version label must show v1.1.4');
-  assert(data.includes("APP_VERSION = '1.1.4'"), 'data-store version must be 1.1.4');
+  assert(html.includes('v1.1.5'), 'sidebar/version label must show v1.1.5');
+  assert(data.includes("APP_VERSION = '1.1.5'"), 'data-store version must be 1.1.4');
 })();
 
 (function testAnchorPayCycle(){
@@ -206,12 +206,15 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 })();
 
 
-(function testNoTfnTaxAndStslLocationStrings(){
+(function testNoTaxDetailsFallbackAndStslLocationStrings(){
   const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
-  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'',claimTaxFreeThreshold:true,stsl:true});
   const p=E.calculateEmployee(state,e.id,1,false)[0];
-  assert.strictEqual(p.marginalTax, 1350, 'No TFN should withhold 45% of $3000 gross');
-  assert.strictEqual(p.noTfn, true, 'Payslip result should flag No TFN Provided');
+  assert.strictEqual(p.marginalTax, 1350, 'No Tax Details at all should withhold 45% of $3000 gross');
+  assert.strictEqual(p.noTfn, true, 'Payslip result should flag No TFN Provided only when no Tax Details record exists');
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'',claimTaxFreeThreshold:true,stsl:true});
+  const pWithRecord=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(pWithRecord.marginalTax, E.lookupFortnightlyPAYG(3000,true), 'A saved Tax Details record should use the uploaded table, even if TFN is blank');
+  assert.strictEqual(pWithRecord.noTfn, false, 'No TFN label should not appear just because a saved Tax Details record has a blank TFN');
   const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes('Marginal Tax - No TFN Provided'), 'Payslip Tax section should label No TFN Provided');
   assert(app.includes('STSL Repayment'), 'STSL repayment should be rendered in the Tax section');
@@ -226,6 +229,24 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const noThresholdStsl=E.calculateEmployee(state,e.id,1,false)[0];
   assert(noThresholdStsl.marginalTax > withThreshold.marginalTax, 'Tax-free threshold No should calculate more tax than Yes');
   assert(noThresholdStsl.stsl > 0, 'STSL should calculate when STSL is Yes and a TFN exists');
+})();
+
+(function testUploadedTaxTablesNearestLowerAndHighIncomeFormula(){
+  assert.strictEqual(E.lookupFortnightlyPAYG(3000,true), 608, 'PAYG table should return uploaded tax-free-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlyPAYG(3000,false), 830, 'PAYG table should return uploaded no-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlyPAYG(3001,true), 608, 'PAYG should use nearest lower table row when exact earnings are not listed');
+  assert.strictEqual(E.lookupFortnightlyPAYG(6801,true), Math.round(1936 + 0.39), 'PAYG high-income tax-free-threshold formula should start after $6800');
+  assert.strictEqual(E.lookupFortnightlySTSL(3000,true), 106, 'STSL table should return uploaded tax-free-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlySTSL(3000,false), 166, 'STSL table should return uploaded no-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlySTSL(3001,true), 106, 'STSL should use nearest lower table row when exact earnings are not listed');
+  assert.strictEqual(E.lookupFortnightlySTSL(6201,true), Math.round(620 + 0.10), 'STSL high-income formula should start after $6200');
+})();
+
+(function testAbsenceCalendarFutureYearUi(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('selectedCalendarYear'), 'Absence Calendar should track the selected calendar year');
+  assert(app.includes('Next Year'), 'Absence Calendar should include a Next Year button');
+  assert(app.includes('maxYear=defaultYear + 1'), 'Absence Calendar should allow up to one year into the future');
 })();
 
 (function testLeaveWithoutPayDisplayedButFullPeriodSuppressed(){
@@ -296,9 +317,11 @@ console.log('PASS: Prior-pay leave creates Regular Pay Retro and leave Retro rep
 console.log('PASS: Prior-pay additional earnings use the original earnings type plus Retro');
 console.log('PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present');
 
-console.log('PASS: No TFN fallback tax and payslip No TFN label are present');
-console.log('PASS: Tax-free-threshold Yes/No and STSL Yes affect pay calculations');
+console.log('PASS: No Tax Details fallback tax and payslip No TFN label are present');
+console.log('PASS: Uploaded tax tables, tax-free-threshold Yes/No and STSL Yes affect pay calculations');
 console.log('PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip');
 console.log('PASS: Zero-net prior-period leave retro replacement remains visible');
 console.log('PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly');
 console.log('PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present');
+
+console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
