@@ -38,3 +38,4 @@ If Node.js is installed, open a terminal in this folder and run:
 ```bash
 node test-cases.js
 ```
+<!-- force pages redeploy v1.1.5 -->
