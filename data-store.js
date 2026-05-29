@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.5';
+  const APP_VERSION = '1.1.6';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -11,6 +11,7 @@
       payRates: [],
       leaveBookings: [],
       additionalEarnings: [],
+      deductions: [],
       cashOutRequests: [],
       taxDetails: [],
       jobEvents: [],
@@ -48,7 +49,7 @@
   function migrate(state){
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','additionalEarnings','cashOutRequests','taxDetails','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','additionalEarnings','deductions','cashOutRequests','taxDetails','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['payResults','certifications','finalisedCycles'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
 
@@ -79,6 +80,7 @@
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
     state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; });
     state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(!a.earningType) a.earningType = 'Additional Day'; if(a.saved === undefined) a.saved = true; if(a.amount === undefined) a.amount = 0; if(a.earningType === 'Overpayment Adjustment'){ a.hours = 0; } });
+    state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; });
     state.cashOutRequests.forEach(c=>{ if(!c.id) c.id = uid('cash'); if(c.saved === undefined) c.saved = true; if(c.deleted === undefined) c.deleted = false; c.hours = Number(c.hours||0); });
     state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });
     state.version = APP_VERSION;

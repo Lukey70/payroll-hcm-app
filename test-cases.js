@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.5'), 'sidebar/version label must show v1.1.5');
-  assert(data.includes("APP_VERSION = '1.1.5'"), 'data-store version must be 1.1.5');
+  assert(html.includes('v1.1.6'), 'sidebar/version label must show v1.1.6');
+  assert(data.includes("APP_VERSION = '1.1.6'"), 'data-store version must be 1.1.6');
 })();
 
 (function testAnchorPayCycle(){
@@ -242,6 +242,32 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(E.lookupFortnightlySTSL(6201,true), Math.round(620 + 0.10), 'STSL high-income formula should start after $6200');
 })();
 
+
+(function testDeductionsPreAndPostTax(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const noDed=E.calculateEmployee(state,e.id,1,false)[0];
+  state.deductions.push({id:'ded1',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Pre-tax Super Deduction',amount:100,percentage:'',saved:true,deleted:false});
+  state.deductions.push({id:'ded2',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Post-Tax Super Deduction',amount:'',percentage:5,saved:true,deleted:false});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(p.preTaxDeductionTotal, 100, 'Fixed pre-tax deduction should appear as the entered dollar amount');
+  assert(p.postTaxDeductionTotal > 0, 'Post-tax percentage deduction should calculate to a dollar amount');
+  assert(p.tax < noDed.tax, 'Pre-tax deduction should reduce taxable income and tax');
+  assert(p.gross === noDed.gross, 'Gross pay should remain unchanged when deductions apply');
+  assert(p.net < noDed.net, 'Net pay should reduce by deductions');
+})();
+
+(function testDeductionsUiAndWarningsExist(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const html = fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  assert(html.includes('data-tab="deductions"'), 'Deductions tab should exist in the sidebar');
+  assert(app.includes('Add New Deduction'), 'Deductions tab should include Add New Deduction');
+  assert(app.includes('Pre-Tax Deductions') && app.includes('Post-Tax Deductions'), 'Payslip should include conditional deduction sections');
+  assert(app.includes('Check for Errors') && app.includes('negative net pay'), 'Settings should include Check for Errors and negative net pay warning');
+  assert(app.includes('Import Preview'), 'Import should show a preview before replacing data');
+  assert(app.includes('Recalculate Balances'), 'Absence Balance should include Recalculate Balances');
+})();
+
 (function testAbsenceCalendarFutureYearUi(){
   const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes('selectedCalendarYear'), 'Absence Calendar should track the selected calendar year');
@@ -325,3 +351,4 @@ console.log('PASS: Additional Earnings Amount and Overpayment Adjustment are cal
 console.log('PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present');
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
+console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');

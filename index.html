@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Payroll/HCM App</title>
-  <link rel="stylesheet" href="styles.css?v=1.1.5">
+  <link rel="stylesheet" href="styles.css?v=1.1.6">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -30,7 +30,7 @@
     <aside class="sidebar no-print">
       <div>
         <h1>Payroll/HCM</h1>
-        <p id="versionLabel">v1.1.5</p>
+        <p id="versionLabel">v1.1.6</p>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-tab="employees">Employees</button>
@@ -38,6 +38,7 @@
         <button class="nav-btn" data-tab="jobSummary">Job Summary</button>
         <button class="nav-btn" data-tab="taxDetails">Tax Details</button>
         <button class="nav-btn" data-tab="additionalEarnings">Additional Earnings</button>
+        <button class="nav-btn" data-tab="deductions">Deductions</button>
         <button class="nav-btn" data-tab="leave">Leave</button>
         <button class="nav-btn" data-tab="absenceBalance">Absence Balance</button>
         <button class="nav-btn" data-tab="payslip">Payslip</button>
@@ -68,6 +69,7 @@
       <section id="jobSummary" class="tab-section card"></section>
       <section id="additionalEarnings" class="tab-section card"></section>
       <section id="taxDetails" class="tab-section card"></section>
+      <section id="deductions" class="tab-section card"></section>
       <section id="leave" class="tab-section card"></section>
       <section id="absenceBalance" class="tab-section card"></section>
       <section id="payslip" class="tab-section card"></section>
@@ -81,8 +83,8 @@
   <div id="toast" class="toast no-print"></div>
   <div id="printArea"></div>
 
-  <script src="data-store.js?v=1.1.5"></script>
-  <script src="payroll-engine.js?v=1.1.5"></script>
-  <script src="app.js?v=1.1.5"></script>
+  <script src="data-store.js?v=1.1.6"></script>
+  <script src="payroll-engine.js?v=1.1.6"></script>
+  <script src="app.js?v=1.1.6"></script>
 </body>
 </html>

@@ -1,0 +1,2 @@
+This package includes .github/workflows/pages.yml for explicit GitHub Actions deployment.
+In GitHub Settings > Pages, set Source to GitHub Actions, then upload/commit these files.

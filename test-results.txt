@@ -28,3 +28,4 @@ PASS: Zero-net prior-period leave retro replacement remains visible
 PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
+PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
