@@ -1,6 +1,6 @@
 {
-  "version": "1.1.6",
-  "releaseDate": "2026-05-29",
-  "notes": "Adds Deductions tab for pre-tax and post-tax super deductions, payslip deduction sections, pre-tax tax-reduction logic, post-tax percentage based on net pay, Settings > Check for Errors, negative net pay warnings, Import Preview, Recalculate Balances, and Additional Day ordinary-hours accrual support.",
+  "version": "1.1.7",
+  "releaseDate": "2026-06-19",
+  "notes": "Adds staged Deductions saving, keeps selected deduction employee after changes, clears open payslips when leaving the Payslip tab, adds Certification Report pay-breakdown magnifier, improves retro overtime tax/STSL, prevents overtime leave accrual, adds burgundy Leave Without Pay calendar display, adds Additional Day before-start-date warning, and consolidates matching retro recovery lines.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }

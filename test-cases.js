@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.6'), 'sidebar/version label must show v1.1.6');
-  assert(data.includes("APP_VERSION = '1.1.6'"), 'data-store version must be 1.1.6');
+  assert(html.includes('v1.1.7'), 'sidebar/version label must show v1.1.7');
+  assert(data.includes("APP_VERSION = '1.1.7'"), 'data-store version must be 1.1.6');
 })();
 
 (function testAnchorPayCycle(){
@@ -319,6 +319,53 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(!app.includes('Date of Birth changes should only be processed'), 'Date of Birth warning should be removed');
 })();
 
+
+(function testV117RetroOvertimeTaxStslAndNoLeaveAccrual(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:true});
+  const paid=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
+  state.payslips.push(...paid);
+  state.currentCycleId=2;
+  e.terminationDate='2026-06-04'; e.status='Terminated';
+  state.additionalEarnings.push({id:'otretro',empId:e.id,cycleId:1,earningType:'Overtime 2.0',startDate:'2026-05-26',endDate:'2026-05-26',hours:5.5,amount:440,saved:true});
+  const next=E.calculateEmployee(state,e.id,2,false);
+  const p=next[0];
+  assert(p, 'Retro overtime should generate a visible payslip');
+  assert(p.rows.some(r=>r.description==='Overtime 2.0 Retro' && Math.abs(r.amount-440)<0.01), 'Retro overtime should appear as Overtime 2.0 Retro');
+  assert(p.marginalTaxRetro > 0, 'Retro overtime should attract Marginal Tax Retro');
+  assert(p.stslRetro > 0, 'Retro overtime should attract STSL Repayment Retro when STSL is active');
+  assert.strictEqual(p.annualAccrual, 0, 'Retro overtime should not accrue annual leave');
+  assert.strictEqual(p.personalAccrual, 0, 'Retro overtime should not accrue personal leave');
+})();
+
+(function testV117RetroRegularPayRecoveryConsolidatesOnPayslip(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const paid=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
+  state.payslips.push(...paid);
+  state.currentCycleId=2;
+  e.terminationDate='2026-06-04'; e.status='Terminated';
+  state.leaveBookings.push({id:'plretro',empId:e.id,type:'Personal Leave',startDate:'2026-05-25',endDate:'2026-05-26',hours:15,status:'Approved'});
+  const next=E.calculateEmployee(state,e.id,2,false);
+  const regRetro=next.flatMap(p=>p.rows||[]).filter(r=>r.description==='Regular Pay Retro');
+  assert.strictEqual(regRetro.length, 1, 'Matching retro Regular Pay recoveries should be consolidated into one payslip line');
+  assert.strictEqual(Number(regRetro[0].units.toFixed(2)), -15, 'Consolidated Regular Pay recovery should show the total units');
+})();
+
+(function testV117UiStringsForDeductionsCertificationPayslipAndLwop(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const styles = fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
+  assert(app.includes('saveDeductionsBtn'), 'Deductions tab should include a bottom-right Save button');
+  assert(app.includes('Unsaved changes. Deduction changes will not update Job Summary'), 'Deductions should stage changes until Save is pressed');
+  assert(app.includes('data-cert-detail') && app.includes('🔍'), 'Certification Report should include a magnifying glass details button');
+  assert(app.includes("This additional day is before the employee's start date and cannot be paid."), 'Additional Day before start date warning should appear at Save');
+  assert(app.includes("selectedPayslipKey=''; h('payslipContent','');"), 'Payslip should clear when leaving the Payslip tab');
+  assert(app.includes('<span class="lwop">Leave Without Pay</span><span class="publicholiday">Public Holiday</span>'), 'LWOP should appear in the legend after LSL and before Public Holiday');
+  assert(styles.includes('--lwop:#7f1d1d') && styles.includes('.cal-day.lwop'), 'LWOP should use a burgundy calendar colour');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -352,3 +399,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
+console.log('PASS: v1.1.7 deduction save staging, certification details, LWOP colour/key, payslip clear, Additional Day warning, retro overtime tax/STSL and retro recovery grouping are present.');

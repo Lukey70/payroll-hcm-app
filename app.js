@@ -13,6 +13,10 @@
   let additionalPeriodOffset = 0;
   let additionalDraftRows = [];
   let additionalDirty = false;
+  let selectedDeductionEmp = '';
+  let deductionDraftRows = [];
+  let deductionDirty = false;
+  let deductionDraftLoadedFor = '';
   let taxDirty = false;
   let selectedTaxRecordId = '';
   let absenceEditing = false;
@@ -148,9 +152,20 @@
       confirmModal('Are you sure you want to exit without saving?', 'Yes', ()=>{ taxDirty=false; pendingTab && showTab(pendingTab.tab,pendingTab.btn); pendingTab=null; }, 'No');
       return;
     }
+    if(document.getElementById('deductions').classList.contains('active') && tab !== 'deductions' && deductionDirty){
+      pendingTab = { tab, btn };
+      modal('Unsaved Deductions', '<p>You have unsaved deduction changes. Save or discard them before leaving the Deductions tab.</p>', '<button id="saveDeductionsExit">Save</button><button id="discardDeductionsExit" class="danger">Discard</button><button data-close-modal class="secondary">Cancel</button>', true);
+      $('saveDeductionsExit').addEventListener('click',()=>saveDeductions(()=>{ const next=pendingTab; pendingTab=null; closeModal(); if(next) showTab(next.tab,next.btn); }));
+      $('discardDeductionsExit').addEventListener('click',()=>{ deductionDirty=false; deductionDraftRows=[]; deductionDraftLoadedFor=''; selectedDeductionEmp=''; const next=pendingTab; pendingTab=null; closeModal(); if(next) showTab(next.tab,next.btn); });
+      return;
+    }
     showTab(tab, btn);
   }
   function showTab(tab, btn){
+    const leavingDeductions = document.getElementById('deductions').classList.contains('active') && tab !== 'deductions';
+    const leavingPayslip = document.getElementById('payslip').classList.contains('active') && tab !== 'payslip';
+    if(leavingDeductions){ selectedDeductionEmp=''; deductionDraftRows=[]; deductionDirty=false; deductionDraftLoadedFor=''; }
+    if(leavingPayslip){ selectedPayslipKey=''; h('payslipContent',''); }
     document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
     $(tab).classList.add('active');
     document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
@@ -339,6 +354,7 @@
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
       if((a.earningType||'') !== 'Overpayment Adjustment' && (!a.startDate || !a.endDate || E.compare(a.startDate,c.start)<0 || E.compare(a.endDate,c.end)>0 || E.compare(a.startDate,a.endDate)>0)) return alert('Additional earning dates must fall within the selected pay period.');
+      if((a.earningType||'') === 'Additional Day' && emp(empId)?.startDate && E.compare(a.startDate, emp(empId).startDate) < 0) return alert("This additional day is before the employee's start date and cannot be paid.");
     }
     loadingModal('Saving Additional Earnings','Save Successful',()=>{
       state.additionalEarnings=state.additionalEarnings.filter(a=>!(a.empId===empId&&Number(a.cycleId)===Number(c.id)));
@@ -361,22 +377,37 @@
     }).join('');
   }
   function renderDeductions(){
-    h('deductions', `<h2>Deductions</h2><p class="small-note">Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div>`);
+    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="saveDeductionsBtn">Save</button></div>`);
     bindShowTerminated('dedShowTerminated','deductions',renderDeductions);
-    $('dedEmp').addEventListener('change',renderDeductionsTable);
+    if(selectedDeductionEmp && employeeList(showTerminatedByTab.deductions).some(e=>e.id===selectedDeductionEmp)) setv('dedEmp',selectedDeductionEmp);
+    $('dedEmp').addEventListener('change',()=>{ selectedDeductionEmp=v('dedEmp'); loadDeductionDraft(); });
     $('addDeductionBtn').addEventListener('click',openDeductionModal);
+    $('saveDeductionsBtn').addEventListener('click',()=>saveDeductions());
+    if(v('dedEmp')){ selectedDeductionEmp=v('dedEmp'); if(deductionDraftLoadedFor!==selectedDeductionEmp) loadDeductionDraft(); else renderDeductionsTable(); }
+    else { deductionDraftRows=[]; deductionDraftLoadedFor=''; deductionDirty=false; renderDeductionsTable(); }
+  }
+  function loadDeductionDraft(){
+    const empId=v('dedEmp');
+    selectedDeductionEmp=empId;
+    deductionDraftLoadedFor=empId;
+    deductionDraftRows=empId?(state.deductions||[]).filter(d=>d.empId===empId).map(d=>DataStore.clone(d)):[];
+    deductionDirty=false;
     renderDeductionsTable();
   }
+  function markDeductionDirty(){
+    deductionDirty=true;
+    h('deductionsNote','Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.');
+  }
   function openDeductionModal(){
-    const empId=v('dedEmp'); if(!empId) return alert('Select an employee first.');
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
     const c=currentCycle();
-    modal('Add New Deduction', `<div class="grid form-grid"><div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option></select></div><div><label>Amount</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div></div>`, `<button id="saveDeduction">Save</button>`, true);
+    modal('Add New Deduction', `<div class="grid form-grid"><div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option></select></div><div><label>Amount</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div></div>`, `<button id="stageDeduction">Add to Table</button>`, true);
     const sync=()=>{ const hasAmt=String(v('dedAmount')).trim()!==''; const hasPct=String(v('dedPercentage')).trim()!==''; $('dedPercentage').disabled=hasAmt; $('dedAmount').disabled=hasPct; };
     $('dedAmount').addEventListener('input',sync); $('dedPercentage').addEventListener('input',sync); sync();
-    $('saveDeduction').addEventListener('click',saveDeduction);
+    $('stageDeduction').addEventListener('click',stageDeduction);
   }
-  function saveDeduction(){
-    const empId=v('dedEmp'); const start=v('dedStart'); const end=v('dedEnd'); const amount=v('dedAmount'); const percentage=v('dedPercentage');
+  function stageDeduction(){
+    const empId=selectedDeductionEmp || v('dedEmp'); const start=v('dedStart'); const end=v('dedEnd'); const amount=v('dedAmount'); const percentage=v('dedPercentage');
     if(!empId) return alert('Select an employee first.');
     if(!start) return alert('Select an effective date.');
     if(amount && percentage) return alert('Enter an Amount OR Percentage, not both.');
@@ -385,30 +416,59 @@
     const selectedEndCycle=end ? E.PAY_CYCLES.find(c=>c.end===end) : null;
     if(!selectedStartCycle || selectedStartCycle.id < currentCycle().id) return alert('Effective Date must be the first day of the current or a future pay period.');
     if(end && (!selectedEndCycle || selectedEndCycle.id < currentCycle().id || E.compare(end,start)<0)) return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.');
-    state.deductions.push({ id:uid('ded'), empId, startDate:start, endDate:end, deductionType:v('dedType'), amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:true, deleted:false });
-    addJobEvent(empId,'Deduction',start,`${v('dedType')} added${end?` until ${E.fmtPay(end)}`:' with no end date'}`,'deduction',state.deductions[state.deductions.length-1].id);
-    save(); closeModal(); calculateAllForCurrent(); log(`Deduction added for ${E.employeeName(emp(empId))}`); renderAll();
+    deductionDraftRows.push({ id:uid('ded'), empId, startDate:start, endDate:end, deductionType:v('dedType'), amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false });
+    closeModal(); markDeductionDirty(); renderDeductionsTable();
   }
   function deductionCanEditEnd(d){ return !d.endDate || E.compare(d.endDate,currentCycle().start)>=0; }
   function deductionCanDelete(d){ return !E.isFinalised(state,currentCycle()) && E.compare(d.startDate,currentCycle().end)<=0 && (!d.endDate || E.compare(d.endDate,currentCycle().start)>=0); }
   function renderDeductionsTable(){
-    const empId=v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); return; }
-    const rows=(state.deductions||[]).filter(d=>d.empId===empId && d.deleted!==true).sort((a,b)=>E.compare(a.startDate,b.startDate)).map(d=>{
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.'); return; }
+    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.');
+    const rows=(deductionDraftRows||[]).filter(d=>d.empId===empId && d.deleted!==true).sort((a,b)=>E.compare(a.startDate,b.startDate)).map(d=>{
       const endCell=deductionCanEditEnd(d)?`<select data-ded-end="${esc(d.id)}"><option value="" ${!d.endDate?'selected':''}></option>${deductionCycleOptions('end',d.endDate||'')}</select>`:E.fmtPay(d.endDate);
-      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>',d.percentage!==''&&d.percentage!=null?`${Number(d.percentage).toFixed(2)}%`:'<span class="muted">—</span>',deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">Locked after finalised/current period</span>'];
+      const amountCell=d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>';
+      const percentageCell=d.percentage!==''&&d.percentage!=null?`${Number(d.percentage).toFixed(2)}%`:'<span class="muted">—</span>';
+      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">Locked after finalised/current period</span>'];
     });
     h('deductionsTable', rows.length?table(['Deduction Type','Start Date','End Date','Amount','Percentage','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
-    document.querySelectorAll('[data-ded-end]').forEach(el=>el.addEventListener('change',()=>updateDeductionEnd(el.dataset.dedEnd,el.value)));
-    document.querySelectorAll('[data-del-ded]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this deduction?','Yes',()=>deleteDeduction(b.dataset.delDed))));
+    document.querySelectorAll('[data-ded-end]').forEach(el=>el.addEventListener('change',()=>stageDeductionEnd(el.dataset.dedEnd,el.value)));
+    document.querySelectorAll('[data-del-ded]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this deduction?','Yes',()=>stageDeleteDeduction(b.dataset.delDed))));
   }
-  function updateDeductionEnd(id,endDate){
-    const d=(state.deductions||[]).find(x=>x.id===id); if(!d) return;
+  function stageDeductionEnd(id,endDate){
+    const d=(deductionDraftRows||[]).find(x=>x.id===id); if(!d) return;
     if(endDate){ const c=E.PAY_CYCLES.find(x=>x.end===endDate); if(!c || c.id<currentCycle().id || E.compare(endDate,d.startDate)<0){ renderDeductionsTable(); return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.'); } }
-    d.endDate=endDate||''; addJobEvent(d.empId,'Deduction',todayIso(),`${d.deductionType} end date updated to ${endDate?E.fmtPay(endDate):'blank/continuous'}`,'deduction',d.id); save(); calculateAllForCurrent(); log('Deduction end date updated.'); renderAll();
+    d.endDate=endDate||''; markDeductionDirty(); renderDeductionsTable();
   }
-  function deleteDeduction(id){
-    const d=(state.deductions||[]).find(x=>x.id===id); if(!d) return;
-    d.deleted=true; addJobEvent(d.empId,'Deduction',todayIso(),`${d.deductionType} deleted`,'deduction',d.id); save(); calculateAllForCurrent(); log('Deduction deleted.'); renderAll();
+  function stageDeleteDeduction(id){
+    const d=(deductionDraftRows||[]).find(x=>x.id===id); if(!d) return;
+    if(d.saved===false){ deductionDraftRows=deductionDraftRows.filter(x=>x.id!==id); }
+    else d.deleted=true;
+    markDeductionDirty(); renderDeductionsTable();
+  }
+  function saveDeductions(afterSave){
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
+    for(const d of deductionDraftRows.filter(x=>x.empId===empId && x.deleted!==true)){
+      if(!d.startDate) return alert('Every deduction must have a Start Date.');
+      const startCycle=E.PAY_CYCLES.find(c=>c.start===d.startDate);
+      if(!startCycle || startCycle.id < currentCycle().id && d.saved===false) return alert('Effective Date must be the first day of the current or a future pay period.');
+      if(d.endDate){ const endCycle=E.PAY_CYCLES.find(c=>c.end===d.endDate); if(!endCycle || endCycle.id < currentCycle().id || E.compare(d.endDate,d.startDate)<0) return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.'); }
+      if((d.amount===''||d.amount==null) && (d.percentage===''||d.percentage==null)) return alert('Each deduction must have either an Amount or Percentage.');
+      if(String(d.amount)!=='' && d.amount!=null && String(d.percentage)!=='' && d.percentage!=null) return alert('Each deduction can have Amount OR Percentage, not both.');
+    }
+    loadingModal('Saving Deductions','Save Successful',()=>{
+      const before=(state.deductions||[]).filter(d=>d.empId===empId).map(d=>DataStore.clone(d));
+      const beforeById=new Map(before.map(d=>[d.id,d]));
+      const other=(state.deductions||[]).filter(d=>d.empId!==empId);
+      const savedRows=deductionDraftRows.filter(d=>d.empId===empId).map(d=>Object.assign({},d,{saved:true}));
+      state.deductions=other.concat(savedRows);
+      savedRows.forEach(d=>{
+        const old=beforeById.get(d.id);
+        if(!old && d.deleted!==true) addJobEvent(empId,'Deduction',d.startDate,`${d.deductionType} added${d.endDate?` until ${E.fmtPay(d.endDate)}`:' with no end date'}`,'deduction',d.id);
+        else if(old && old.deleted!==true && d.deleted===true) addJobEvent(empId,'Deduction',todayIso(),`${d.deductionType} deleted`,'deduction',d.id);
+        else if(old && (old.endDate||'') !== (d.endDate||'')) addJobEvent(empId,'Deduction',todayIso(),`${d.deductionType} end date updated to ${d.endDate?E.fmtPay(d.endDate):'blank/continuous'}`,'deduction',d.id);
+      });
+      deductionDirty=false; deductionDraftLoadedFor=''; save(); calculateAllForCurrent(); log(`Deductions saved for ${E.employeeName(emp(empId))}`); renderAll(); if(typeof afterSave==='function') afterSave();
+    },700);
   }
 
   function taxRecordsForEmp(empId){ return (state.taxDetails||[]).filter(t=>t.empId===empId).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)); }
@@ -507,7 +567,7 @@
     if(selectedCalendarYear < defaultYear) selectedCalendarYear = defaultYear;
     if(selectedCalendarYear > maxYear) selectedCalendarYear = maxYear;
     const year=selectedCalendarYear;
-    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div><div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div><div class="calendar">`;
+    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div><div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="lwop">Leave Without Pay</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div><div class="calendar">`;
     for(let m=0;m<12;m++){
       const first=new Date(year,m,1); const last=new Date(year,m+1,0);
       body+=`<div class="month"><h4>${first.toLocaleDateString('en-AU',{month:'long'})}</h4><div class="month-grid">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('')}`;
@@ -520,7 +580,7 @@
         const leave=employed?state.leaveBookings.find(l=>l.empId===e.id&&E.between(d,l.startDate,l.endDate)):null;
         const isPH=E.isPublicHoliday(d);
         let cls=hrs<=0?'nonrostered':''; let title=hrs<=0?'Non Rostered Day':'';
-        if(leave && hrs>0 && !isPH){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':''; title=leave.type==='LWOP'?'Leave Without Pay':leave.type; }
+        if(leave && hrs>0 && !isPH){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':''; title=leave.type==='LWOP'?'Leave Without Pay':leave.type; }
         if(isPH){ cls='publicholiday'; title=E.publicHolidayName(d)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); }
         body+=`<div class="cal-day ${cls}" title="${esc(title)}"><strong>${day}</strong></div>`;
       }
@@ -680,7 +740,22 @@
   }
 
   function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${c.id===currentCycle().id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',renderCertOutput); renderCertOutput(); }
-  function renderCertOutput(){ const c=E.cycleById(v('certCycle')||currentCycle().id); const locked=!!state.certifications[String(c.id)]; const lines=(c.id===currentCycle().id?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id))); if(!lines.length){ h('certOutput','<p class="small-note">No payslips generated for this pay period.</p>'); return; } h('certOutput', table(['Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>[esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${locked?'checked disabled':''}>`])) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${locked?'checked disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Save</button>`); if(!locked) $('saveCert').addEventListener('click',()=>saveCertification(c.id)); }
+  function renderCertOutput(){
+    const c=E.cycleById(v('certCycle')||currentCycle().id); const locked=!!state.certifications[String(c.id)];
+    const lines=(c.id===currentCycle().id?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    if(!lines.length){ h('certOutput','<p class="small-note">No payslips generated for this pay period.</p>'); return; }
+    h('certOutput', table(['Details','Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>[`<button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${locked?'checked disabled':''}>`])) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${locked?'checked disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Save</button>`);
+    document.querySelectorAll('[data-cert-detail]').forEach(b=>b.addEventListener('click',()=>openCertificationDetail(c.id,b.dataset.certDetail)));
+    if(!locked) $('saveCert').addEventListener('click',()=>saveCertification(c.id));
+  }
+  function openCertificationDetail(cycleId,payId){
+    const c=E.cycleById(cycleId||currentCycle().id);
+    const lines=(c.id===currentCycle().id?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const p=lines.find(x=>String(x.id)===String(payId));
+    if(!p) return alert('Pay breakdown was not found.');
+    const summary=table(['Summary','Amount'],[['Gross',E.money(p.gross)],['Tax',E.money(p.tax)],['Pre-tax deductions',E.money(p.preTaxDeductionTotal||0)],['Post-tax deductions',E.money(p.postTaxDeductionTotal||0)],['Employer Superannuation',E.money(p.superAmt||0)],['Net Pay',E.money(p.net)]]);
+    modal(`Pay Breakdown - ${p.employeeName}`, summary + payslipHtml(p), `<button type="button" data-close-modal class="secondary">Close</button>`, false);
+  }
   function saveCertification(cycleId){ const checks=[...document.querySelectorAll('.certLine')]; if(checks.some(c=>!c.checked)) return alert('Please certify each pay line.'); if(!v('certName')||!v('certPosition')) return alert('Enter name and position.'); if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.'); state.certifications[String(cycleId)]={name:v('certName'),position:v('certPosition'),savedAt:new Date().toISOString(),locked:true}; save(); log(`Certification Report saved for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); }
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
@@ -714,6 +789,16 @@
 
   async function checkForUpdates(){ h('settingsOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.7',notes:[
+      'Deductions tab now stages changes and only updates Job Summary, payroll calculations and payslips after the Save button is pressed.',
+      'Deductions tab keeps the selected employee visible after adding, deleting or end-dating deductions until the user leaves the tab.',
+      'Certification Report now has a magnifying glass details button to view a detailed employee pay breakdown.',
+      'Payslip detail now clears when leaving the Payslip tab so an open payslip cannot remain visible while scrolling elsewhere.',
+      'Retro overtime now generates Marginal Tax Retro and STSL Repayment Retro where applicable, while still not accruing annual or personal leave.',
+      'Leave Without Pay now appears in the Absence Calendar key after Long Service Leave and before Public Holiday using a burgundy colour.',
+      'Additional Day entries before the employee start date now show a warning when Save is clicked.',
+      'Matching retro Regular Pay recovery lines are consolidated on the payslip.'
+    ]},
     {version:'v1.1.6',notes:[
       'Added Deductions tab for pre-tax and post-tax super deductions with current/future pay-period start and end date controls.',
       'Added Pre-Tax Deductions and Post-Tax Deductions payslip sections; pre-tax deductions reduce taxable income while gross remains unchanged, and post-tax percentage deductions calculate from net after tax/pre-tax deductions.',

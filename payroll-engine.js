@@ -209,19 +209,50 @@
     if(amount < 0) return -stslForGross(state,e,Math.abs(amount),onDate);
     return stslForGross(state,e,amount,onDate);
   }
+  function calculateRetroTaxDifferences(state,e,retroRowsOnly,c){
+    if(!retroRowsOnly.length) return { marginalTaxRetro:0, stslRetro:0, noTfnRetro:false };
+    const groups = new Map();
+    retroRowsOnly.forEach(r=>{
+      const originalCycle = cycleForDate(r.startDate || c.start) || c;
+      const key = String(originalCycle.id);
+      const g = groups.get(key) || { cycle:originalCycle, rows:[] };
+      g.rows.push(r); groups.set(key,g);
+    });
+    let marginalTaxRetro = 0, stslRetro = 0, noTfnRetro = false;
+    groups.forEach(g=>{
+      const retroGross = round2(g.rows.reduce((s,r)=>s+Number(r.amount||0),0));
+      if(Math.abs(retroGross) <= 0.004) return;
+      const originalPayslips = (state.payslips||[]).filter(p=>p.empId===e.id && Number(p.cycleId)===Number(g.cycle.id) && p.finalised);
+      const originalRows = originalPayslips.flatMap(p=>p.rows||[]).filter(r=>r.kind !== 'retro');
+      const originalGross = round2(originalRows.reduce((s,r)=>s+Number(r.amount||0),0));
+      const taxDate = g.cycle.end || (g.rows[0]&&g.rows[0].startDate) || c.end;
+      const taxRecord = activeTaxDetails(state,e.id,taxDate);
+      noTfnRetro = noTfnRetro || !!taxRecord.noTaxDetails;
+      if(originalPayslips.length){
+        const originalPreTax = calculateDeductions(state,e,g.cycle,originalGross,null).preTaxTotal;
+        const revisedGross = round2(originalGross + retroGross);
+        const revisedPreTax = calculateDeductions(state,e,g.cycle,revisedGross,null).preTaxTotal;
+        const originalTaxable = round2(Math.max(0, originalGross - originalPreTax));
+        const revisedTaxable = round2(Math.max(0, revisedGross - revisedPreTax));
+        marginalTaxRetro = round2(marginalTaxRetro + (taxForGross(state,e,revisedTaxable,taxDate) - taxForGross(state,e,originalTaxable,taxDate)));
+        stslRetro = round2(stslRetro + (stslForGross(state,e,revisedTaxable,taxDate) - stslForGross(state,e,originalTaxable,taxDate)));
+      }else{
+        marginalTaxRetro = round2(marginalTaxRetro + signedTaxForGross(state,e,retroGross,taxDate));
+        stslRetro = round2(stslRetro + signedStslForGross(state,e,retroGross,taxDate));
+      }
+    });
+    return { marginalTaxRetro, stslRetro, noTfnRetro };
+  }
   function calculateTaxComponents(state,e,rows,c,preTaxTotal=0){
     const currentRows = rows.filter(r=>r.kind !== 'retro');
     const retroRowsOnly = rows.filter(r=>r.kind === 'retro');
     const currentGross = round2(currentRows.reduce((s,r)=>s+Number(r.amount||0),0));
-    const retroGross = round2(retroRowsOnly.reduce((s,r)=>s+Number(r.amount||0),0));
     const taxableCurrentGross = round2(Math.max(0, currentGross - Number(preTaxTotal||0)));
     const marginalTax = signedTaxForGross(state,e,taxableCurrentGross,c.end);
-    const marginalTaxRetro = Math.abs(retroGross) > 0.004 ? signedTaxForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
     const stsl = signedStslForGross(state,e,taxableCurrentGross,c.end);
-    const stslRetro = Math.abs(retroGross) > 0.004 ? signedStslForGross(state,e,retroGross,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end) : 0;
+    const retroTax = calculateRetroTaxDifferences(state,e,retroRowsOnly,c);
     const currentTaxRecord = activeTaxDetails(state,e.id,c.end);
-    const retroTaxRecord = activeTaxDetails(state,e.id,(retroRowsOnly[0]&&retroRowsOnly[0].startDate)||c.end);
-    return { marginalTax, marginalTaxRetro, stsl, stslRetro, noTfn:!!currentTaxRecord.noTaxDetails, noTfnRetro:Math.abs(retroGross)>0.004 && !!retroTaxRecord.noTaxDetails, taxableCurrentGross, totalTax:round2(marginalTax + marginalTaxRetro + stsl + stslRetro) };
+    return { marginalTax, marginalTaxRetro:retroTax.marginalTaxRetro, stsl, stslRetro:retroTax.stslRetro, noTfn:!!currentTaxRecord.noTaxDetails, noTfnRetro:retroTax.noTfnRetro, taxableCurrentGross, totalTax:round2(marginalTax + retroTax.marginalTaxRetro + stsl + retroTax.stslRetro) };
   }
 
   function activeDeductions(state,e,c,kind){
@@ -447,6 +478,23 @@
     }
     return mergeRows(rows);
   }
+  function consolidatePayslipRetroRows(rows){
+    const current = rows.filter(r=>r.kind !== 'retro');
+    const retro = rows.filter(r=>r.kind === 'retro');
+    if(!retro.length) return rows;
+    const map = new Map();
+    retro.forEach(r=>{
+      const originalCycle = cycleForDate(r.startDate || r.endDate || ANCHOR_CYCLE.start) || { id:'unknown' };
+      const key = [originalCycle.id,r.description||'',r.rate||0,r.baseRate||0,r.position||'',r.ote===false?'nonote':'ote'].join('|');
+      const existing = map.get(key) || Object.assign({}, r, { units:0, amount:0, startDate:r.startDate, endDate:r.endDate });
+      existing.units = round4(Number(existing.units||0) + Number(r.units||0));
+      existing.amount = round2(Number(existing.amount||0) + Number(r.amount||0));
+      if(!existing.startDate || compare(r.startDate, existing.startDate)<0) existing.startDate = r.startDate;
+      if(!existing.endDate || compare(r.endDate, existing.endDate)>0) existing.endDate = r.endDate;
+      map.set(key, existing);
+    });
+    return current.concat([...map.values()].filter(r=>Math.abs(r.amount)>=0.01 || Math.abs(r.units)>=0.0001));
+  }
   function makePayslip(state,e,c,rows,position,rate,segmentIndex,segmentCount,finalised,applyDeductions=true){
     const gross = round2(rows.reduce((s,r)=>s+Number(r.amount||0),0));
     const firstDeductionPass = applyDeductions ? calculateDeductions(state,e,c,gross,null) : {preTaxDeductions:[],postTaxDeductions:[],preTaxTotal:0,postTaxTotal:0};
@@ -468,6 +516,7 @@
     return { id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(e), employeeSnapshot:JSON.parse(JSON.stringify(e)), cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, marginalTax:taxParts.marginalTax, marginalTaxRetro:taxParts.marginalTaxRetro, stsl:taxParts.stsl, stslRetro:taxParts.stslRetro, noTfn:taxParts.noTfn, noTfnRetro:taxParts.noTfnRetro, taxableCurrentGross:taxParts.taxableCurrentGross, preTaxDeductions:deductionParts.preTaxDeductions, postTaxDeductions:deductionParts.postTaxDeductions, preTaxDeductionTotal:deductionParts.preTaxTotal, postTaxDeductionTotal:deductionParts.postTaxTotal, superAmt, superCurrent, superRetro, net, units:round4(rows.reduce((s,r)=>s+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) };
   }
   function splitIntoPayslips(state,e,c,rows,finalised){
+    rows = consolidatePayslipRetroRows(rows);
     const mainRows = rows.filter(r=>r.kind !== 'retro');
     const retro = rows.filter(r=>r.kind === 'retro');
     const groups = [];
