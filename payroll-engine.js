@@ -107,19 +107,24 @@
   function isPublicHoliday(dateIso){ return PUBLIC_HOLIDAYS_WA.some(p=>p[0]===dateIso); }
   function publicHolidayName(dateIso){ return (PUBLIC_HOLIDAYS_WA.find(p=>p[0]===dateIso)||[])[1] || 'Public Holiday'; }
   function employeeName(e){ return `${e.firstName||''} ${e.lastName||''}`.trim() || e.name || e.id; }
+  function hasSavedJobDataAsAt(state, empId, onDate){
+    return (state.jobDataRows||[]).some(r=>r.empId===empId && r.saved!==false && compare(r.effectiveDate,onDate)<=0);
+  }
   function activeSchedule(state, empId, onDate, excludeId){
-    return (state.schedules||[]).filter(s=>s.empId===empId && s.id!==excludeId && compare(s.effectiveDate,onDate)<=0)
+    const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
+    return (state.schedules||[]).filter(s=>s.empId===empId && s.id!==excludeId && compare(s.effectiveDate,onDate)<=0 && (!jobDataSource || !!s.jobDataId))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate))[0] || null;
   }
   function activePayRate(state, empId, onDate, excludeId){
-    const rows = (state.payRates||[]).filter(p=>p.empId===empId && p.id!==excludeId && compare(p.effectiveDate,onDate)<=0 && (p.changeType==='Permanent' || !p.endDate || compare(onDate,p.endDate)<=0))
+    const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
+    const rows = (state.payRates||[]).filter(p=>p.empId===empId && p.id!==excludeId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && (p.changeType==='Permanent' || !p.endDate || compare(onDate,p.endDate)<=0))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate) || ((b.changeType==='Temporary')-(a.changeType==='Temporary')));
     const e = (state.employees||[]).find(x=>x.id===empId) || {};
     return rows[0] || { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
   }
   function weeklyHoursFromSchedule(s){ return Object.values((s&&s.hoursByDay)||{}).reduce((sum,h)=>sum+Number(h||0),0); }
   function employmentEnd(e){ return e.terminationDate || (e.type==='Fixed Term' ? e.contractEndDate : '') || ''; }
-  function isEmployedOn(e, dateIso){ return !!e && !!e.startDate && compare(e.startDate,dateIso)<=0 && (!employmentEnd(e) || compare(dateIso, employmentEnd(e))<=0); }
+  function isEmployedOn(e, dateIso){ return !!e && !!e.startDate && compare(e.startDate,dateIso)<=0 && (!e.terminationDate || compare(dateIso, e.terminationDate)<0) && (!(e.type==='Fixed Term' && e.contractEndDate) || compare(dateIso, e.contractEndDate)<=0); }
   function isEmployedInCycle(e,c){ return !!e && e.startDate && compare(e.startDate,c.end)<=0 && (!employmentEnd(e) || compare(employmentEnd(e),c.start)>=0); }
   function leaveOnDate(state, empId, dateIso){
     return (state.leaveBookings||[]).find(l=>l.empId===empId && compare(l.startDate,dateIso)<=0 && compare(dateIso,l.endDate)<=0);
@@ -547,13 +552,13 @@
   }
   function autoProcessContractExpiries(state, upToDate){
     (state.employees||[]).forEach(e=>{
-      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && e.terminationReason !== 'Expiry of Fixed Term Contract'){
+      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && e.terminationReason !== 'Expiry of Fixed Term'){
         e.terminationDate = e.contractEndDate;
-        e.terminationReason = 'Expiry of Fixed Term Contract';
+        e.terminationReason = 'Expiry of Fixed Term';
         if(compare(iso(new Date()), e.contractEndDate)>0) e.status = 'Terminated';
-        if(Array.isArray(state.jobEvents)) state.jobEvents.push({ id:uid('job'), empId:e.id, type:'Termination', effectiveDate:e.contractEndDate, description:'Expiry of Fixed Term Contract', refKind:'employee', refId:e.id });
+        if(Array.isArray(state.jobEvents)) state.jobEvents.push({ id:uid('job'), empId:e.id, type:'Termination', effectiveDate:e.contractEndDate, description:'Expiry of Fixed Term', refKind:'employee', refId:e.id });
       }
-      if(e.terminationDate && compare(iso(new Date()), e.terminationDate)>0) e.status='Terminated';
+      if(e.terminationDate && compare(iso(new Date()), e.terminationDate)>=0) e.status='Terminated';
     });
   }
   function commitBalancesOnFinalise(state, c, payslips){

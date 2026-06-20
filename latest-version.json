@@ -1,6 +1,6 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "releaseDate": "2026-06-20",
-  "notes": "Adds Job Data to replace Change Centre, adds Settings > Positions with create/edit/active status, simplifies Employees and Job Summary, moves job changes into effective-dated rows, and keeps absence balances committed only after finalisation.",
+  "notes": "Fixes Job Data row ordering and saved-row edits, adds copied new rows and Expiry of Fixed Term, updates Job Data layout, applies termination effective-date rules, and refines Job Data as the source of truth.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }

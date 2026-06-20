@@ -29,6 +29,4 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.8 deduction save staging, certification details, LWOP colour/key, payslip clear, Additional Day warning, retro overtime tax/STSL and retro recovery grouping are present.
-PASS: v1.1.8 Job Data, Positions, Employees table simplification and Job Summary read-only checks passed.
-PASS: v1.1.8 Position snapshot/rate-effective-date and committed absence balance checks passed.
+PASS: v1.1.9 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.

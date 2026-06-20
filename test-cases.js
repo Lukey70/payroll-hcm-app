@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.8'), 'sidebar/version label must show v1.1.8');
-  assert(data.includes("APP_VERSION = '1.1.8'"), 'data-store version must be 1.1.8');
+  assert(html.includes('v1.1.9'), 'sidebar/version label must show v1.1.9');
+  assert(data.includes("APP_VERSION = '1.1.9'"), 'data-store version must be 1.1.9');
 })();
 
 (function testAnchorPayCycle(){
@@ -346,7 +346,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
   state.payslips.push(...paid);
   state.currentCycleId=2;
-  e.terminationDate='2026-06-04'; e.status='Terminated';
+  e.terminationDate='2026-06-05'; e.status='Terminated';
   state.leaveBookings.push({id:'plretro',empId:e.id,type:'Personal Leave',startDate:'2026-05-25',endDate:'2026-05-26',hours:15,status:'Approved'});
   const next=E.calculateEmployee(state,e.id,2,false);
   const regRetro=next.flatMap(p=>p.rows||[]).filter(r=>r.description==='Regular Pay Retro');
@@ -402,6 +402,36 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(projected.annual>committed.annual, 'Projected payslip balance may include current pay accrual separately');
 })();
 
+
+(function testV119JobDataUiAndReasons(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("'Expiry of Fixed Term'"), 'Termination reasons should include Expiry of Fixed Term');
+  assert(app.includes('class="danger" title="Remove row"'), 'Job Data remove/minus button should be red/danger style');
+  assert(app.includes('function sortedJobDataRows') && app.includes('E.compare(b.effectiveDate,a.effectiveDate)'), 'Job Data should sort newest to oldest by effective date');
+  assert(app.indexOf('<label>Position Number</label>') < app.indexOf('<label>Position Name</label>'), 'Position Number should appear on the same position-details line before Position Name');
+  assert(app.indexOf('<label>Position Class</label>') > app.indexOf('<label>Reports To</label>'), 'Position Class should be moved below the position details row');
+  assert(app.includes('draft.id=uid(\'jobdata\')') && app.includes('draft.effectiveDate=todayIso()'), 'Adding a row should copy the previous row and default date to today');
+})();
+
+(function testV119JobDataOverridesOldChangeCentreRates(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22'});
+  state.payRates.push({id:'old_cc',empId:e.id,effectiveDate:'2026-05-23',position:'Old Change Centre Rate',hourlyRate:90,changeType:'Permanent'});
+  state.schedules.push({id:'old_s',empId:e.id,effectiveDate:'2026-05-23',hoursByDay:{1:1,2:1,3:1,4:1,5:1,6:0,0:0}});
+  state.jobDataRows.push({id:'jd1',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'1234',positionName:'Job Data Position',department:'Operations',hourlyRate:40,positionClass:'Permanent',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},rateId:'jd_rate',scheduleId:'jd_sched',saved:true});
+  state.payRates.push({id:'jd_rate',empId:e.id,effectiveDate:'2026-05-22',position:'Job Data Position',hourlyRate:40,changeType:'Permanent',jobDataId:'jd1'});
+  state.schedules.push({id:'jd_sched',empId:e.id,effectiveDate:'2026-05-22',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},jobDataId:'jd1'});
+  assert.strictEqual(E.activePayRate(state,e.id,'2026-05-25').hourlyRate,40, 'Saved Job Data should override old Change Centre/pay rate records');
+  assert.strictEqual(E.weeklyHoursFromSchedule(E.activeSchedule(state,e.id,'2026-05-25')),37.5, 'Saved Job Data should override old Change Centre/schedule records');
+})();
+
+(function testV119TerminationEffectiveDateIsDayAfterLastWorked(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22',terminationDate:'2026-05-26',annualLeaveBalance:7.5,lslAccruedBalance:0});
+  addSchedule(state,e.id,'2026-05-22'); addRate(state,e.id,'2026-05-22','Officer',40);
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(totalUnitsByDesc(payslips,'Regular Pay'),15, 'Termination effective date is day after last working day, so ordinary pay stops before the effective date');
+  assert.strictEqual(totalUnitsByDesc(payslips,'Annual Leave Payout'),7.5, 'Termination payout should be generated when the termination effective date is in the current pay period');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -435,4 +465,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.8 deduction save staging, certification details, LWOP colour/key, payslip clear, Additional Day warning, retro overtime tax/STSL and retro recovery grouping are present.');
+console.log('PASS: v1.1.9 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
