@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.7'), 'sidebar/version label must show v1.1.7');
-  assert(data.includes("APP_VERSION = '1.1.7'"), 'data-store version must be 1.1.6');
+  assert(html.includes('v1.1.8'), 'sidebar/version label must show v1.1.8');
+  assert(data.includes("APP_VERSION = '1.1.8'"), 'data-store version must be 1.1.8');
 })();
 
 (function testAnchorPayCycle(){
@@ -366,6 +366,42 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(styles.includes('--lwop:#7f1d1d') && styles.includes('.cal-day.lwop'), 'LWOP should use a burgundy calendar colour');
 })();
 
+
+
+(function testV118JobDataPositionsEmployeeSummaryUi(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const html = fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const data = fs.readFileSync(path.join(__dirname,'data-store.js'),'utf8');
+  assert(html.includes('data-tab="jobData"'), 'Sidebar should include Job Data tab');
+  assert(!html.includes('data-tab="changeCentre"'), 'Change Centre should be removed from the sidebar');
+  assert(app.includes('Settings') && app.includes('Positions') && app.includes('Position Number'), 'Settings should include Positions management');
+  assert(app.includes('JOB_REASON_OPTIONS') && app.includes('Position Refresh') && app.includes('Pay Rate Change'), 'Job Data variation reasons should include new reasons');
+  assert(app.includes("table(['ID','First Name','Last Name','Status','Actions']"), 'Employees table should be simplified');
+  assert(app.includes('Job Summary is read-only') && app.includes("Effective Sequence','Action','Reason','Position Name','Weekly Hours"), 'Job Summary should be a read-only Job Data list');
+  assert(data.includes('positions: []') && data.includes('jobDataRows: []'), 'State should include positions and jobDataRows');
+})();
+
+(function testV118JobDataSnapshotAndPositionInactivationRules(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22'}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Original',40);
+  state.positions.push({id:'p1',positionNumber:'1234',positionName:'Payroll Officer',department:'Human Resources',hourlyRate:40,reportsTo:'',active:true});
+  state.jobDataRows.push({id:'jd1',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'1234',positionName:'Payroll Officer',department:'Human Resources',hourlyRate:40,positionClass:'Permanent',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},rateId:'r_jd1',scheduleId:'s_jd1',saved:true});
+  state.payRates.push({id:'r_jd1',empId:e.id,changeType:'Permanent',effectiveDate:'2026-05-22',endDate:'',position:'Payroll Officer',hourlyRate:40,jobDataId:'jd1'});
+  state.positions[0].hourlyRate=50;
+  assert.strictEqual(E.activePayRate(state,e.id,'2026-05-25').hourlyRate,40, 'Editing a position should not change the employee pay rate until a new Job Data row is saved');
+  state.jobDataRows.push({id:'jd2',empId:e.id,effectiveDate:'2026-06-05',effectiveSequence:0,action:'Variation',reason:'Pay Rate Change',positionNumber:'1234',positionName:'Payroll Officer',department:'Human Resources',hourlyRate:50,positionClass:'Permanent',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},rateId:'r_jd2',scheduleId:'s_jd2',saved:true});
+  state.payRates.push({id:'r_jd2',empId:e.id,changeType:'Permanent',effectiveDate:'2026-06-05',endDate:'',position:'Payroll Officer',hourlyRate:50,jobDataId:'jd2'});
+  assert.strictEqual(E.activePayRate(state,e.id,'2026-06-05').hourlyRate,50, 'New Job Data row should apply the updated position rate from its effective date');
+})();
+
+(function testV118AbsenceBalanceDisplayUsesCommittedBalancesOnly(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:100,personalLeaveBalance:50}); addSchedule(state,e.id); addRate(state,e.id);
+  const c=E.currentCycle(state);
+  const committed=E.projectedBalances(state,e,c,false);
+  const projected=E.projectedBalances(state,e,c,true);
+  assert.strictEqual(committed.annual,100, 'Committed annual leave balance should remain unchanged before finalise');
+  assert(projected.annual>committed.annual, 'Projected payslip balance may include current pay accrual separately');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -399,4 +435,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.7 deduction save staging, certification details, LWOP colour/key, payslip clear, Additional Day warning, retro overtime tax/STSL and retro recovery grouping are present.');
+console.log('PASS: v1.1.8 deduction save staging, certification details, LWOP colour/key, payslip clear, Additional Day warning, retro overtime tax/STSL and retro recovery grouping are present.');

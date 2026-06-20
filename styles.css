@@ -27,3 +27,5 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 
 .readonly,input[readonly].readonly{background:#f1f5f9;color:#475569;cursor:not-allowed}
 .inline-check{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin:0}.inline-check input{width:auto}.leave-action-row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.right-controls{margin-left:auto}.readonly{background:#f1f5f9;color:#475569}
+.inline-field{display:flex;gap:6px;align-items:center}.inline-field input{flex:1}.job-data-box{border:1px solid #d8dee9;border-radius:8px;padding:14px;background:#fbfcfe}.row-indicator{display:inline-flex;align-items:center;padding:0 10px;font-weight:700}.link-button{border:0;background:transparent;color:#0b5cad;text-decoration:underline;cursor:pointer;padding:0;font:inherit}.readonly{background:#f2f4f7;color:#555}.badge-inactive{background:#555;color:#fff}.badge-active{background:#16a34a;color:#fff}
+.lookup-row{margin:4px 0}.lookup-row button{width:100%;text-align:left;background:#eef5ff;color:#0f3b66;border:1px solid #c9ddf2;border-radius:6px;padding:6px 8px}

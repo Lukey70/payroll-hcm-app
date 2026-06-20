@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Payroll/HCM App</title>
-  <link rel="stylesheet" href="styles.css?v=1.1.7">
+  <link rel="stylesheet" href="styles.css?v=1.1.8">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -30,11 +30,11 @@
     <aside class="sidebar no-print">
       <div>
         <h1>Payroll/HCM</h1>
-        <p id="versionLabel">v1.1.7</p>
+        <p id="versionLabel">v1.1.8</p>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-tab="employees">Employees</button>
-        <button class="nav-btn" data-tab="changeCentre">Change Centre</button>
+        <button class="nav-btn" data-tab="jobData">Job Data</button>
         <button class="nav-btn" data-tab="jobSummary">Job Summary</button>
         <button class="nav-btn" data-tab="taxDetails">Tax Details</button>
         <button class="nav-btn" data-tab="additionalEarnings">Additional Earnings</button>
@@ -65,7 +65,7 @@
       </div>
 
       <section id="employees" class="tab-section card active"></section>
-      <section id="changeCentre" class="tab-section card"></section>
+      <section id="jobData" class="tab-section card"></section>
       <section id="jobSummary" class="tab-section card"></section>
       <section id="additionalEarnings" class="tab-section card"></section>
       <section id="taxDetails" class="tab-section card"></section>
@@ -83,8 +83,8 @@
   <div id="toast" class="toast no-print"></div>
   <div id="printArea"></div>
 
-  <script src="data-store.js?v=1.1.7"></script>
-  <script src="payroll-engine.js?v=1.1.7"></script>
-  <script src="app.js?v=1.1.7"></script>
+  <script src="data-store.js?v=1.1.8"></script>
+  <script src="payroll-engine.js?v=1.1.8"></script>
+  <script src="app.js?v=1.1.8"></script>
 </body>
 </html>

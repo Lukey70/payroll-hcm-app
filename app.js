@@ -4,7 +4,7 @@
   const PASSWORD = '1234';
   let state = DataStore.load();
   let showTerminated = false;
-  const showTerminatedByTab = { changeCentre:false, jobSummary:false, taxDetails:false, additionalEarnings:false, deductions:false, leave:false, absenceBalance:false, payslip:false };
+  const showTerminatedByTab = { jobData:false, jobSummary:false, taxDetails:false, additionalEarnings:false, deductions:false, leave:false, absenceBalance:false, payslip:false };
   let leaveMonthOffset = 0;
   let leaveFilterEmp = '';
   let selectedPayslipKey = '';
@@ -21,6 +21,10 @@
   let selectedTaxRecordId = '';
   let absenceEditing = false;
   let absenceDraft = null;
+  let selectedJobDataEmp = '';
+  let selectedJobDataRowIndex = 0;
+  let selectedJobDataDraft = null;
+  let settingsView = 'general';
   let pendingTab = null;
   let timeoutWarning = null;
   let timeoutLogout = null;
@@ -164,6 +168,8 @@
   function showTab(tab, btn){
     const leavingDeductions = document.getElementById('deductions').classList.contains('active') && tab !== 'deductions';
     const leavingPayslip = document.getElementById('payslip').classList.contains('active') && tab !== 'payslip';
+    const leavingJobData = document.getElementById('jobData') && document.getElementById('jobData').classList.contains('active') && tab !== 'jobData';
+    if(leavingJobData){ selectedJobDataEmp=''; selectedJobDataDraft=null; selectedJobDataRowIndex=0; }
     if(leavingDeductions){ selectedDeductionEmp=''; deductionDraftRows=[]; deductionDirty=false; deductionDraftLoadedFor=''; }
     if(leavingPayslip){ selectedPayslipKey=''; h('payslipContent',''); }
     document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
@@ -171,6 +177,7 @@
     document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
     if(btn) btn.classList.add('active');
     if(tab==='additionalEarnings') loadAdditionalDraft();
+    if(tab==='jobData') renderJobData();
     if(tab==='deductions') renderDeductions();
     if(tab==='taxDetails') renderTaxDetails();
     if(tab==='certification') renderCertification();
@@ -178,7 +185,7 @@
   }
 
   function renderAll(){
-    renderMetrics(); renderEmployees(); renderChangeCentre(); renderJobSummary(); renderAdditionalEarnings(); renderTaxDetails(); renderDeductions(); renderLeave(); renderAbsenceBalance(); renderPayslip(); renderCertification(); renderAudit(); renderSettings();
+    renderMetrics(); renderEmployees(); renderJobData(); renderJobSummary(); renderAdditionalEarnings(); renderTaxDetails(); renderDeductions(); renderLeave(); renderAbsenceBalance(); renderPayslip(); renderCertification(); renderAudit(); renderSettings();
   }
   function renderMetrics(){
     const c = currentCycle();
@@ -192,18 +199,14 @@
 
   function renderEmployees(){
     const list = state.employees.filter(e=>showTerminated || employeeDisplayStatus(e) !== 'Terminated');
-    h('employees', `<h2>Employees</h2><p class="small-note">Employee IDs auto-generate. Fixed-term contract end dates are treated as expected termination dates.</p><div class="controls"><button id="addEmployeeBtn">Add New Employee</button><button id="rehireBtn" class="secondary">Rehire Employee</button><button id="extendContractBtn" class="secondary">Extend Contract</button><button id="terminationBtn" class="secondary">Process Termination</button><button id="toggleTerminatedBtn" class="ghost">${showTerminated?'Hide':'Show'} Terminated Employees</button></div><div id="employeesTable"></div>`);
-    h('employeesTable', table(['ID','First Name','Last Name','Type','Department','Position','Start','Termination / Contract End','Rate','Status','Actions'], list.map(e=>[
-      esc(e.id), esc(e.firstName||''), esc(e.lastName||''), esc(e.type||''), esc(e.department||''), esc(e.position||''), E.fmtPay(e.startDate), (e.terminationDate||e.contractEndDate)?`${E.fmtPay(e.terminationDate||e.contractEndDate)}<br>${esc(e.terminationReason|| (e.type==='Fixed Term'?'Expected fixed-term end':''))}`:'', E.money(e.hourlyRate), badge(employeeDisplayStatus(e)), `<button class="icon-btn" data-edit-details="${esc(e.id)}" title="Edit personal details">✏️</button> <button class="icon-btn" data-view-personal="${esc(e.id)}" title="View current personal details">👁️</button> <button class="icon-btn" data-view-schedule="${esc(e.id)}" title="View schedule">📅</button>`
+    h('employees', `<h2>Employees</h2><p class="small-note">Employee IDs auto-generate. Job details are now maintained through Job Data.</p><div class="controls"><button id="addEmployeeBtn">Add New Employee</button><button id="toggleTerminatedBtn" class="ghost">${showTerminated?'Hide':'Show'} Terminated Employees</button></div><div id="employeesTable"></div>`);
+    h('employeesTable', table(['ID','First Name','Last Name','Status','Actions'], list.map(e=>[
+      esc(e.id), esc(e.firstName||''), esc(e.lastName||''), badge(employeeDisplayStatus(e)), `<button class="icon-btn" data-edit-details="${esc(e.id)}" title="Edit personal details">✏️</button> <button class="icon-btn" data-view-personal="${esc(e.id)}" title="View current personal details">👁️</button>`
     ])));
     $('addEmployeeBtn').addEventListener('click', openAddEmployee);
-    $('rehireBtn').addEventListener('click', openRehire);
-    $('extendContractBtn').addEventListener('click', openExtendContract);
-    $('terminationBtn').addEventListener('click', openTermination);
     $('toggleTerminatedBtn').addEventListener('click', ()=>{ showTerminated=!showTerminated; renderEmployees(); });
     document.querySelectorAll('[data-edit-details]').forEach(b=>b.addEventListener('click',()=>openEditEmployeeDetails(b.dataset.editDetails)));
     document.querySelectorAll('[data-view-personal]').forEach(b=>b.addEventListener('click',()=>openPersonalDetailsView(b.dataset.viewPersonal)));
-    document.querySelectorAll('[data-view-schedule]').forEach(b=>b.addEventListener('click',()=>openScheduleView(b.dataset.viewSchedule)));
   }
   function nextEmployeeId(){ let max=0; state.employees.forEach(e=>{ const m=String(e.id).match(/\d+/); if(m) max=Math.max(max,Number(m[0])); }); return String(max+1).padStart(6,'0'); }
   function scheduleInputs(prefix){
@@ -227,38 +230,20 @@
     setv(`${prefix}PL`, b.personal.toFixed(2));
   }
   function openAddEmployee(){
-    modal('Commence New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div><div><label>Department</label><input id="newDepartment"></div><div><label>Position</label><input id="newPosition"></div><div><label>Employment Type</label><select id="newType"><option value="">Select</option><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div><div><label>Start Date</label><input id="newStart" type="date"></div><div><label>Contract End Date</label><input id="newContractEnd" type="date" disabled></div><div><label>Auto Terminate?</label><select id="newAutoTerm" disabled><option value="false">No</option><option value="true">Yes</option></select></div><div><label>Hourly Rate</label><input id="newRate" type="number" step="0.01"></div><div><label>Annual Leave Balance (Hours)</label><input id="newAL" type="number" step="0.01" readonly class="readonly" value="0.00"></div><div><label>Personal Leave Balance (Hours)</label><input id="newPL" type="number" step="0.01" readonly class="readonly" value="0.00"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div><label>Address</label><input id="newAddress" autocomplete="street-address" placeholder="Start typing address"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" readonly class="readonly"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div><div class="divider"></div><h3>Starting Work Schedule</h3>${scheduleInputs('new')}`, `<button id="saveNewEmployee">Commence Employee</button>`, false);
-    $('newType').addEventListener('change',()=>toggleContractFields('newType','newContractEnd','newAutoTerm'));
-    $('newStart').addEventListener('change',()=>{ setv('newTaxEffective',v('newStart')); refreshAutoLeaveBalance('new'); });
-    ['newMon','newTue','newWed','newThu','newFri','newSat','newSun'].forEach(id=>$(id).addEventListener('input',()=>refreshAutoLeaveBalance('new')));
+    modal('Add New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div><label>Address</label><input id="newAddress" autocomplete="street-address" placeholder="Start typing address"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" value="${todayIso()}"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div>`, `<button id="saveNewEmployee">Add Employee</button>`, false);
     $('saveNewEmployee').addEventListener('click', saveNewEmployee);
   }
-  function toggleContractFields(typeId,endId,autoId){
-    const allowed = v(typeId)==='Fixed Term';
-    $(endId).disabled = !allowed; $(autoId).disabled = !allowed;
-    if(allowed){ setv(autoId,'true'); } else { setv(endId,''); setv(autoId,'false'); }
-  }
+  function toggleContractFields(typeId,endId,autoId){ /* kept for legacy handlers */ }
   function saveNewEmployee(){
-    const type = v('newType'); const start = v('newStart'); const sched = getSchedule('new');
     if(!v('newFirst').trim() || !v('newLast').trim()) return alert('Enter first and last name.');
-    if(!type) return alert('Select employment type.');
-    if(type==='Permanent' && v('newContractEnd')) return alert('Permanent employees cannot have a contract end date.');
-    if(!start) return alert('Enter a start date.');
-    if(weeklyHours(sched)<=0) return alert('Enter at least one work day/hour.');
-    const personal = { id:uid('personal'), effectiveDate:start, dateOfBirth:v('newDOB'), email:v('newEmail'), phone:v('newPhone'), address:v('newAddress') };
-    const autoBalances = autoInitialLeaveBalances(start, sched);
-    const e = { id:v('newId'), firstName:v('newFirst').trim(), lastName:v('newLast').trim(), name:`${v('newFirst').trim()} ${v('newLast').trim()}`, department:v('newDepartment'), position:v('newPosition'), type, startDate:start, originalStartDate:start, lslServiceDate:start, contractEndDate:type==='Fixed Term'?v('newContractEnd'):'', autoTerminate:type==='Fixed Term'&&v('newAutoTerm')==='true', hourlyRate:Number(v('newRate')||0), annualLeaveBalance:autoBalances.annual, personalLeaveBalance:autoBalances.personal, lslAccruedBalance:0, dateOfBirth:personal.dateOfBirth, email:personal.email, phone:personal.phone, address:personal.address, personalDetailsHistory:[personal], status:'Active' };
+    const taxEffective = v('newTaxEffective') || todayIso();
+    const personal = { id:uid('personal'), effectiveDate:taxEffective, dateOfBirth:v('newDOB'), email:v('newEmail'), phone:v('newPhone'), address:v('newAddress') };
+    const e = { id:v('newId'), firstName:v('newFirst').trim(), lastName:v('newLast').trim(), name:`${v('newFirst').trim()} ${v('newLast').trim()}`, department:'', position:'', type:'', startDate:'', originalStartDate:'', lslServiceDate:'', contractEndDate:'', autoTerminate:false, hourlyRate:0, annualLeaveBalance:0, personalLeaveBalance:0, lslAccruedBalance:0, dateOfBirth:personal.dateOfBirth, email:personal.email, phone:personal.phone, address:personal.address, personalDetailsHistory:[personal], status:'Active' };
     state.employees.push(e);
-    const rateId=uid('rate'), schedId=uid('schedule');
-    state.payRates.push({ id:rateId, empId:e.id, changeType:'Permanent', effectiveDate:start, endDate:'', position:e.position, hourlyRate:e.hourlyRate });
-    state.schedules.push({ id:schedId, empId:e.id, effectiveDate:start, hoursByDay:sched });
-    addJobEvent(e.id,'Commencement',start,'Employee commenced','employee',e.id);
-    addJobEvent(e.id,'Position/Pay Rate',start,`${e.position} — ${E.money(e.hourlyRate)}`,'rate',rateId);
-    addJobEvent(e.id,'Schedule',start,`Starting schedule ${weeklyHours(sched).toFixed(2)} hours/week`,'schedule',schedId);
-    addJobEvent(e.id,'Personal Details',start,'Personal details recorded','employee',e.id);
-    state.taxDetails.push({ id:uid('tax'), empId:e.id, effectiveDate:start, taxFileNumber:v('newTaxFileNumber'), claimTaxFreeThreshold:v('newTaxThreshold')==='true', stsl:v('newTaxStsl')==='true' });
-    addJobEvent(e.id,'Tax Details',start,'Initial tax details recorded','tax',state.taxDetails[state.taxDetails.length-1].id);
-    save(); closeModal(); calculateAllForCurrent(); log(`Employee commenced: ${E.employeeName(e)}`); renderAll(); toast(`Please complete Tax Details for ${E.employeeName(e)}`, 15000);
+    addJobEvent(e.id,'Personal Details',taxEffective,'Personal details recorded','employee',e.id);
+    state.taxDetails.push({ id:uid('tax'), empId:e.id, effectiveDate:taxEffective, taxFileNumber:v('newTaxFileNumber'), claimTaxFreeThreshold:v('newTaxThreshold')==='true', stsl:v('newTaxStsl')==='true' });
+    addJobEvent(e.id,'Tax Details',taxEffective,'Initial tax details recorded','tax',state.taxDetails[state.taxDetails.length-1].id);
+    save(); closeModal(); calculateAllForCurrent(); log(`Employee added: ${E.employeeName(e)}`); renderAll(); toast(`Add Job Data before processing pay for ${E.employeeName(e)}`, 8000);
   }
   function addJobEvent(empId,type,effectiveDate,description,refKind,refId){ state.jobEvents.push({ id:uid('job'), empId, type, effectiveDate, description, refKind, refId }); }
 
@@ -303,12 +288,114 @@
   function saveRateChange(){ const empId=v('rateEmp'); if(!empId || !v('rateStart') || !v('ratePosition') || !v('rateAmount')) return alert('Complete all pay change fields.'); if(v('rateType')==='Temporary' && !v('rateEnd')) return alert('Temporary changes require an end date.'); const id=uid('rate'); state.payRates.push({id,empId,changeType:v('rateType'),effectiveDate:v('rateStart'),endDate:v('rateType')==='Temporary'?v('rateEnd'):'',position:v('ratePosition'),hourlyRate:Number(v('rateAmount'))}); addJobEvent(empId,'Position/Pay Rate',v('rateStart'),`${v('rateType')} — ${v('ratePosition')} — ${E.money(v('rateAmount'))}`,'rate',id); save(); calculateAllForCurrent(); log('Position/pay rate change added'); renderAll(); }
   function saveScheduleChange(){ const empId=v('schedEmp'); const sched=getSchedule('sched'); if(!empId || !v('schedStart') || weeklyHours(sched)<=0) return alert('Complete employee, effective date and schedule hours.'); const id=uid('schedule'); state.schedules.push({id,empId,effectiveDate:v('schedStart'),hoursByDay:sched}); addJobEvent(empId,'Schedule',v('schedStart'),`Schedule changed to ${weeklyHours(sched).toFixed(2)} hours/week`,'schedule',id); save(); calculateAllForCurrent(); log('Schedule change added'); renderAll(); }
 
+  const JOB_REASON_OPTIONS = {
+    Commencement: ['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],
+    Variation: ['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change'],
+    Movement: ['Acting Same Level','Acting Higher Level','Return from Temp Assignment','Promotion','Regression'],
+    Termination: ['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled']
+  };
+  function positionOptions(activeOnly=true){
+    return (state.positions||[]).filter(p=>!activeOnly || p.active!==false).sort((a,b)=>String(a.positionName||'').localeCompare(String(b.positionName||''))).map(p=>`<option value="${esc(p.positionNumber)}">${esc(p.positionNumber)} — ${esc(p.positionName||'')}</option>`).join('');
+  }
+  function positionByNumber(num){ return (state.positions||[]).find(p=>String(p.positionNumber)===String(num)); }
+  function renderJobData(){
+    if(!selectedJobDataEmp){
+      h('jobData', `<h2>Job Data</h2><p class="small-note">Select an employee to view or add effective-dated job rows.</p><div class="controls">${showTerminatedControl('jobDataShowTerminated','jobData')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobDataEmpSelect">${employeeOptions(employeeList(showTerminatedByTab.jobData))}</select></div></div>`);
+      bindShowTerminated('jobDataShowTerminated','jobData',renderJobData);
+      $('jobDataEmpSelect').addEventListener('change',()=>{ selectedJobDataEmp=v('jobDataEmpSelect'); selectedJobDataRowIndex=0; selectedJobDataDraft=null; renderJobData(); });
+      return;
+    }
+    const e=emp(selectedJobDataEmp); if(!e){ selectedJobDataEmp=''; renderJobData(); return; }
+    const rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id).sort((a,b)=>E.compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
+    const totalRows=rows.length + (selectedJobDataDraft && selectedJobDataDraft.empId===e.id ? 1 : 0);
+    if(selectedJobDataRowIndex<0) selectedJobDataRowIndex=0;
+    if(totalRows && selectedJobDataRowIndex>=totalRows) selectedJobDataRowIndex=totalRows-1;
+    const row = selectedJobDataDraft && selectedJobDataRowIndex===rows.length ? selectedJobDataDraft : rows[selectedJobDataRowIndex];
+    h('jobData', `<h2>Job Data</h2><p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="jobDataChangeEmp" class="secondary">Change Employee</button><button id="jobDataAdd" title="Add row">＋</button><button id="jobDataMinus" class="secondary" title="Remove row">−</button><button id="jobDataPrev" class="secondary">←</button><span class="row-indicator">${totalRows?`${selectedJobDataRowIndex+1} of ${totalRows}`:'0 of 0'}</span><button id="jobDataNext" class="secondary">→</button></div><div id="jobDataForm"></div>`);
+    $('jobDataChangeEmp').addEventListener('click',()=>{ selectedJobDataEmp=''; selectedJobDataDraft=null; selectedJobDataRowIndex=0; renderJobData(); });
+    $('jobDataAdd').addEventListener('click',()=>{ selectedJobDataDraft={id:uid('jobdata'),empId:e.id,effectiveDate:todayIso(),effectiveSequence:0,action:'Commencement',reason:'',positionNumber:'',positionName:'',department:'',hourlyRate:0,reportsTo:'',reportsToName:'',positionClass:'Permanent',hoursByDay:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},saved:false}; selectedJobDataRowIndex=rows.length; renderJobData(); });
+    $('jobDataMinus').addEventListener('click',()=>removeJobDataRow(row));
+    $('jobDataPrev').addEventListener('click',()=>{ if(selectedJobDataRowIndex>0){ selectedJobDataRowIndex--; renderJobData(); } });
+    $('jobDataNext').addEventListener('click',()=>{ if(selectedJobDataRowIndex<totalRows-1){ selectedJobDataRowIndex++; renderJobData(); } });
+    renderJobDataForm(row);
+  }
+  function renderJobDataForm(row){
+    if(!row){ h('jobDataForm','<p class="small-note">No Job Data rows yet. Click the plus button to create the first row.</p>'); return; }
+    const action=row.action||'Commencement';
+    const reasons=(JOB_REASON_OPTIONS[action]||[]).map(r=>`<option ${row.reason===r?'selected':''}>${esc(r)}</option>`).join('');
+    h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div></div><div class="divider"></div><h3>Work Schedule</h3>${scheduleInputs('jd')}<p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="saveJobData">Save</button></div></div>`);
+    setScheduleInputs('jd', row.hoursByDay||{}); updateJobDataWeeklyHours();
+    $('jdAction').addEventListener('change',()=>{ row.action=v('jdAction'); row.reason=''; renderJobDataForm(row); });
+    $('jdPositionNumber').addEventListener('change',()=>populateJobDataPosition(v('jdPositionNumber')));
+    $('jdPositionLookup').addEventListener('click',openJobDataPositionLookup);
+    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun'].forEach(id=>$(id).addEventListener('input',updateJobDataWeeklyHours));
+    $('saveJobData').addEventListener('click',saveJobDataRow);
+  }
+  function setScheduleInputs(prefix,map){ ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d,i)=>{ const key=[1,2,3,4,5,6,0][i]; if($(prefix+d)) setv(prefix+d, Number((map||{})[key]||0)); }); }
+  function updateJobDataWeeklyHours(){ if($('jdWeeklyHours')) h('jdWeeklyHours', `Total Weekly Hours: ${weeklyHours(getSchedule('jd')).toFixed(2)}`); }
+  function populateJobDataPosition(num){
+    const p=positionByNumber(num); if(!p){ setv('jdPositionName',''); setv('jdDepartment',''); setv('jdHourlyRate',''); setv('jdReportsTo',''); h('jdReportsToName',''); return; }
+    setv('jdPositionNumber',p.positionNumber); setv('jdPositionName',p.positionName||''); setv('jdDepartment',p.department||''); setv('jdHourlyRate',Number(p.hourlyRate||0)); setv('jdReportsTo',p.reportsTo||''); h('jdReportsToName', p.reportsTo ? esc((positionByNumber(p.reportsTo)||{}).positionName||'Position not found') : '');
+  }
+  function openJobDataPositionLookup(){
+    const rows=(state.positions||[]).filter(p=>p.active!==false).map(p=>[esc(p.positionNumber),esc(p.positionName||''),esc(p.department||''),`<button data-pick-jd-pos="${esc(p.positionNumber)}">Select</button>`]);
+    modal('Select Position', rows.length?table(['Position Number','Position Name','Department',''],rows):'<p>No active positions available. Create one in Settings > Positions.</p>', '', true);
+    document.querySelectorAll('[data-pick-jd-pos]').forEach(b=>b.addEventListener('click',()=>{ const num=b.dataset.pickJdPos; closeModal(); populateJobDataPosition(num); }));
+  }
+  function readJobDataForm(){
+    const pos=positionByNumber(v('jdPositionNumber'));
+    const reportsTo=pos ? (pos.reportsTo||'') : '';
+    return { id:(selectedJobDataDraft&&selectedJobDataDraft.id)||((state.jobDataRows||[]).filter(r=>r.empId===selectedJobDataEmp).sort((a,b)=>E.compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0))[selectedJobDataRowIndex]||{}).id||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason:v('jdReason'), positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass:v('jdPositionClass'), hoursByDay:getSchedule('jd'), saved:true };
+  }
+  function saveJobDataRow(){
+    const row=readJobDataForm(); const e=emp(row.empId); if(!e) return alert('Select an employee.');
+    if(!row.effectiveDate) return alert('Enter an effective date.');
+    if(!row.reason) return alert('Select a reason.');
+    if(row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
+    if(row.action!=='Termination' && weeklyHours(row.hoursByDay)<=0) return alert('Enter a work schedule.');
+    const existing=(state.jobDataRows||[]).find(r=>r.id===row.id);
+    if(existing){ Object.assign(existing,row); }
+    else { state.jobDataRows.push(row); }
+    applyJobDataToEmployee(row);
+    selectedJobDataDraft=null;
+    save(); calculateAllForCurrent(); log(`Job Data saved for ${E.employeeName(e)}`); renderAll(); toast('Job Data saved');
+  }
+  function applyJobDataToEmployee(row){
+    const e=emp(row.empId); if(!e) return;
+    if(row.action==='Termination'){
+      e.terminationDate=row.effectiveDate; e.terminationReason=row.reason; e.status=E.compare(todayIso(), row.effectiveDate)>0?'Terminated':'Active';
+      addJobEvent(e.id,'Termination',row.effectiveDate,row.reason,'jobData',row.id); return;
+    }
+    if(!e.startDate || row.action==='Commencement'){
+      e.startDate = row.effectiveDate; if(!e.originalStartDate) e.originalStartDate=row.effectiveDate; if(!e.lslServiceDate) e.lslServiceDate=row.effectiveDate; e.status='Active'; e.terminationDate=''; e.terminationReason='';
+    }
+    e.position=row.positionName; e.department=row.department; e.hourlyRate=Number(row.hourlyRate||0); e.type=row.positionClass==='Fixed-Term'?'Fixed Term':row.positionClass; if(row.positionClass!=='Fixed-Term'){ e.contractEndDate=''; e.autoTerminate=false; }
+    const rateId=row.rateId||uid('rate'); row.rateId=rateId;
+    const existingRate=(state.payRates||[]).find(r=>r.id===rateId);
+    const rateRow={id:rateId,empId:e.id,changeType:'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),jobDataId:row.id};
+    if(existingRate) Object.assign(existingRate,rateRow); else state.payRates.push(rateRow);
+    const schedId=row.scheduleId||uid('schedule'); row.scheduleId=schedId;
+    const existingSched=(state.schedules||[]).find(r=>r.id===schedId);
+    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,hoursByDay:row.hoursByDay,jobDataId:row.id};
+    if(existingSched) Object.assign(existingSched,schedRow); else state.schedules.push(schedRow);
+    addJobEvent(e.id,'Job Data',row.effectiveDate,`${row.action} — ${row.reason} — ${row.positionName} — ${weeklyHours(row.hoursByDay).toFixed(2)} hours/week`,'jobData',row.id);
+  }
+  function removeJobDataRow(row){
+    if(!row) return;
+    if(row.saved===false || (selectedJobDataDraft && row.id===selectedJobDataDraft.id)){ selectedJobDataDraft=null; selectedJobDataRowIndex=0; renderJobData(); return; }
+    confirmModal('Remove this Job Data row? This may result in pay recalculations.', 'Yes', ()=>{ state.jobDataRows=state.jobDataRows.filter(r=>r.id!==row.id); if(row.rateId) state.payRates=state.payRates.filter(r=>r.id!==row.rateId); if(row.scheduleId) state.schedules=state.schedules.filter(r=>r.id!==row.scheduleId); state.jobEvents=state.jobEvents.filter(j=>j.refId!==row.id); save(); calculateAllForCurrent(); selectedJobDataRowIndex=0; renderAll(); });
+  }
+
   function renderJobSummary(){
-    h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Shows employee/job record changes only. Leave bookings are not shown here.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
+    h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Read-only list of saved Job Data rows.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
     bindShowTerminated('jobShowTerminated','jobSummary',renderJobSummary); $('jobEmp').addEventListener('change',renderJobOutput); renderJobOutput();
   }
-  function renderJobOutput(){ const id=v('jobEmp'); if(!id){ h('jobOutput','<p class="small-note">Select an employee.</p>'); return; } const rows=[]; state.jobEvents.filter(x=>x.empId===id).forEach(x=>rows.push({kind:x.refKind||'event',id:x.refId||x.id,effectiveDate:x.effectiveDate,type:x.type,description:x.description,eventId:x.id})); state.payRates.filter(x=>x.empId===id&&!rows.some(r=>r.id===x.id)).forEach(x=>rows.push({kind:'rate',id:x.id,effectiveDate:x.effectiveDate,type:'Position/Pay Rate',description:`${x.changeType} — ${x.position} — ${E.money(x.hourlyRate)}`})); state.schedules.filter(x=>x.empId===id&&!rows.some(r=>r.id===x.id)).forEach(x=>rows.push({kind:'schedule',id:x.id,effectiveDate:x.effectiveDate,type:'Schedule',description:`${weeklyHours(x.hoursByDay).toFixed(2)} hours/week`})); rows.sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)); h('jobOutput', table(['Effective Date','Type','Description','Action'], rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.type),esc(r.description),`<button class="danger" data-del-job="${esc(r.kind)}|${esc(r.id)}|${esc(r.eventId||'')}">Delete</button>`]))); document.querySelectorAll('[data-del-job]').forEach(b=>b.addEventListener('click',()=>{ const [kind,id,eventId]=b.dataset.delJob.split('|'); confirmModal('Are you sure you want to delete this entry? This may result in pay recalculations','Yes',()=>deleteJobEntry(kind,id,eventId)); })); }
-  function deleteJobEntry(kind,id,eventId){ if(kind==='rate') state.payRates=state.payRates.filter(x=>x.id!==id); if(kind==='schedule') state.schedules=state.schedules.filter(x=>x.id!==id); if(eventId) state.jobEvents=state.jobEvents.filter(x=>x.id!==eventId); state.jobEvents=state.jobEvents.filter(x=>x.refId!==id); save(); calculateAllForCurrent(); log('Job Summary entry deleted. Recalculation applied.'); renderAll(); }
+  function renderJobOutput(){
+    const id=v('jobEmp'); if(!id){ h('jobOutput','<p class="small-note">Select an employee.</p>'); return; }
+    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    h('jobOutput', rows.length?table(['Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'], rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>');
+  }
+  function deleteJobEntry(kind,id,eventId){ alert('Job Summary is read-only. Use Job Data to process job changes.'); }
 
   function renderAdditionalEarnings(){
     if(additionalPeriodOffset === undefined) additionalPeriodOffset = 0;
@@ -622,7 +709,7 @@
     if(!$('cashBalance')) return;
     const e=emp(v('cashEmp'));
     if(!e){ setv('cashBalance','0.00'); return; }
-    const b=E.projectedBalances(state,e,currentCycle());
+    const b=E.projectedBalances(state,e,currentCycle(),false);
     const bal=v('cashLeaveType')==='Long Service Leave'?b.lslAccrued:b.annual;
     setv('cashBalance',Number(bal||0).toFixed(2));
     $('cashHours').max=Number(bal||0).toFixed(2);
@@ -662,7 +749,7 @@
   }
   function renderAbsenceOutput(){
     const e=emp(v('absenceEmp')); if(!e){ h('absenceOutput','<p class="small-note">Select an employee.</p>'); return; }
-    const b=E.projectedBalances(state,e,currentCycle());
+    const b=E.projectedBalances(state,e,currentCycle(),false);
     if(absenceEditing){
       const d=absenceDraft || {annual:b.annual, personal:b.personal, lslAccrued:b.lslAccrued, lslProRata:b.lslProRata, lslEntitlementDate:b.lslEntitlementDate}; absenceDraft=d;
       h('absenceOutput', `<div class="grid form-grid"><div><label>Annual Leave Balance (Hours)</label><input id="adjAnnual" type="number" step="0.01" value="${Number(d.annual||0).toFixed(2)}"></div><div><label>Personal Leave Balance (Hours)</label><input id="adjPersonal" type="number" step="0.01" value="${Number(d.personal||0).toFixed(2)}"></div><div><label>LSL Accrued Balance (Hours)</label><input id="adjLslAccrued" type="number" step="0.01" value="${Number(d.lslAccrued||0).toFixed(2)}"></div><div><label>LSL Pro-rata (Hours)</label><input id="adjLslProRata" type="number" step="0.01" value="${Number(d.lslProRata||0).toFixed(2)}"></div><div><label>LSL Entitlement Date</label><input id="adjLslDate" type="date" value="${esc(d.lslEntitlementDate||'')}"></div></div><div class="save-row"><button id="cancelAbsenceAdjust" class="secondary">Cancel</button><button id="saveAbsenceAdjust">Save</button></div>`);
@@ -759,7 +846,75 @@
   function saveCertification(cycleId){ const checks=[...document.querySelectorAll('.certLine')]; if(checks.some(c=>!c.checked)) return alert('Please certify each pay line.'); if(!v('certName')||!v('certPosition')) return alert('Enter name and position.'); if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.'); state.certifications[String(cycleId)]={name:v('certName'),position:v('certPosition'),savedAt:new Date().toISOString(),locked:true}; save(); log(`Certification Report saved for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); }
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
-  function renderSettings(){ h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="checkUpdates">Check for Updates</button><button id="changeNotes" class="secondary">Change Notes</button><button id="overnight" class="secondary">Check Overnight Processing</button><button id="finalisePay" class="warning">Finalise Pay</button><button id="checkErrors" class="secondary">Check for Errors</button></div><div class="controls"><button id="publicHolidays" class="secondary">View WA Public Holidays</button></div><div id="settingsOutput" class="small-note"></div>`); $('checkUpdates').addEventListener('click',checkForUpdates); $('changeNotes').addEventListener('click',openChangeNotes); $('overnight').addEventListener('click',()=>checkOvernightProcessing(true)); $('finalisePay').addEventListener('click',openFinalisePay); $('publicHolidays').addEventListener('click',openPublicHolidays); $('checkErrors').addEventListener('click',checkForErrors); }
+  function renderSettings(){
+    h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button></div><div id="settingsOutput"></div>`);
+    $('settingsGeneral').addEventListener('click',()=>{ settingsView='general'; renderSettings(); });
+    $('settingsPositions').addEventListener('click',()=>{ settingsView='positions'; renderSettings(); });
+    if(settingsView==='positions') renderPositionsSettings(); else renderGeneralSettings();
+  }
+  function renderGeneralSettings(){
+    h('settingsOutput', `<div class="controls"><button id="checkUpdates">Check for Updates</button><button id="changeNotes" class="secondary">Change Notes</button><button id="overnight" class="secondary">Check Overnight Processing</button><button id="finalisePay" class="warning">Finalise Pay</button><button id="checkErrors" class="secondary">Check for Errors</button></div><div class="controls"><button id="publicHolidays" class="secondary">View WA Public Holidays</button></div><div id="settingsGeneralOutput" class="small-note"></div>`);
+    $('checkUpdates').addEventListener('click',checkForUpdates); $('changeNotes').addEventListener('click',openChangeNotes); $('overnight').addEventListener('click',()=>checkOvernightProcessing(true)); $('finalisePay').addEventListener('click',openFinalisePay); $('publicHolidays').addEventListener('click',openPublicHolidays); $('checkErrors').addEventListener('click',checkForErrors);
+  }
+  function generatePositionNumber(){
+    const used=new Set((state.positions||[]).map(p=>String(p.positionNumber)));
+    for(let i=0;i<2000;i++){ const n=String(Math.floor(1000+Math.random()*9000)); if(!used.has(n)) return n; }
+    let n=1000; while(used.has(String(n))) n++; return String(n).slice(0,4);
+  }
+  function renderPositionsSettings(){
+    const rows=(state.positions||[]).sort((a,b)=>String(a.positionName||'').localeCompare(String(b.positionName||''))).map(p=>[esc(p.positionNumber),`<button class="link-button" data-open-position="${esc(p.id)}">${esc(p.positionName||'')}</button>`,esc(p.department||''),E.money(p.hourlyRate||0),p.active===false?badge('Inactive'):badge('Active')]);
+    h('settingsOutput', `<div class="controls"><button id="createPosition">Create</button></div>${rows.length?table(['Position Number','Position Name','Department','Hourly Rate','Status'],rows):'<p class="small-note">No positions have been created.</p>'}`);
+    $('createPosition').addEventListener('click',openCreatePosition);
+    document.querySelectorAll('[data-open-position]').forEach(b=>b.addEventListener('click',()=>openEditPosition(b.dataset.openPosition)));
+  }
+  function positionForm(pos,isCreate){
+    const reportsToName=pos.reportsTo?((positionByNumber(pos.reportsTo)||{}).positionName||'Position not found'):'';
+    return `<div class="grid form-grid"><div><label>Position Name</label><input id="posName" value="${esc(pos.positionName||'')}"></div><div><label>Position Number</label><input id="posNumber" readonly class="readonly" value="${esc(pos.positionNumber||generatePositionNumber())}"></div><div><label>Department</label><select id="posDepartment"><option ${pos.department==='Operations'?'selected':''}>Operations</option><option ${pos.department==='ICT'?'selected':''}>ICT</option><option ${pos.department==='Human Resources'?'selected':''}>Human Resources</option></select></div><div><label>Hourly Rate</label><input id="posRate" type="number" step="0.01" value="${esc(pos.hourlyRate||'')}"></div><div><label>Reports To</label><div class="inline-field"><input id="posReportsTo" value="${esc(pos.reportsTo||'')}"><button id="posLookup" type="button" class="icon-btn">🔍</button></div><p id="posReportsToName" class="small-note">${esc(reportsToName)}</p></div>${isCreate?'':`<div><label>Status</label><select id="posActive"><option value="true" ${pos.active!==false?'selected':''}>Active</option><option value="false" ${pos.active===false?'selected':''}>Inactive</option></select></div>`}</div>`;
+  }
+  function openCreatePosition(){
+    const pos={positionNumber:generatePositionNumber(),department:'Operations',active:true};
+    modal('Create Position', positionForm(pos,true), '<button id="addPosition">Add</button>', true);
+    bindPositionFormLookup();
+    $('addPosition').addEventListener('click',()=>savePosition(null,true));
+  }
+  function openEditPosition(id){
+    const pos=(state.positions||[]).find(p=>p.id===id); if(!pos) return;
+    modal('Position Details', positionForm(pos,false), '<button id="savePosition">Save</button>', true);
+    bindPositionFormLookup();
+    $('savePosition').addEventListener('click',()=>savePosition(id,false));
+  }
+  function bindPositionFormLookup(){
+    $('posReportsTo').addEventListener('change',()=>{ const p=positionByNumber(v('posReportsTo')); h('posReportsToName', v('posReportsTo') ? esc((p&&p.positionName)||'Position not found') : ''); });
+    $('posLookup').addEventListener('click',()=>{
+      const rows=(state.positions||[]).map(p=>`<div class="lookup-row"><button type="button" data-pick-reportsto="${esc(p.positionNumber)}">${esc(p.positionNumber)} — ${esc(p.positionName||'')}</button></div>`).join('');
+      h('posReportsToName', rows || 'No positions available.');
+      document.querySelectorAll('[data-pick-reportsto]').forEach(b=>b.addEventListener('click',()=>{ const num=b.dataset.pickReportsto; setv('posReportsTo',num); const p=positionByNumber(num); h('posReportsToName', esc((p&&p.positionName)||'')); }));
+    });
+  }
+
+  function employeesAssignedToPosition(positionNumber){
+    return activeEmployees().filter(e=>{
+      const latest=(state.jobDataRows||[]).filter(r=>r.empId===e.id && r.action!=='Termination' && E.compare(r.effectiveDate,todayIso())<=0).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
+      return latest && String(latest.positionNumber)===String(positionNumber);
+    });
+  }
+  function savePosition(id,isCreate){
+    if(!v('posName').trim()) return alert('Position Name is required.');
+    if(!v('posNumber')) return alert('Position Number is required.');
+    if(!v('posDepartment')) return alert('Department is required.');
+    if(String(v('posRate')).trim()==='' || Number(v('posRate'))<0) return alert('Hourly Rate is required.');
+    const reportsTo=v('posReportsTo').trim();
+    if(reportsTo && !positionByNumber(reportsTo)) return alert('Reports To position number was not found.');
+    let pos=id?(state.positions||[]).find(p=>p.id===id):null;
+    if(!pos){ pos={id:uid('pos'),positionNumber:v('posNumber'),active:true}; state.positions.push(pos); }
+    const requestedActive = isCreate ? true : v('posActive')==='true';
+    if(pos.active!==false && requestedActive===false){
+      const assigned=employeesAssignedToPosition(pos.positionNumber);
+      if(assigned.length) return alert(`This position cannot be made inactive because it has current employees assigned: ${assigned.map(E.employeeName).join(', ')}`);
+    }
+    pos.positionName=v('posName').trim(); pos.department=v('posDepartment'); pos.hourlyRate=Number(v('posRate')); pos.reportsTo=reportsTo; pos.active=requestedActive;
+    save(); closeModal(); renderSettings(); toast(isCreate?'Position added':'Position saved');
+  }
 
   function checkForErrors(){
     calculateAllForCurrent();
@@ -787,8 +942,16 @@
     modal('Pay Error / Warning Check', body, `<button data-close-modal>Close</button>`);
   }
 
-  async function checkForUpdates(){ h('settingsOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
+  async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.8',notes:[
+      'Added Job Data tab above Job Summary and removed Change Centre from the sidebar.',
+      'Added effective-dated Job Data rows with effective date, sequence, action, reason, position lookup, position class, work schedule and save processing.',
+      'Added Settings > Positions with create, edit, active/inactive status, Reports To lookup and position-rate snapshot behaviour.',
+      'Simplified the Employees tab to employee identity, personal details and tax details only.',
+      'Updated Job Summary to a read-only list of saved Job Data rows.',
+      'Absence Balance display now shows committed balances only; pay-preview leave impacts are not committed until finalise pay.'
+    ]},
     {version:'v1.1.7',notes:[
       'Deductions tab now stages changes and only updates Job Summary, payroll calculations and payslips after the Save button is pressed.',
       'Deductions tab keeps the selected employee visible after adding, deleting or end-dating deductions until the user leaves the tab.',

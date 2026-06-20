@@ -1,6 +1,6 @@
 {
-  "version": "1.1.7",
-  "releaseDate": "2026-06-19",
-  "notes": "Adds staged Deductions saving, keeps selected deduction employee after changes, clears open payslips when leaving the Payslip tab, adds Certification Report pay-breakdown magnifier, improves retro overtime tax/STSL, prevents overtime leave accrual, adds burgundy Leave Without Pay calendar display, adds Additional Day before-start-date warning, and consolidates matching retro recovery lines.",
+  "version": "1.1.8",
+  "releaseDate": "2026-06-20",
+  "notes": "Adds Job Data to replace Change Centre, adds Settings > Positions with create/edit/active status, simplifies Employees and Job Summary, moves job changes into effective-dated rows, and keeps absence balances committed only after finalisation.",
   "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }
