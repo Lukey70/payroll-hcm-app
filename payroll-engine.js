@@ -4,6 +4,8 @@
   const ANCHOR_CYCLE = { id: 1, start: '2026-05-22', end: '2026-06-04', paymentDate: '2026-06-04', closeDate: '2026-05-29' };
   const RETRO_PROCESSING_START = '2026-05-03';
   const SUPER_RATE = 0.12;
+  const ANNUAL_LEAVE_WEEKS_PER_YEAR = 4;
+  const PERSONAL_LEAVE_WEEKS_PER_YEAR = 3;
   const PAY_PERIODS_PER_YEAR = 26;
   const PUBLIC_HOLIDAYS_WA = [
     ['2026-01-01', "New Year's Day"], ['2026-01-26', 'Australia Day'], ['2026-03-02', 'Labour Day'],
@@ -429,6 +431,11 @@
   function ordinaryHours(rows){
     return rows.filter(r=>(['regular','leave','publicHoliday'].includes(r.kind) || r.description==='Additional Day') && !isLeaveWithoutPay(r.description) && r.ote !== false).reduce((s,r)=>s+Number(r.units||0),0);
   }
+  function leaveAccrualForOrdinaryHours(e, ordinary){
+    if(e && e.type === 'Casual') return { annual:0, personal:0 };
+    const hours = Number(ordinary||0);
+    return { annual:round4(hours * ANNUAL_LEAVE_WEEKS_PER_YEAR / 52), personal:round4(hours * PERSONAL_LEAVE_WEEKS_PER_YEAR / 52) };
+  }
   function projectedBalances(state,e,c,includeCurrent=true,overrideRows=null){
     let annual = Number(e.annualLeaveBalance||0);
     let personal = Number(e.personalLeaveBalance||0);
@@ -438,8 +445,9 @@
       const rows = overrideRows || earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true});
       const ordinary = ordinaryHours(rows);
       if(e.type !== 'Casual'){
-        annual += ordinary * 4 / 52;
-        personal += ordinary * 3 / 52;
+        const accrual = leaveAccrualForOrdinaryHours(e, ordinary);
+        annual += accrual.annual;
+        personal += accrual.personal;
       }
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+r.units,0);
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+r.units,0);
@@ -469,7 +477,7 @@
     const map = new Map();
     function ensure(r){
       const desc = retroDescription(r.description);
-      const key = [r.startDate,r.endDate,desc,r.position||'',r.ote===false?'nonote':'ote'].join('|');
+      const key = [r.startDate,r.endDate,desc,r.ote===false?'nonote':'ote'].join('|');
       const existing = map.get(key) || {
         description:desc, expectedUnits:0, paidUnits:0, expectedAmount:0, paidAmount:0,
         startDate:r.startDate, endDate:r.endDate, expectedRate:0, paidRate:0, baseRate:Number(r.baseRate||r.rate||0),
@@ -479,7 +487,7 @@
       return existing;
     }
     function sameComparableRow(a,b){
-      return (a.description||'')===(b.description||'') && (a.startDate||'')===(b.startDate||'') && (a.endDate||'')===(b.endDate||'') && (a.position||'')===(b.position||'') && (a.ote===false)===(b.ote===false);
+      return (a.description||'')===(b.description||'') && (a.startDate||'')===(b.startDate||'') && (a.endDate||'')===(b.endDate||'') && (a.ote===false)===(b.ote===false);
     }
     function comparisonPieces(row, otherRows){
       return otherRows.some(o=>sameComparableRow(row,o)) ? [Object.assign({},row)] : splitMergedRowByDay(row);
@@ -490,6 +498,7 @@
         existing.expectedUnits = round4(existing.expectedUnits + Number(r.units||0));
         existing.expectedAmount = round2(existing.expectedAmount + Number(r.amount||0));
         existing.expectedRate = Number(r.rate||existing.expectedRate||0);
+        existing.position = r.position || existing.position || '';
         existing.baseRate = Number(r.baseRate||r.rate||existing.baseRate||0);
       });
     });
@@ -551,12 +560,14 @@
     const map = new Map();
     retro.forEach(r=>{
       const originalCycle = cycleForDate(r.startDate || r.endDate || ANCHOR_CYCLE.start) || { id:'unknown' };
-      const key = [originalCycle.id,r.description||'',r.rate||0,r.baseRate||0,r.position||'',r.ote===false?'nonote':'ote'].join('|');
+      const key = [originalCycle.id,r.description||'',r.ote===false?'nonote':'ote'].join('|');
       const existing = map.get(key) || Object.assign({}, r, { units:0, amount:0, startDate:r.startDate, endDate:r.endDate });
       existing.units = round4(Number(existing.units||0) + Number(r.units||0));
       existing.amount = round2(Number(existing.amount||0) + Number(r.amount||0));
+      if(r.position && !existing.position) existing.position = r.position;
       if(!existing.startDate || compare(r.startDate, existing.startDate)<0) existing.startDate = r.startDate;
       if(!existing.endDate || compare(r.endDate, existing.endDate)>0) existing.endDate = r.endDate;
+      existing.rate = Math.abs(Number(existing.units||0))>0.0001 ? round2(Number(existing.amount||0)/Number(existing.units||1)) : Number(existing.rate||0);
       map.set(key, existing);
     });
     return current.concat([...map.values()].filter(r=>Math.abs(r.amount)>=0.01 || Math.abs(r.units)>=0.0001));
@@ -575,8 +586,9 @@
     const superAmt = round2(superCurrent + superRetro);
     const net = round2(gross - tax - deductionParts.preTaxTotal - deductionParts.postTaxTotal);
     const ordinary = ordinaryHours(rows);
-    const annualAccrual = e.type === 'Casual' ? 0 : round4(ordinary*4/52);
-    const personalAccrual = e.type === 'Casual' ? 0 : round4(ordinary*3/52);
+    const leaveAccrual = leaveAccrualForOrdinaryHours(e, ordinary);
+    const annualAccrual = leaveAccrual.annual;
+    const personalAccrual = leaveAccrual.personal;
     const balances = projectedBalances(state, e, c, true, rows);
     const committedBalances = projectedBalances(state, e, c, false);
     const lslUsedForPeriod = rows.filter(r=>r.description==='Long Service Leave').reduce((sum,r)=>sum+Number(r.units||0),0);
@@ -636,8 +648,9 @@
       const rows = payslips.filter(x=>x.empId===e.id).flatMap(x=>x.rows||[]);
       const ordinary = ordinaryHours(rows);
       if(e.type !== 'Casual'){
-        e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + ordinary*4/52);
-        e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + ordinary*3/52);
+        const accrual = leaveAccrualForOrdinaryHours(e, ordinary);
+        e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + accrual.annual);
+        e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + accrual.personal);
       }
       e.annualLeaveBalance = round4(Math.max(0, Number(e.annualLeaveBalance||0) - rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+r.units,0) - rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+r.units,0)));
       e.personalLeaveBalance = round4(Math.max(0, Number(e.personalLeaveBalance||0) - rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+r.units,0)));
@@ -665,8 +678,9 @@
       const rows = earningRowsForCycle(state,e,clipped,{includeAdditional:true,includePayouts:true});
       const ordinary = ordinaryHours(rows);
       if(e.type !== 'Casual'){
-        annual += ordinary*4/52;
-        personal += ordinary*3/52;
+        const accrual = leaveAccrualForOrdinaryHours(e, ordinary);
+        annual += accrual.annual;
+        personal += accrual.personal;
       }
       annual -= rows.filter(r=>r.description==='Annual Leave' || r.description==='Annual Leave Cash Out' || r.description==='Annual Leave Payout').reduce((s,r)=>s+Number(r.units||0),0);
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0);
@@ -680,7 +694,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, projectedBalances, recalculateBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, employmentEnd, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

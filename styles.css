@@ -30,7 +30,7 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 .inline-field{display:flex;gap:6px;align-items:center}.inline-field input{flex:1}.job-data-box{border:1px solid #d8dee9;border-radius:8px;padding:14px;background:#fbfcfe}.row-indicator{display:inline-flex;align-items:center;padding:0 10px;font-weight:700}.link-button{border:0;background:transparent;color:#0b5cad;text-decoration:underline;cursor:pointer;padding:0;font:inherit}.readonly{background:#f2f4f7;color:#555}.badge-inactive{background:#555;color:#fff}.badge-active{background:#16a34a;color:#fff}
 .lookup-row{margin:4px 0}.lookup-row button{width:100%;text-align:left;background:#eef5ff;color:#0f3b66;border:1px solid #c9ddf2;border-radius:6px;padding:6px 8px}
 
-/* v1.1.11 fixed action/summary header and compact payment advice layout */
+/* v1.1.12 fixed action/summary header and compact payment advice layout */
 @media screen and (min-width:851px){
   main{padding-top:175px;}
   .top-actions{position:fixed;top:12px;left:287px;right:22px;z-index:20;background:var(--bg);padding:8px 0;margin:0;}
@@ -59,7 +59,7 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 }
 @media(max-width:850px){main{padding-top:22px}.top-actions,.metric-grid{position:static}}
 
-/* v1.1.11 sidebar Employee Data dropdown, alerts dropdown and payslip print fixes */
+/* v1.1.12 sidebar Employee Data dropdown, alerts dropdown and payslip print fixes */
 .nav-parent{background:#111827;color:#e2e8f0;border:1px solid #334155;text-align:left;border-radius:12px;padding:11px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:700}
 .nav-parent.open{background:#0f172a;border-color:#475569}.nav-subgroup{display:none;flex-direction:column;gap:6px;margin:2px 0 6px 12px}.nav-subgroup.open{display:flex}.nav-child{padding-left:18px;font-size:13px}
 .alerts-menu{position:relative;margin-left:auto;display:flex;align-items:center}.alert-bell{position:relative;background:#fff;color:#111827;border:1px solid var(--border);border-radius:999px;width:42px;height:42px;padding:0;font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center}.alerts-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}.alerts-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:260px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.18);padding:12px;color:var(--text);z-index:80}.alert-item{padding:8px 0;border-bottom:1px solid var(--border)}.alert-item:last-child{border-bottom:0}
@@ -77,4 +77,18 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
   #printArea .payslip th,#printArea .payslip td{padding:3px 4px;font-size:9.5px;}
   #printArea .payslip .section-title{padding:3px;margin-top:5px;}
   #printArea .payslip-status{display:none;}
+}
+
+/* v1.1.12 print spacing and alert/certification refinements */
+.alert-item{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.alert-item>div{flex:1}.alert-read{font-size:12px;white-space:nowrap;margin-top:1px}.success-text{color:#166534}.warning-text{color:#92400e}
+@media print{
+  @page{size:A4;margin:8mm;}
+  #printArea .payslip{display:block!important;min-height:0!important;height:auto!important;border:1px solid #777!important;margin:0!important;padding:4mm!important;font-size:10px!important;line-height:1.08!important;page-break-after:auto!important;break-after:auto!important;page-break-inside:avoid!important;}
+  #printArea .payslip h2{font-size:15px!important;margin:0 0 2.5mm!important;}
+  #printArea .payslip-header{gap:8mm!important;margin:0 0 2mm!important;}
+  #printArea .payslip-address{min-height:0!important;padding:0!important;}
+  #printArea .payslip-details{gap:0!important;font-size:10px!important;}
+  #printArea .payslip table{margin-top:1.5mm!important;}
+  #printArea .payslip th,#printArea .payslip td{padding:1.3mm 1.6mm!important;font-size:9px!important;}
+  #printArea .payslip .section-title{padding:1.2mm 0.8mm!important;margin-top:2mm!important;}
 }

@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.11'), 'sidebar/version label must show v1.1.11');
-  assert(data.includes("APP_VERSION = '1.1.11'"), 'data-store version must be 1.1.11');
+  assert(html.includes('v1.1.12'), 'sidebar/version label must show v1.1.12');
+  assert(data.includes("APP_VERSION = '1.1.12'"), 'data-store version must be 1.1.12');
 })();
 
 (function testAnchorPayCycle(){
@@ -475,6 +475,43 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(totalUnitsByDesc(casualPays,'Public Holiday'),0,'Casual employees should not receive automatic public holiday pay when not specifically worked');
 })();
 
+
+(function testV1112RetroPayRateDifferenceOnlyEvenIfPositionChanges(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  state.taxDetails.push({id:'tax1',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const original=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.payslips.push(...original); state.currentCycleId=2;
+  state.payRates.push({id:'r_new',empId:e.id,effectiveDate:'2026-05-22',position:'Updated Officer',hourlyRate:41,changeType:'Permanent'});
+  const next=E.calculateEmployee(state,e.id,2,false);
+  const rows=next.flatMap(p=>p.rows||[]);
+  const regular=rows.filter(r=>r.description==='Regular Pay Retro');
+  assert.strictEqual(regular.length,1,'Backdated pay rate change should consolidate Regular Pay Retro to the difference-only line even if position text changes');
+  assert.strictEqual(Number(regular[0].amount.toFixed(2)),67.5,'Regular Pay Retro should be the $1/hour difference for 67.5 regular hours only');
+  assert(!regular.some(r=>Math.abs(r.amount)>1000),'Retro pay rate change should not recover and reissue full old/new regular pay amounts');
+})();
+
+(function testV1112LeaveAccrualPerPayPeriodNoDoubleAddOnCalculate(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:100,personalLeaveBalance:50}); addSchedule(state,e.id); addRate(state,e.id);
+  const p1=E.calculateEmployee(state,e.id,1,false)[0];
+  const p2=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(p1.annualAccrual, E.leaveAccrualForOrdinaryHours(e,75).annual, 'Annual Leave accrual should be based on ordinary hours in the pay period');
+  assert.strictEqual(p1.personalAccrual, E.leaveAccrualForOrdinaryHours(e,75).personal, 'Personal Leave accrual should be based on ordinary hours in the pay period');
+  assert.strictEqual(e.annualLeaveBalance,100,'Calculate Pay should not commit or double-add Annual Leave balance before finalisation');
+  assert.strictEqual(e.personalLeaveBalance,50,'Calculate Pay should not commit or double-add Personal Leave balance before finalisation');
+  assert.deepStrictEqual({a:p1.annualAccrual,p:p1.personalAccrual},{a:p2.annualAccrual,p:p2.personalAccrual},'Repeated Calculate Pay should produce the same accrual for the period');
+})();
+
+(function testV1112CertificationWorkflowAndAlertStrings(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const styles = fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
+  assert(app.includes('function autoSaveCertLine') && app.includes('Certification progress saved'), 'Certification line checkboxes should auto-save progress');
+  assert(app.includes('Certification removed:') && app.includes('reconcileCertificationForCycle'), 'Current/open pay changes after certification should uncertify affected lines and create an alert');
+  assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
+  assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
+  assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
+  assert(styles.includes('min-height:0!important') && styles.includes('v1.1.12 print spacing'), 'v1.1.12 print CSS should remove forced full-page blank payslip height');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -508,4 +545,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.11 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
+console.log('PASS: v1.1.12 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');

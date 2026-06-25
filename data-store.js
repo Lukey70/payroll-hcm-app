@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.11';
+  const APP_VERSION = '1.1.12';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -89,6 +89,7 @@
     state.cashOutRequests.forEach(c=>{ if(!c.id) c.id = uid('cash'); if(c.saved === undefined) c.saved = true; if(c.deleted === undefined) c.deleted = false; c.hours = Number(c.hours||0); });
     state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });
     state.alerts.forEach(a=>{ if(!a.id) a.id = uid('alert'); if(a.read === undefined) a.read = false; if(a.message === undefined) a.message = ''; });
+    Object.keys(state.certifications||{}).forEach(k=>{ const c=state.certifications[k]; if(c && typeof c==='object'){ if(!c.lines) c.lines = {}; if(c.completed === undefined) c.completed = !!c.locked; if(c.locked === undefined) c.locked = !!c.completed; } });
     state.version = APP_VERSION;
     return state;
   }

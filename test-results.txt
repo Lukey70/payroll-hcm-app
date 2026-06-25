@@ -1,11 +1,10 @@
-Payroll/HCM App v1.1.11 test results
-Generated from user-provided payroll-hcm-app-v1.1.10(1).zip baseline
+Payroll/HCM App v1.1.12 test results
+Generated: 2026-06-25 04:25:27 UTC
 
 Syntax checks:
-PASS: data-store.js syntax
-PASS: payroll-engine.js syntax
-PASS: app.js syntax
-PASS: test-cases.js syntax
+PASS: app.js syntax check
+PASS: payroll-engine.js syntax check
+PASS: data-store.js syntax check
 
 Automated regression tests:
 PASS: Login button/password strings and app version are present
@@ -39,17 +38,10 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.11 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+PASS: v1.1.12 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
 
-Additional v1.1.11 coverage:
-PASS: Employee Data sidebar dropdown with Personal Details, Bank Details, Tax Details and Super
-PASS: Alert bell dropdown placeholder with No New Alerts and badge support
-PASS: Payslip Leave Balance includes LSL Entitlement Date and excludes LSL pro-rata
-PASS: Employee address changes use effective-dated snapshot at payslip payment date
-PASS: Finalised payslips retain stored employeeSnapshot details
-PASS: Other Leave dark-green Absence Calendar key and fallback category
-PASS: Payslip content clears when leaving Payslip tab
-PASS: Tab navigation resets scroll to top under fixed bar
-PASS: Payslip print CSS targets printArea only and removes forced page break
-PASS: Public Holiday earnings require scheduled ordinary hours; casuals are not auto-paid
-PASS: Retro pay rate changes calculate difference-only rows split by earnings type
+Additional v1.1.12 verification included in test-cases.js:
+PASS: backdated pay rate changes consolidate to difference-only Regular Pay Retro even where position text changes.
+PASS: Annual Leave and Personal Leave accruals use period ordinary hours and repeated Calculate Pay does not commit/double-add balances.
+PASS: Certification Report auto-save, current-period uncertify-on-pay-change alert, mark-as-read alerts, overdue past certification alerts and previous-period locking strings are present.
+PASS: Print CSS removes the forced full-page min-height and applies tighter A4 spacing.

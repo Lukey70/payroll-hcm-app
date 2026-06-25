@@ -75,11 +75,54 @@
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
   function unreadAlerts(){ return (state.alerts||[]).filter(a=>a && a.read !== true); }
+  function alertKeyExists(key){ return !!key && (state.alerts||[]).some(a=>a && a.key===key); }
+  function addAlert(message, key, type='info'){
+    if(!message) return;
+    if(key && alertKeyExists(key)) return;
+    state.alerts = state.alerts || [];
+    state.alerts.unshift({ id:uid('alert'), key:key||uid('alertkey'), type, message, read:false, createdAt:new Date().toISOString() });
+    save();
+  }
+  function markAlertRead(alertId){
+    const a=(state.alerts||[]).find(x=>x.id===alertId);
+    if(a){ a.read=true; a.readAt=new Date().toISOString(); save(); renderAlerts(); }
+  }
+  function certificationRecord(cycleId){
+    const key=String(cycleId);
+    const rec = state.certifications[key] || { lines:{}, completed:false, locked:false };
+    if(!rec.lines) rec.lines = {};
+    if(rec.completed === undefined) rec.completed = !!rec.locked;
+    if(rec.locked === undefined) rec.locked = !!rec.completed;
+    state.certifications[key] = rec;
+    return rec;
+  }
+  function isCertificationComplete(cycleId){
+    const rec=state.certifications[String(cycleId)];
+    return !!(rec && (rec.completed || rec.locked));
+  }
+  function ensureCertificationAlerts(){
+    const today=todayIso();
+    const current=currentCycle();
+    const currentRec=state.certifications[String(current.id)];
+    if(today===current.closeDate && !isCertificationComplete(current.id)){
+      addAlert(`Reminder: Certification Report for ${E.ppeLabel(current)} must be completed by 5pm today.`, `cert-close-${current.id}-${today}`, 'warning');
+    }
+    E.PAY_CYCLES.filter(c=>c.id<current.id).forEach(c=>{
+      const hasLines=(state.payslips||[]).some(p=>Number(p.cycleId)===Number(c.id));
+      if(hasLines && !isCertificationComplete(c.id)){
+        addAlert(`Certification report for ${E.ppeLabel(c)} has not yet been completed and is overdue. Please complete this certification report as soon as possible.`, `cert-overdue-${c.id}-${today}`, 'warning');
+      }
+    });
+  }
   function renderAlerts(){
+    ensureCertificationAlerts();
     const alerts = unreadAlerts();
     const badge = $('alertsBadge'); const dropdown = $('alertsDropdown');
     if(badge){ badge.textContent = String(alerts.length); badge.classList.toggle('hide', alerts.length === 0); }
-    if(dropdown){ dropdown.innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-item">${esc(a.message || a.title || 'Alert')}</div>`).join('') : 'No New Alerts'; }
+    if(dropdown){
+      dropdown.innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-item"><div>${esc(a.message || a.title || 'Alert')}</div><button type="button" class="link-button alert-read" data-alert-read="${esc(a.id)}">Mark as read</button></div>`).join('') : 'No New Alerts';
+      dropdown.querySelectorAll('[data-alert-read]').forEach(b=>b.addEventListener('click', event=>{ event.stopPropagation(); markAlertRead(b.dataset.alertRead); }));
+    }
   }
   function toggleAlertsDropdown(event){
     event.stopPropagation();
@@ -133,12 +176,45 @@
   function emp(id){ return state.employees.find(e=>e.id===id); }
   function currentCycle(){ return E.currentCycle(state); }
   function currentResults(){ return state.payResults[String(currentCycle().id)] || []; }
-  function calculateAllForCurrent(){ state.payResults[String(currentCycle().id)] = E.calculateAll(state,currentCycle().id,false); save(); }
+  function paySignature(p){
+    const rows=(p.rows||[]).map(r=>({d:r.description,u:Number(r.units||0),a:Number(r.amount||0),s:r.startDate||'',e:r.endDate||'',rate:Number(r.rate||0),k:r.kind||''}));
+    return JSON.stringify({empId:p.empId,position:p.position||'',gross:Number(p.gross||0),tax:Number(p.tax||0),net:Number(p.net||0),rows});
+  }
+  function reconcileCertificationForCycle(c, oldResults, newResults){
+    if(!c || Number(c.id)!==Number(currentCycle().id)) return;
+    const rec=state.certifications[String(c.id)];
+    if(!rec || !rec.lines) return;
+    const byId=new Map((newResults||[]).map(p=>[String(p.id),p]));
+    let changed=false;
+    Object.keys(rec.lines).forEach(lineId=>{
+      const line=rec.lines[lineId];
+      if(!line || !line.certified) return;
+      const currentLine=byId.get(String(lineId));
+      const newHash=currentLine ? paySignature(currentLine) : '';
+      if(!currentLine || (line.payHash && line.payHash !== newHash)){
+        line.certified=false;
+        line.uncertifiedAt=new Date().toISOString();
+        changed=true;
+        const employeeName=currentLine ? currentLine.employeeName : (line.employeeName || 'An employee');
+        addAlert(`Certification removed: ${employeeName}'s pay changed after certification. Please review and certify again.`, `cert-paychanged-${c.id}-${lineId}-${Date.now()}`, 'warning');
+      }
+    });
+    if(changed){ rec.completed=false; rec.locked=false; rec.completedAt=''; }
+  }
+  function calculateAllForCurrent(){
+    const c=currentCycle();
+    const oldResults=state.payResults[String(c.id)] || [];
+    const newResults=E.calculateAll(state,c.id,false);
+    state.payResults[String(c.id)] = newResults;
+    reconcileCertificationForCycle(c, oldResults, newResults);
+    save();
+  }
   function calculateOne(empId){
     const c = currentCycle();
-    let results = state.payResults[String(c.id)] || [];
-    results = results.filter(p=>p.empId !== empId).concat(E.calculateEmployee(state,empId,c.id,false));
+    const oldResults = state.payResults[String(c.id)] || [];
+    let results = oldResults.filter(p=>p.empId !== empId).concat(E.calculateEmployee(state,empId,c.id,false));
     state.payResults[String(c.id)] = results;
+    reconcileCertificationForCycle(c, oldResults, results);
     save();
   }
   function employeeDisplayStatus(e){
@@ -219,15 +295,27 @@
       if(group) group.classList.add('open');
       if(toggle){ toggle.classList.add('open'); toggle.setAttribute('aria-expanded','true'); }
     }
-    window.scrollTo({ top:0, left:0, behavior:'auto' });
-    if(document.scrollingElement) document.scrollingElement.scrollTop = 0;
-    const main=document.querySelector('main'); if(main) main.scrollTop = 0;
+    resetTabScroll();
     if(tab==='additionalEarnings') loadAdditionalDraft();
     if(tab==='jobData') renderJobData();
     if(tab==='deductions') renderDeductions();
     if(tab==='taxDetails') renderTaxDetails();
     if(tab==='certification') renderCertification();
     if(tab==='payslip') renderPayslip();
+    resetTabScroll();
+    requestAnimationFrame(resetTabScroll);
+    setTimeout(resetTabScroll, 0);
+  }
+
+  function resetTabScroll(){
+    try{ window.scrollTo({ top:0, left:0, behavior:'auto' }); }catch(e){}
+    const scrollTargets = [window, document.documentElement, document.body, document.scrollingElement, document.querySelector('main'), document.querySelector('.app-shell')].filter(Boolean);
+    scrollTargets.forEach(target=>{
+      try{
+        if(target === window) target.scrollTo({ top:0, left:0, behavior:'auto' });
+        else { target.scrollTop = 0; target.scrollLeft = 0; }
+      }catch(e){}
+    });
   }
 
   function renderAll(){
@@ -274,7 +362,7 @@
     if(E.compare(from,to)>0) return {annual:0, personal:0};
     let ordinary = 0;
     E.daysBetween(from,to).forEach(d=>{ ordinary += Number((schedule||{})[E.parseDate(d).getDay()]||0); });
-    return { annual:E.round4(ordinary*4/52), personal:E.round4(ordinary*3/52) };
+    return E.leaveAccrualForOrdinaryHours({type:'Permanent'}, ordinary);
   }
   function refreshAutoLeaveBalance(prefix){
     if(!$(`${prefix}AL`) || !$(`${prefix}PL`)) return;
@@ -950,11 +1038,22 @@
 
   function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${c.id===currentCycle().id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',renderCertOutput); renderCertOutput(); }
   function renderCertOutput(){
-    const c=E.cycleById(v('certCycle')||currentCycle().id); const locked=!!state.certifications[String(c.id)];
-    const lines=(c.id===currentCycle().id?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const c=E.cycleById(v('certCycle')||currentCycle().id);
+    const rec=certificationRecord(c.id);
+    const isCurrent = Number(c.id)===Number(currentCycle().id);
+    const locked=!!rec.completed && (!isCurrent || !!rec.locked);
+    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
     if(!lines.length){ h('certOutput','<p class="small-note">No payslips generated for this pay period.</p>'); return; }
-    h('certOutput', table(['Details','Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>[`<button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${locked?'checked disabled':''}>`])) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(state.certifications[String(c.id)]?.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${locked?'checked disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Save</button>`);
+    const certifiedCount=lines.filter(p=>rec.lines && rec.lines[String(p.id)] && rec.lines[String(p.id)].certified).length;
+    const statusText=rec.completed ? '<p class="success-text"><strong>Certification report completed and locked.</strong></p>' : `<p class="small-note">${certifiedCount} of ${lines.length} pay lines certified. Progress auto-saves when each certify checkbox is ticked.</p>`;
+    h('certOutput', statusText + table(['Details','Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>{
+      const line=rec.lines[String(p.id)] || {};
+      const checked=locked || !!line.certified;
+      return [`<button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${checked?'checked':''} ${locked?'disabled':''}>`];
+    })) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(rec.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(rec.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${rec.declaration?'checked':''} ${locked?'disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Complete Certification Report</button>`);
     document.querySelectorAll('[data-cert-detail]').forEach(b=>b.addEventListener('click',()=>openCertificationDetail(c.id,b.dataset.certDetail)));
+    document.querySelectorAll('.certLine').forEach(ch=>ch.addEventListener('change',()=>autoSaveCertLine(c.id,ch.dataset.id,ch.checked)));
+    ['certName','certPosition','certDeclaration'].forEach(id=>{ const el=$(id); if(el && !locked) el.addEventListener('change',()=>autoSaveCertMeta(c.id)); });
     if(!locked) $('saveCert').addEventListener('click',()=>saveCertification(c.id));
   }
   function openCertificationDetail(cycleId,payId){
@@ -965,7 +1064,44 @@
     const summary=table(['Summary','Amount'],[['Gross',E.money(p.gross)],['Tax',E.money(p.tax)],['Pre-tax deductions',E.money(p.preTaxDeductionTotal||0)],['Post-tax deductions',E.money(p.postTaxDeductionTotal||0)],['Employer Superannuation',E.money(p.superAmt||0)],['Net Pay',E.money(p.net)]]);
     modal(`Pay Breakdown - ${p.employeeName}`, summary + payslipHtml(p), `<button type="button" data-close-modal class="secondary">Close</button>`, false);
   }
-  function saveCertification(cycleId){ const checks=[...document.querySelectorAll('.certLine')]; if(checks.some(c=>!c.checked)) return alert('Please certify each pay line.'); if(!v('certName')||!v('certPosition')) return alert('Enter name and position.'); if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.'); state.certifications[String(cycleId)]={name:v('certName'),position:v('certPosition'),savedAt:new Date().toISOString(),locked:true}; save(); log(`Certification Report saved for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); }
+  function autoSaveCertMeta(cycleId){
+    const rec=certificationRecord(cycleId);
+    if(rec.completed) return;
+    rec.name=v('certName');
+    rec.position=v('certPosition');
+    rec.declaration=!!($('certDeclaration') && $('certDeclaration').checked);
+    rec.updatedAt=new Date().toISOString();
+    save();
+  }
+  function autoSaveCertLine(cycleId, payId, checked){
+    const c=E.cycleById(cycleId);
+    const isCurrent=Number(c.id)===Number(currentCycle().id);
+    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const p=lines.find(x=>String(x.id)===String(payId));
+    if(!p) return;
+    const rec=certificationRecord(cycleId);
+    if(rec.completed && !isCurrent) return;
+    autoSaveCertMeta(cycleId);
+    rec.lines[String(payId)]={ certified:!!checked, certifiedAt:checked?new Date().toISOString():'', employeeName:p.employeeName, payHash:checked?paySignature(p):'' };
+    if(!checked){ rec.completed=false; rec.locked=false; }
+    rec.updatedAt=new Date().toISOString();
+    save();
+    toast(checked?'Certification progress saved':'Certification removed');
+    renderCertOutput();
+  }
+  function saveCertification(cycleId){
+    const rec=certificationRecord(cycleId);
+    const c=E.cycleById(cycleId);
+    const isCurrent=Number(c.id)===Number(currentCycle().id);
+    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const checks=[...document.querySelectorAll('.certLine')];
+    if(checks.some(c=>!c.checked)) return alert('Please certify each pay line.');
+    if(!v('certName')||!v('certPosition')) return alert('Enter name and position.');
+    if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.');
+    rec.name=v('certName'); rec.position=v('certPosition'); rec.declaration=true; rec.completed=true; rec.locked=true; rec.completedAt=new Date().toISOString(); rec.savedAt=rec.completedAt;
+    lines.forEach(p=>{ rec.lines[String(p.id)]={ certified:true, certifiedAt:rec.completedAt, employeeName:p.employeeName, payHash:paySignature(p) }; });
+    save(); log(`Certification Report completed for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); renderAlerts();
+  }
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
   function renderSettings(){
@@ -1071,6 +1207,17 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.12',notes:[
+      'Tightened the printed payslip layout again to reduce unnecessary blank space on A4 output.',
+      'Strengthened tab navigation so the actual page and content containers reset to the top after each tab renders.',
+      'Updated retro comparisons so backdated pay rate changes produce difference-only retro lines by earnings type instead of offsetting recovery/reissue lines.',
+      'Centralised Annual Leave and Personal Leave accrual calculations so each pay period uses the employee\'s effective ordinary hours and does not double-add on recalculation.',
+      'Certification Report line certification now auto-saves when each certify checkbox is pressed.',
+      'If current/open pay changes after certification, the affected certification line is automatically uncertified and an alert is created.',
+      'Alerts can now be marked as read from the bell dropdown.',
+      'Added daily overdue certification alerts for incomplete past pay-period certification reports, while allowing incomplete past reports to be completed.',
+      'Completed previous-period certification reports remain permanently locked; current/open completed reports unlock only if pay changes.'
+    ]},
     {version:'v1.1.11',notes:[
       'Added Employee Data sidebar dropdown with Personal Details, Bank Details, Tax Details and Super tabs.',
       'Added the top-right alert bell dropdown with No New Alerts and badge support for future workflow alerts.',
