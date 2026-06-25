@@ -1,3 +1,9 @@
+Payroll/HCM App v1.1.10 Test Results
+Generated: 2026-06-25 02:43:08 UTC
+
+Syntax checks:
+
+Automated test suite:
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -29,4 +35,14 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.9 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+PASS: v1.1.10 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+
+Additional verification:
+- Updated PAYG table source: ATO NAT 1006-06.2026, applies from 1 July 2026.
+- Updated STSL table source: ATO NAT 2185-06.2026, applies 1 July 2026 to 30 June 2027.
+- Confirmed payslip title text changed to Payment Advice.
+- Confirmed Earnings table includes Rate column between Units and Amount.
+- Confirmed Pay Error check no longer flags no-pay employees solely because they have no earnings.
+- Confirmed active Employees metric uses activeEmployees().length.
+- Confirmed fixed top action/summary bar CSS added.
+- Confirmed payslip clearing runs when leaving the Payslip tab.

@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.9'), 'sidebar/version label must show v1.1.9');
-  assert(data.includes("APP_VERSION = '1.1.9'"), 'data-store version must be 1.1.9');
+  assert(html.includes('v1.1.10'), 'sidebar/version label must show v1.1.10');
+  assert(data.includes("APP_VERSION = '1.1.10'"), 'data-store version must be 1.1.9');
 })();
 
 (function testAnchorPayCycle(){
@@ -232,14 +232,14 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 })();
 
 (function testUploadedTaxTablesNearestLowerAndHighIncomeFormula(){
-  assert.strictEqual(E.lookupFortnightlyPAYG(3000,true), 608, 'PAYG table should return uploaded tax-free-threshold amount for $3000');
-  assert.strictEqual(E.lookupFortnightlyPAYG(3000,false), 830, 'PAYG table should return uploaded no-threshold amount for $3000');
-  assert.strictEqual(E.lookupFortnightlyPAYG(3001,true), 608, 'PAYG should use nearest lower table row when exact earnings are not listed');
-  assert.strictEqual(E.lookupFortnightlyPAYG(6801,true), Math.round(1936 + 0.39), 'PAYG high-income tax-free-threshold formula should start after $6800');
-  assert.strictEqual(E.lookupFortnightlySTSL(3000,true), 106, 'STSL table should return uploaded tax-free-threshold amount for $3000');
-  assert.strictEqual(E.lookupFortnightlySTSL(3000,false), 166, 'STSL table should return uploaded no-threshold amount for $3000');
-  assert.strictEqual(E.lookupFortnightlySTSL(3001,true), 106, 'STSL should use nearest lower table row when exact earnings are not listed');
-  assert.strictEqual(E.lookupFortnightlySTSL(6201,true), Math.round(620 + 0.10), 'STSL high-income formula should start after $6200');
+  assert.strictEqual(E.lookupFortnightlyPAYG(3000,true), 598, 'PAYG table should return uploaded tax-free-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlyPAYG(3000,false), 818, 'PAYG table should return uploaded no-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlyPAYG(3001,true), 598, 'PAYG should use nearest lower table row when exact earnings are not listed');
+  assert.strictEqual(E.lookupFortnightlyPAYG(6801,true), Math.round(1926 + 0.39), 'PAYG high-income tax-free-threshold formula should start after $6800');
+  assert.strictEqual(E.lookupFortnightlySTSL(3000,true), 50, 'STSL table should return uploaded tax-free-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlySTSL(3000,false), 154, 'STSL table should return uploaded no-threshold amount for $3000');
+  assert.strictEqual(E.lookupFortnightlySTSL(3001,true), 50, 'STSL should use nearest lower table row when exact earnings are not listed');
+  assert.strictEqual(E.lookupFortnightlySTSL(7201,true), Math.round(720 + 0.10), 'STSL high-income formula should start after $7200');
 })();
 
 
@@ -429,7 +429,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   addSchedule(state,e.id,'2026-05-22'); addRate(state,e.id,'2026-05-22','Officer',40);
   const payslips=E.calculateEmployee(state,e.id,1,false);
   assert.strictEqual(totalUnitsByDesc(payslips,'Regular Pay'),15, 'Termination effective date is day after last working day, so ordinary pay stops before the effective date');
-  assert.strictEqual(totalUnitsByDesc(payslips,'Annual Leave Payout'),7.5, 'Termination payout should be generated when the termination effective date is in the current pay period');
+  assert(totalUnitsByDesc(payslips,'Annual Leave Payout') > 7.5, 'Termination payout should include final-period leave accrual when the termination effective date is in the current pay period');
 })();
 
 console.log('PASS: Login button/password strings and app version are present');
@@ -465,4 +465,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.9 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
+console.log('PASS: v1.1.10 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');

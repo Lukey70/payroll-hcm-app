@@ -191,7 +191,7 @@
     const c = currentCycle();
     const results = currentResults();
     h('versionLabel', `v${APP_VERSION}`);
-    h('metricEmployees', String(state.employees.length));
+    h('metricEmployees', String(activeEmployees().length));
     h('metricGross', E.money(results.reduce((s,p)=>s+p.gross,0)));
     h('metricRetro', E.money(results.reduce((s,p)=>s+p.retro,0)));
     h('metricPayStatus', `${E.ppeLabel(c)}<small>Period: ${E.fmtPay(c.start)} - ${E.fmtPay(c.end)}<br>Payment Date: ${E.fmtPay(c.paymentDate)}<br>Pay close: ${E.fmtPay(c.closeDate)}</small>`);
@@ -656,7 +656,7 @@
     $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option value="LWOP">Leave Without Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
     ['leaveEmp','leaveType','leaveStart','leaveEnd'].forEach(id=>$(id).addEventListener('change',updateLeaveDuration));
     $('leaveDuration').addEventListener('input',()=>updateLeaveDuration(false));
     $('leaveStart').addEventListener('change',()=>{ setv('leaveEnd',v('leaveStart')); updateLeaveDuration(); });
@@ -674,6 +674,16 @@
     duration.max=basic.maxHours || '';
     if(resetValue){
       setv('leaveDuration', basic.hours ? Number(basic.hours).toFixed(2) : '0.00');
+    }
+    if($('leaveBalanceNote')){
+      const le=emp(v('leaveEmp'));
+      const lt=v('leaveType');
+      if(le && ['Annual Leave','Personal Leave','Long Service Leave'].includes(lt)){
+        const bal=E.projectedBalances(state,le,currentCycle(),false);
+        const label=lt==='Annual Leave'?'Annual Leave Balance (Hours)':lt==='Personal Leave'?'Personal Leave Balance (Hours)':'LSL Accrued Balance (Hours)';
+        const val=lt==='Annual Leave'?bal.annual:lt==='Personal Leave'?bal.personal:bal.lslAccrued;
+        h('leaveBalanceNote', `${label}: ${Number(val||0).toFixed(2)}`);
+      } else h('leaveBalanceNote','');
     }
     if($('leaveDurationNote')){
       if(editable) h('leaveDurationNote', `Partial-day leave is available. Maximum for this date is ${Number(basic.maxHours||0).toFixed(2)} hours.`);
@@ -834,7 +844,8 @@
   }
 
   function allPayslipsForEmployee(empId){ const current=currentResults().filter(p=>p.empId===empId).map(p=>Object.assign({},p,{key:`open_${p.id}`})); const hist=state.payslips.filter(p=>p.empId===empId).map(p=>Object.assign({},p,{key:`hist_${p.id}`})); return current.concat(hist).sort((a,b)=>E.compare(b.cycle.end,a.cycle.end)||b.segmentIndex-a.segmentIndex); }
-  function renderPayslip(){ h('payslip', `<h2>Payslip Detail</h2><p class="small-note">Select an employee, then choose a payslip date. Click the same payslip again to close it.</p><div class="controls no-print">${showTerminatedControl('payslipShowTerminated','payslip')}</div><div class="grid form-grid no-print"><div><label>Employee</label><select id="payslipEmp">${employeeOptions(employeeList(showTerminatedByTab.payslip))}</select></div><div style="align-self:end"><button id="printPayslip">Print Payslip</button></div></div><div id="payslipList" class="payslip-list"></div><div id="payslipContent"></div>`); bindShowTerminated('payslipShowTerminated','payslip',renderPayslip); $('payslipEmp').addEventListener('change',()=>{ selectedPayslipKey=''; renderPayslipList(); }); $('printPayslip').addEventListener('click',printPayslip); renderPayslipList(); }
+  function renderPayslip(){ h('payslip', `<h2>Payment Advice</h2><p class="small-note">Select an employee, then choose a payslip date. Click the same payslip again to close it.</p><div class="controls no-print">${showTerminatedControl('payslipShowTerminated','payslip')}</div><div class="grid form-grid no-print"><div><label>Employee</label><select id="payslipEmp">${employeeOptions(employeeList(showTerminatedByTab.payslip))}</select></div><div style="align-self:end"><button id="printPayslip">Print Payslip</button></div></div><div id="payslipList" class="payslip-list"></div><div id="payslipContent"></div>`); bindShowTerminated('payslipShowTerminated','payslip',renderPayslip); $('payslipEmp').addEventListener('change',()=>{ selectedPayslipKey=''; renderPayslipList(); }); $('printPayslip').addEventListener('click',printPayslip); renderPayslipList(); }
+  function clearOpenPayslip(){ selectedPayslipKey=''; const node=document.getElementById('payslipContent'); if(node) node.innerHTML=''; const print=document.getElementById('printArea'); if(print) print.innerHTML=''; }
   function renderPayslipList(){ const id=v('payslipEmp'); if(!id){ h('payslipList',''); h('payslipContent',''); return; } const list=allPayslipsForEmployee(id); if(!list.length){ h('payslipList','<p class="small-note">No payslips available for this employee.</p>'); h('payslipContent',''); return; } h('payslipList', list.map(p=>`<button type="button" style="color:#000" class="${selectedPayslipKey===p.key?'active':''}" data-open-payslip="${esc(p.key)}">${E.ppeLabel(p.cycle)} — ${E.fmtPay(p.cycle.end)} — ${esc(p.position||'')} — ${p.finalised?'Finalised':'Open'} — Net ${E.money(p.net)}</button>`).join('')); document.querySelectorAll('[data-open-payslip]').forEach(b=>b.addEventListener('click',()=>togglePayslip(b.dataset.openPayslip))); }
   function togglePayslip(key){ if(selectedPayslipKey===key){ selectedPayslipKey=''; h('payslipContent',''); renderPayslipList(); return; } selectedPayslipKey=key; const p=allPayslipsForEmployee(v('payslipEmp')).find(x=>x.key===key); h('payslipContent',p?payslipHtml(p):''); renderPayslipList(); }
   function printPayslip(){ if(!selectedPayslipKey) return alert('Select a payslip first.'); const p=allPayslipsForEmployee(v('payslipEmp')).find(x=>x.key===selectedPayslipKey); if(!p) return; if(!p.finalised) return alert('This payslip cannot be printed until the pay has been finalised.'); h('printArea', payslipHtml(p)); window.print(); }
@@ -853,12 +864,18 @@
     const e=p.employeeSnapshot||emp(p.empId)||{};
     const status=p.finalised?'<div class="payslip-status pay-final">This pay has been finalised</div>':'<div class="payslip-status pay-open">This pay has not yet been finalised</div>';
     const ytd=ytdTotalsForPayslip(p);
-    const rows=p.rows.map(r=>`<tr><td>${esc(r.description || 'Additional Day')}</td><td class="right">${Number(r.units||0).toFixed(2)}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`).join('');
+    const address = esc(e.address||'');
+    const employeeBlock = `<div class="payslip-address"><strong>${esc(E.employeeName(e))}</strong>${address?`<br>${address}`:''}</div>`;
+    const detailRows = [
+      ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(e.department||'')], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
+    ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
+    const rows=p.rows.map(r=>`<tr><td>${esc(r.description || 'Additional Day')}</td><td class="right">${Number(r.units||0).toFixed(2)}</td><td class="right">${r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):''}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`).join('');
     const preTaxRows=(p.preTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const postTaxRows=(p.postTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const preTaxSection=preTaxRows.length?`<div class="section-title">Pre-Tax Deductions</div>${table(['Description','Amount'],preTaxRows)}`:'';
     const postTaxSection=postTaxRows.length?`<div class="section-title">Post-Tax Deductions</div>${table(['Description','Amount'],postTaxRows)}`:'';
     const taxRows=[[p.noTfn?'Marginal Tax - No TFN Provided':'Marginal Tax',E.money(p.marginalTax||0)]];
+    if(Math.abs(Number(p.terminationLeaveTax||0))>0.004) taxRows.push(['Tax - Unused Leave on Termination',E.money(p.terminationLeaveTax||0)]);
     if(Math.abs(Number(p.marginalTaxRetro||0))>0.004) taxRows.push([p.noTfnRetro?'Marginal Tax Retro - No TFN Provided':'Marginal Tax Retro',E.money(p.marginalTaxRetro||0)]);
     if(Math.abs(Number(p.stsl||0))>0.004) taxRows.push(['STSL Repayment',E.money(p.stsl||0)]);
     if(Math.abs(Number(p.stslRetro||0))>0.004) taxRows.push(['STSL Repayment Retro',E.money(p.stslRetro||0)]);
@@ -866,7 +883,15 @@
     if(Math.abs(Number(p.superCurrent ?? p.superAmt ?? 0))>0.004) superRows.push(['Employer Super Contribution',E.money(p.superCurrent ?? p.superAmt ?? 0)]);
     if(Math.abs(Number(p.superRetro||0))>0.004) superRows.push(['Employer Super Contribution Retro',E.money(p.superRetro||0)]);
     if(!superRows.length) superRows.push(['Employer Super Contribution',E.money(0)]);
-    return `<div class="payslip"><h2>Payslip Detail ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-top"><div><strong>Employee Name</strong><br>${esc(E.employeeName(e))}</div><div><strong>Employee ID number</strong><br>${esc(p.empId)}</div><div><strong>Department</strong><br>${esc(e.department||'')}</div><div><strong>Position</strong><br>${esc(p.position||'')}</div><div><strong>Pay Period</strong><br>${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}</div><div><strong>Payment Date</strong><br>${E.fmtPay(p.cycle.paymentDate)}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}<div class="section-title">Leave Balance</div>${table(['Description','Balance'],[['Annual Leave Balance (Hours)',Number(p.balances.annual||0).toFixed(2)],['Personal Leave Balance (Hours)',Number(p.balances.personal||0).toFixed(2)],['LSL Accrued Balance (Hours)',Number(p.balances.lslAccrued||0).toFixed(2)],['LSL Entitlement Date',E.fmtPay(p.balances.lslEntitlementDate)]])}</div>`;
+    const usedAnnual=(p.rows||[]).filter(r=>r.description==='Annual Leave').reduce((a,r)=>a+Number(r.units||0),0);
+    const usedPersonal=(p.rows||[]).filter(r=>r.description==='Personal Leave').reduce((a,r)=>a+Number(r.units||0),0);
+    const usedLsl=(p.rows||[]).filter(r=>r.description==='Long Service Leave').reduce((a,r)=>a+Number(r.units||0),0);
+    const leaveRows=[
+      ['Annual Leave Balance (Hours)', Number(p.annualAccrual||0).toFixed(4), Number(usedAnnual||0).toFixed(4), Number((p.balances&&p.balances.annual)||0).toFixed(4)],
+      ['Personal Leave Balance (Hours)', Number(p.personalAccrual||0).toFixed(4), Number(usedPersonal||0).toFixed(4), Number((p.balances&&p.balances.personal)||0).toFixed(4)],
+      ['LSL Accrued Balance (Hours)', Number(p.lslAccrual||0).toFixed(4), Number(usedLsl||0).toFixed(4), Number((p.balances&&p.balances.lslAccrued)||0).toFixed(4)]
+    ];
+    return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-header"><div>${employeeBlock}</div><div class="payslip-details">${detailRows}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Rate</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}<div class="section-title">Leave Balance</div>${table(['Leave','Accrued','Used','Balance'],leaveRows)}</div>`;
   }
 
   function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${c.id===currentCycle().id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',renderCertOutput); renderCertOutput(); }
@@ -963,19 +988,24 @@
     calculateAllForCurrent();
     const c=currentCycle();
     const warnings=[];
+    const results=currentResults();
     state.employees.forEach(e=>{
       const active=employeeDisplayStatus(e)!=='Terminated';
-      const schedule=E.activeSchedule(state,e.id,c.start);
-      if(active && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) warnings.push(`${E.employeeName(e)} has a missing or invalid work schedule.`);
-      if(active && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) warnings.push(`${E.employeeName(e)} has no Tax Details/TFN entered.`);
-      const bal=E.projectedBalances(state,e,c);
+      if(!active) return;
+      const jobRows=(state.jobDataRows||[]).filter(r=>r.empId===e.id && E.compare(r.effectiveDate,c.end)<=0).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+      const activeJob=jobRows.find(r=>r.action!=='Termination') || null;
+      const schedule=E.activeSchedule(state,e.id,c.end);
+      const hasPay=results.some(p=>p.empId===e.id && (Math.abs(Number(p.gross||0))>0.004 || Math.abs(Number(p.net||0))>0.004 || (p.rows||[]).length));
+      if(hasPay && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) warnings.push(`${E.employeeName(e)} has a missing or invalid work schedule.`);
+      if(hasPay && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) warnings.push(`${E.employeeName(e)} has no Tax Details/TFN entered.`);
+      const bal=E.projectedBalances(state,e,c,false);
       if(bal.annual<0 || bal.personal<0 || bal.lslAccrued<0) warnings.push(`${E.employeeName(e)} has a negative leave balance.`);
-      if(e.type==='Fixed Term' && e.contractEndDate && E.compare(e.contractEndDate,c.end)<=0 && E.compare(e.contractEndDate,c.start)>=0) warnings.push(`${E.employeeName(e)} has a fixed-term contract ending in the current open pay.`);
-      if(e.type==='Fixed Term' && e.contractEndDate && E.compare(e.contractEndDate,E.addDays(c.end,28))<=0 && E.compare(e.contractEndDate,c.end)>0) warnings.push(`${E.employeeName(e)} has a fixed-term contract ending soon.`);
+      const isFixed=(activeJob&&activeJob.positionClass==='Fixed-Term') || e.type==='Fixed Term';
+      const hasTermRow=(state.jobDataRows||[]).some(r=>r.empId===e.id && r.action==='Termination');
+      if(isFixed && !hasTermRow) warnings.push(`${E.employeeName(e)} is fixed-term but does not have a Termination row in Job Data.`);
     });
     (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>warnings.push(`${E.employeeName(emp(a.empId)||{})} has unsaved Additional Earnings.`));
-    currentResults().forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
-    state.employees.filter(e=>employeeDisplayStatus(e)!=='Terminated').forEach(e=>{ if(!currentResults().some(p=>p.empId===e.id)) warnings.push(`${E.employeeName(e)} has no payable earnings and will not receive a payslip for ${E.ppeLabel(c)}.`); });
+    results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
       const e=emp(l.empId); if(!e) return;
       const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.hours,l.id);
@@ -987,7 +1017,7 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
-    {version:'v1.1.9',notes:[
+    {version:'v1.1.10',notes:[
       'Job Data rows now sort newest to oldest by Effective Date, then Effective Sequence.',
       'Adding a Job Data row now copies the previous/current row and defaults the Effective Date to today.',
       'Fixed saved Job Data row edits so Save updates the row, refreshes Job Summary and applies payroll effects.',

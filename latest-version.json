@@ -1,6 +1,5 @@
 {
-  "version": "1.1.9",
-  "releaseDate": "2026-06-20",
-  "notes": "Fixes Job Data row ordering and saved-row edits, adds copied new rows and Expiry of Fixed Term, updates Job Data layout, applies termination effective-date rules, and refines Job Data as the source of truth.",
-  "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
+  "version": "1.1.10",
+  "file": "payroll-hcm-app-v1.1.10.zip",
+  "notes": "Payroll/HCM app v1.1.10"
 }
