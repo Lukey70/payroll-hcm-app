@@ -3,80 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Payroll/HCM App v1.1.11</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Payroll/HCM App</title>
+  <link rel="stylesheet" href="styles.css?v=1.1.11">
 </head>
 <body>
-  <section id="loginScreen" class="login-screen">
+  <div id="loginScreen" class="login-screen">
     <div class="login-card">
-      <h1>Payroll/HCM</h1>
-      <p class="muted">Advanced payroll demo app</p>
-      <label for="passwordInput">Password</label>
-      <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Enter password">
-      <button id="loginButton">Log In</button>
-      <p id="loginError" class="login-error"></p>
-      <small>Demo password: 1234</small>
-    </div>
-  </section>
-
-  <section id="app" class="app">
-    <aside class="sidebar">
-      <div class="brand">Payroll/HCM</div>
-      <div class="version">v1.1.11</div>
-      <nav id="nav"></nav>
-      <button id="logoutButton" class="logout">Log Out</button>
-    </aside>
-
-    <header class="topbar">
-      <div class="top-actions">
-        <button id="calculatePayBtn">Calculate Pay</button>
-        <label class="secondary-file button-label">
-          <input id="importFile" type="file" accept="application/json" hidden>
-          <button id="importDataBtn" type="button" class="secondary">Import Data</button>
-        </label>
-        <button id="exportDataBtn" class="secondary">Export Data</button>
-      </div>
-      <div class="metric-strip">
-        <div class="metric"><div class="label">Employees</div><div id="metricEmployees" class="value">0</div></div>
-        <div class="metric"><div class="label">Current Pay Gross</div><div id="metricGross" class="value">$0.00</div></div>
-        <div class="metric"><div class="label">Retro/Arrears</div><div id="metricRetro" class="value">$0.00</div></div>
-        <div class="metric"><div class="label">Current Pay</div><div id="metricPeriod" class="value">PPE 04/06/2026</div></div>
-      </div>
-      <div class="alert-wrap">
-        <button id="alertsBell" class="bell" aria-label="Alerts">🔔<span id="alertsBadge" class="alert-badge">0</span></button>
-        <div id="alertsDropdown" class="alerts-dropdown"></div>
-      </div>
-    </header>
-
-    <main id="main" class="main">
-      <section id="dashboard" class="tab active"></section>
-      <section id="personalDetails" class="tab"></section>
-      <section id="bankDetails" class="tab"></section>
-      <section id="taxDetails" class="tab"></section>
-      <section id="superDetails" class="tab"></section>
-      <section id="jobSummary" class="tab"></section>
-      <section id="additionalEarnings" class="tab"></section>
-      <section id="leave" class="tab"></section>
-      <section id="payslip" class="tab"></section>
-      <section id="certification" class="tab"></section>
-      <section id="deductions" class="tab"></section>
-      <section id="audit" class="tab"></section>
-      <section id="settings" class="tab"></section>
-    </main>
-  </section>
-
-  <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div id="modalTitle" class="modal-header"></div>
-      <div id="modalBody" class="modal-body"></div>
-      <div id="modalFooter" class="modal-footer"></div>
+      <h1>Payroll/HCM Login</h1>
+      <p class="muted">Enter your password to continue.</p>
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password">
+      <button id="loginButton" type="button">Sign in</button>
+      <p id="loginError" class="error-text"></p>
     </div>
   </div>
-  <div id="toast" class="toast"></div>
-  <div id="processing" class="processing"><span class="spinner"></span><span id="processingText">Processing</span></div>
 
-  <script src="data-store.js"></script>
-  <script src="payroll-engine.js"></script>
-  <script src="app.js"></script>
+  <div id="processingScreen" class="processing-screen" aria-live="polite">
+    <div>
+      <div class="spinner"></div>
+      <h2 id="processingTitle">Overnight Processing in Progress</h2>
+      <p>Login is temporarily disabled while processing is completed.</p>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar no-print">
+      <div>
+        <h1>Payroll/HCM</h1>
+        <p id="versionLabel">v1.1.11</p>
+      </div>
+      <nav class="nav">
+        <button class="nav-parent open" id="employeeDataToggle" type="button" aria-expanded="true">Employee Data <span>▾</span></button>
+        <div class="nav-subgroup open" id="employeeDataGroup">
+          <button class="nav-btn nav-child active" data-tab="employees">Personal Details</button>
+          <button class="nav-btn nav-child" data-tab="bankDetails">Bank Details</button>
+          <button class="nav-btn nav-child" data-tab="taxDetails">Tax Details</button>
+          <button class="nav-btn nav-child" data-tab="superDetails">Super</button>
+        </div>
+        <button class="nav-btn" data-tab="jobData">Job Data</button>
+        <button class="nav-btn" data-tab="jobSummary">Job Summary</button>
+        <button class="nav-btn" data-tab="additionalEarnings">Additional Earnings</button>
+        <button class="nav-btn" data-tab="deductions">Deductions</button>
+        <button class="nav-btn" data-tab="leave">Leave</button>
+        <button class="nav-btn" data-tab="absenceBalance">Absence Balance</button>
+        <button class="nav-btn" data-tab="payslip">Payslip</button>
+        <button class="nav-btn" data-tab="certification">Certification Report</button>
+        <button class="nav-btn" data-tab="audit">Audit</button>
+        <button class="nav-btn" data-tab="settings">Settings</button>
+      </nav>
+      <button id="logoutButton" type="button" class="logout-btn">Log Out</button>
+    </aside>
+
+    <main>
+      <div class="top-actions no-print">
+        <button id="calculatePayButton" type="button">Calculate Pay</button>
+        <button id="importDataButton" type="button" class="secondary">Import Data</button>
+        <button id="exportDataButton" type="button" class="success">Export Data</button>
+        <input id="importFile" type="file" accept="application/json" hidden>
+        <div class="alerts-menu" id="alertsMenu">
+          <button id="alertsBell" class="alert-bell" type="button" aria-haspopup="true" aria-expanded="false" title="Alerts">🔔<span id="alertsBadge" class="alerts-badge hide">0</span></button>
+          <div id="alertsDropdown" class="alerts-dropdown" hidden>No New Alerts</div>
+        </div>
+      </div>
+
+      <div class="metric-grid">
+        <div class="card metric"><span>Employees</span><strong id="metricEmployees">0</strong></div>
+        <div class="card metric"><span>Current Pay Gross</span><strong id="metricGross">$0.00</strong></div>
+        <div class="card metric"><span>Retro / Arrears</span><strong id="metricRetro">$0.00</strong></div>
+        <div class="card metric"><span>Current Open Pay</span><strong id="metricPayStatus">PPE4/6/26</strong></div>
+      </div>
+
+      <section id="employees" class="tab-section card active"></section>
+      <section id="bankDetails" class="tab-section card"></section>
+      <section id="superDetails" class="tab-section card"></section>
+      <section id="jobData" class="tab-section card"></section>
+      <section id="jobSummary" class="tab-section card"></section>
+      <section id="additionalEarnings" class="tab-section card"></section>
+      <section id="taxDetails" class="tab-section card"></section>
+      <section id="deductions" class="tab-section card"></section>
+      <section id="leave" class="tab-section card"></section>
+      <section id="absenceBalance" class="tab-section card"></section>
+      <section id="payslip" class="tab-section card"></section>
+      <section id="certification" class="tab-section card"></section>
+      <section id="audit" class="tab-section card"></section>
+      <section id="settings" class="tab-section card"></section>
+    </main>
+  </div>
+
+  <div id="modalRoot" class="modal-root no-print" aria-live="polite"></div>
+  <div id="toast" class="toast no-print"></div>
+  <div id="printArea"></div>
+
+  <script src="data-store.js?v=1.1.11"></script>
+  <script src="payroll-engine.js?v=1.1.11"></script>
+  <script src="app.js?v=1.1.11"></script>
 </body>
 </html>

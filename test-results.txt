@@ -1,24 +1,55 @@
-Payroll/HCM App v1.1.11 Test Results
-Generated: 2026-06-25 03:39:23 UTC
+Payroll/HCM App v1.1.11 test results
+Generated from user-provided payroll-hcm-app-v1.1.10(1).zip baseline
 
 Syntax checks:
 PASS: data-store.js syntax
 PASS: payroll-engine.js syntax
 PASS: app.js syntax
+PASS: test-cases.js syntax
 
-Automated test suite:
-All v1.1.11 tests passed.
+Automated regression tests:
+PASS: Login button/password strings and app version are present
+PASS: Current pay is PPE4/6/26
+PASS: Period is 22/5/26 - 4/6/26
+PASS: Payment date is 4/6/26
+PASS: Pay close is 29/5/26
+PASS: Monday-Friday 7.5 hours pays 37.5 hours
+PASS: Commencement date is included in pay
+PASS: Leave over non-working days only deducts scheduled work days
+PASS: Leave over public holiday does not deduct credits and pays Public Holiday
+PASS: No zero-gross payslips are generated
+PASS: Position changes create separate payslips
+PASS: Backdated commencement retro includes all scheduled days
+PASS: Additional earnings only pay once saved and use effective rates
+PASS: Retro prior-processing cut-off prevents payments before 03/05/2026
+PASS: Tax Details, Marginal Tax and STSL calculations are present
+PASS: Payslip removes LSL pro-rata and Certification Report removes Super
+PASS: Partial-day leave deducts only entered hours and pays the remaining day as Regular Pay
+PASS: Overlapping leave bookings are prevented
+PASS: Current-pay additional earnings stay on the same payslip
+PASS: SG rate is 12% of ordinary time earnings and excludes overtime
+PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows
+PASS: Prior-pay additional earnings use the original earnings type plus Retro
+PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present
+PASS: No Tax Details fallback tax and payslip No TFN label are present
+PASS: Uploaded tax tables, tax-free-threshold Yes/No and STSL Yes affect pay calculations
+PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip
+PASS: Zero-net prior-period leave retro replacement remains visible
+PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly
+PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
+PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
+PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
+PASS: v1.1.11 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
 
-Verified changes:
-PASS: v1.1.11 app/version strings are present.
-PASS: Fixed PPE 04/06/2026 current pay cycle retained.
-PASS: Public holidays pay only when they fall on the employee's scheduled working day.
-PASS: Leave over a public holiday does not deduct leave and pays Public Holiday instead.
-PASS: Payslip Leave Balance includes LSL Entitlement Date and excludes Pro-rata LSL.
-PASS: Address changes are effective-dated and finalised payslips keep their old address snapshot.
-PASS: Retro pay rate changes create difference-only retro lines by original earnings type.
-PASS: Absence Calendar includes dark green Other Leave fallback after Leave Without Pay and before Public Holiday.
-PASS: Alert bell dropdown displays No New Alerts when no alerts exist.
-PASS: Employee Data sidebar dropdown includes Personal Details, Bank Details, Tax Details and Super.
-PASS: Payslip view clears when leaving the Payslip tab and tabs reset scroll/top position.
-PASS: Print CSS targets selected payslip only and uses A4 page height to reduce blank pages.
+Additional v1.1.11 coverage:
+PASS: Employee Data sidebar dropdown with Personal Details, Bank Details, Tax Details and Super
+PASS: Alert bell dropdown placeholder with No New Alerts and badge support
+PASS: Payslip Leave Balance includes LSL Entitlement Date and excludes LSL pro-rata
+PASS: Employee address changes use effective-dated snapshot at payslip payment date
+PASS: Finalised payslips retain stored employeeSnapshot details
+PASS: Other Leave dark-green Absence Calendar key and fallback category
+PASS: Payslip content clears when leaving Payslip tab
+PASS: Tab navigation resets scroll to top under fixed bar
+PASS: Payslip print CSS targets printArea only and removes forced page break
+PASS: Public Holiday earnings require scheduled ordinary hours; casuals are not auto-paid
+PASS: Retro pay rate changes calculate difference-only rows split by earnings type
