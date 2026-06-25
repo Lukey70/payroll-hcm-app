@@ -1,5 +1,6 @@
 {
-  "version": "1.1.10",
-  "file": "payroll-hcm-app-v1.1.10.zip",
-  "notes": "Payroll/HCM app v1.1.10"
+  "version": "1.1.11",
+  "releaseDate": "2026-06-25",
+  "notes": "Adds effective-dated address payslip snapshots, LSL entitlement date on payslips without pro-rata LSL, Other Leave calendar key, fixed-tab top alignment, scoped payslip display, one-page print CSS, alert bell dropdown, Employee Data sidebar dropdown, public holiday scheduled-day logic, and difference-only retro pay rate adjustments by earnings type.",
+  "downloadUrl": "https://lukey70.github.io/payroll-hcm-app/"
 }
