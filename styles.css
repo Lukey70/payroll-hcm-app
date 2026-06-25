@@ -92,3 +92,33 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
   #printArea .payslip th,#printArea .payslip td{padding:1.3mm 1.6mm!important;font-size:9px!important;}
   #printArea .payslip .section-title{padding:1.2mm 0.8mm!important;margin-top:2mm!important;}
 }
+
+/* v1.1.13 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
+.app-shell{align-items:start;}
+main{margin:0 auto;align-self:start;}
+.tab-section.active{display:block;align-self:start;}
+@media screen and (min-width:851px){
+  main{margin:0 auto;padding-top:175px;}
+}
+.alerts-dropdown{width:430px;max-width:calc(100vw - 32px);max-height:480px;overflow:auto;padding:16px;border-radius:16px;}
+.alert-item{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);line-height:1.35;}
+.alert-item:first-child{padding-top:4px;}
+.alert-action{flex:1;text-align:left;background:transparent;color:var(--text);border:0;padding:0;font-weight:normal;line-height:1.35;cursor:pointer;}
+.alert-action:hover{text-decoration:underline;opacity:1;}
+.alert-read{background:#fff;color:#0b5cad;border:1px solid var(--border);border-radius:999px;padding:5px 8px;font-size:12px;white-space:nowrap;margin-top:0;}
+@media print{
+  @page{size:A4;margin:7mm;}
+  html,body{margin:0!important;padding:0!important;background:#fff!important;width:100%!important;min-height:0!important;}
+  body > *:not(#printArea){display:none!important;}
+  #printArea,#printArea *{visibility:visible!important;}
+  #printArea{display:block!important;position:static!important;left:auto!important;top:auto!important;width:100%!important;margin:0!important;padding:0!important;box-shadow:none!important;}
+  #printArea .payslip{display:block!important;box-sizing:border-box!important;min-height:282mm!important;height:auto!important;width:100%!important;max-width:none!important;border:1px solid #666!important;margin:0!important;padding:7mm!important;font-size:12px!important;line-height:1.22!important;page-break-after:auto!important;break-after:auto!important;page-break-inside:avoid!important;}
+  #printArea .payslip h2{font-size:20px!important;margin:0 0 4mm!important;}
+  #printArea .payslip-header{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8mm!important;margin:0 0 4mm!important;align-items:start!important;}
+  #printArea .payslip-address{min-height:28mm!important;padding-left:18mm!important;padding-top:3mm!important;white-space:pre-wrap!important;font-size:12.5px!important;line-height:1.28!important;}
+  #printArea .payslip-details{justify-self:end!important;text-align:right!important;font-size:11.5px!important;line-height:1.25!important;gap:1mm!important;max-width:95mm!important;}
+  #printArea .payslip table{margin-top:2mm!important;width:100%!important;}
+  #printArea .payslip th,#printArea .payslip td{padding:1.8mm 2mm!important;font-size:10.7px!important;}
+  #printArea .payslip .section-title{padding:1.8mm 1.2mm!important;margin-top:3mm!important;font-size:12.5px!important;}
+  #printArea .payslip-status{display:none!important;}
+}

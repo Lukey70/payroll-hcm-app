@@ -518,10 +518,20 @@
       if(Math.abs(amount)<0.01 && Math.abs(unitDiff)<0.0001) return;
       let units = unitDiff;
       let rate = Number(r.expectedRate || r.paidRate || 0);
-      // If the only change is the rate/amount for the same earnings type and units, show a single difference-only retro line.
+      // If the only change is the rate/amount for the same earnings type and units,
+      // keep the normal applicable rate on the payslip where practical and express
+      // the difference as retro units. This avoids showing the full original units
+      // at a small rate-difference value, while still allowing fallback displays
+      // where a normal rate is not available.
       if(Math.abs(unitDiff)<0.0001 && Math.abs(Number(r.expectedUnits||0))>0.0001){
-        units = round4(Number(r.expectedUnits||0));
-        rate = round2(amount / units);
+        const displayRate = Number(r.expectedRate || r.baseRate || r.paidRate || 0);
+        if(Math.abs(displayRate)>0.0001){
+          units = round4(amount / displayRate);
+          rate = round2(displayRate);
+        }else{
+          units = round4(Number(r.expectedUnits||0));
+          rate = round2(amount / units);
+        }
       }
       rows.push({ description:r.description, units, amount, startDate:r.startDate, endDate:r.endDate, rate, baseRate:Number(r.baseRate||rate||0), position:r.position||'', kind:'retro', ote:r.ote !== false });
     });

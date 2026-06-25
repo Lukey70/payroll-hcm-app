@@ -1,12 +1,10 @@
-Payroll/HCM App v1.1.12 test results
-Generated: 2026-06-25 04:25:27 UTC
+Payroll/HCM App v1.1.13 test results
+Generated: 2026-06-25 08:56:22 UTC
 
-Syntax checks:
-PASS: app.js syntax check
-PASS: payroll-engine.js syntax check
-PASS: data-store.js syntax check
-
-Automated regression tests:
+$ node --check app.js
+$ node --check payroll-engine.js
+$ node --check data-store.js
+$ node test-cases.js
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -38,10 +36,4 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.12 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
-
-Additional v1.1.12 verification included in test-cases.js:
-PASS: backdated pay rate changes consolidate to difference-only Regular Pay Retro even where position text changes.
-PASS: Annual Leave and Personal Leave accruals use period ordinary hours and repeated Calculate Pay does not commit/double-add balances.
-PASS: Certification Report auto-save, current-period uncertify-on-pay-change alert, mark-as-read alerts, overdue past certification alerts and previous-period locking strings are present.
-PASS: Print CSS removes the forced full-page min-height and applies tighter A4 spacing.
+PASS: v1.1.13 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.

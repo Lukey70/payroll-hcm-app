@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.12'), 'sidebar/version label must show v1.1.12');
-  assert(data.includes("APP_VERSION = '1.1.12'"), 'data-store version must be 1.1.12');
+  assert(html.includes('v1.1.13'), 'sidebar/version label must show v1.1.13');
+  assert(data.includes("APP_VERSION = '1.1.13'"), 'data-store version must be 1.1.13');
 })();
 
 (function testAnchorPayCycle(){
@@ -509,7 +509,30 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:0!important') && styles.includes('v1.1.12 print spacing'), 'v1.1.12 print CSS should remove forced full-page blank payslip height');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.13 top-aligned tab layout'), 'v1.1.13 print CSS should enlarge the payslip to fill the A4 page better');
+})();
+
+
+(function testV1113RequestedChanges(){
+  const root = __dirname;
+  const app = fs.readFileSync(path.join(root,'app.js'),'utf8');
+  const styles = fs.readFileSync(path.join(root,'styles.css'),'utf8');
+  assert(styles.includes('main{margin:0 auto;align-self:start;}') && styles.includes('.app-shell{align-items:start;}'), 'Main tab layout should be top-aligned rather than vertically centred');
+  assert(styles.includes('width:430px') && styles.includes('alert-action') && app.includes('navigateFromAlert'), 'Alerts dropdown should be larger and alert rows should navigate when clicked');
+  assert(styles.includes('padding-left:18mm') && styles.includes('justify-self:end') && styles.includes('font-size:12px!important'), 'Printed payslip should be larger, address shifted right and right-side details aligned right');
+})();
+
+(function testV1113RetroRateDisplayUsesNormalRateWherePractical(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  const original=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.payslips.push(...original); state.currentCycleId=2;
+  state.payRates.push({id:'r_new',empId:e.id,effectiveDate:'2026-05-22',position:'Officer',hourlyRate:41,changeType:'Permanent'});
+  const rows=E.calculateEmployee(state,e.id,2,false).flatMap(p=>p.rows||[]);
+  const regular=rows.find(r=>r.description==='Regular Pay Retro');
+  assert(regular, 'Regular Pay Retro should be created for a backdated pay rate change');
+  assert.strictEqual(Number(regular.amount.toFixed(2)),67.5,'Retro amount should still be difference-only');
+  assert.strictEqual(Number(regular.rate.toFixed(2)),41,'Retro pay rate display should generally keep the applicable normal rate');
+  assert(Math.abs(Number(regular.units)-1.6463)<0.0002,'Retro units should represent amount divided by applicable normal rate');
 })();
 
 console.log('PASS: Login button/password strings and app version are present');
@@ -545,4 +568,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.12 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
+console.log('PASS: v1.1.13 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');

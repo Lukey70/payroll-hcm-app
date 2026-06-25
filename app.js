@@ -14,6 +14,7 @@
   let additionalDraftRows = [];
   let additionalDirty = false;
   let selectedDeductionEmp = '';
+  let selectedCertCycleId = '';
   let deductionDraftRows = [];
   let deductionDirty = false;
   let deductionDraftLoadedFor = '';
@@ -76,11 +77,11 @@
   }
   function unreadAlerts(){ return (state.alerts||[]).filter(a=>a && a.read !== true); }
   function alertKeyExists(key){ return !!key && (state.alerts||[]).some(a=>a && a.key===key); }
-  function addAlert(message, key, type='info'){
+  function addAlert(message, key, type='info', action=null){
     if(!message) return;
     if(key && alertKeyExists(key)) return;
     state.alerts = state.alerts || [];
-    state.alerts.unshift({ id:uid('alert'), key:key||uid('alertkey'), type, message, read:false, createdAt:new Date().toISOString() });
+    state.alerts.unshift({ id:uid('alert'), key:key||uid('alertkey'), type, message, action:action||null, read:false, createdAt:new Date().toISOString() });
     save();
   }
   function markAlertRead(alertId){
@@ -105,14 +106,24 @@
     const current=currentCycle();
     const currentRec=state.certifications[String(current.id)];
     if(today===current.closeDate && !isCertificationComplete(current.id)){
-      addAlert(`Reminder: Certification Report for ${E.ppeLabel(current)} must be completed by 5pm today.`, `cert-close-${current.id}-${today}`, 'warning');
+      addAlert(`Reminder: Certification Report for ${E.ppeLabel(current)} must be completed by 5pm today.`, `cert-close-${current.id}-${today}`, 'warning', { tab:'certification', cycleId:current.id });
     }
     E.PAY_CYCLES.filter(c=>c.id<current.id).forEach(c=>{
       const hasLines=(state.payslips||[]).some(p=>Number(p.cycleId)===Number(c.id));
       if(hasLines && !isCertificationComplete(c.id)){
-        addAlert(`Certification report for ${E.ppeLabel(c)} has not yet been completed and is overdue. Please complete this certification report as soon as possible.`, `cert-overdue-${c.id}-${today}`, 'warning');
+        addAlert(`Certification report for ${E.ppeLabel(c)} has not yet been completed and is overdue. Please complete this certification report as soon as possible.`, `cert-overdue-${c.id}-${today}`, 'warning', { tab:'certification', cycleId:c.id });
       }
     });
+  }
+  function inferredAlertAction(alert){
+    if(alert && alert.action) return alert.action;
+    const key=String((alert && alert.key) || '');
+    let m=key.match(/^cert-(?:close|overdue)-(\d+)-/);
+    if(m) return { tab:'certification', cycleId:Number(m[1]) };
+    m=key.match(/^cert-paychanged-(\d+)-(.+)-\d+$/);
+    if(m) return { tab:'certification', cycleId:Number(m[1]), payId:m[2] };
+    if(alert && /Certification report|Certification Report|Certification removed/.test(String(alert.message||''))) return { tab:'certification' };
+    return null;
   }
   function renderAlerts(){
     ensureCertificationAlerts();
@@ -120,9 +131,31 @@
     const badge = $('alertsBadge'); const dropdown = $('alertsDropdown');
     if(badge){ badge.textContent = String(alerts.length); badge.classList.toggle('hide', alerts.length === 0); }
     if(dropdown){
-      dropdown.innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-item"><div>${esc(a.message || a.title || 'Alert')}</div><button type="button" class="link-button alert-read" data-alert-read="${esc(a.id)}">Mark as read</button></div>`).join('') : 'No New Alerts';
+      dropdown.innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-item"><button type="button" class="alert-action" data-alert-go="${esc(a.id)}">${esc(a.message || a.title || 'Alert')}</button><button type="button" class="alert-read" data-alert-read="${esc(a.id)}">Mark as read</button></div>`).join('') : '<div class="alert-empty">No New Alerts</div>';
       dropdown.querySelectorAll('[data-alert-read]').forEach(b=>b.addEventListener('click', event=>{ event.stopPropagation(); markAlertRead(b.dataset.alertRead); }));
+      dropdown.querySelectorAll('[data-alert-go]').forEach(b=>b.addEventListener('click', event=>{ event.stopPropagation(); navigateFromAlert(b.dataset.alertGo); }));
     }
+  }
+  function navigateFromAlert(alertId){
+    const alert=(state.alerts||[]).find(a=>a.id===alertId);
+    const action=inferredAlertAction(alert);
+    const dropdown=$('alertsDropdown'); const bell=$('alertsBell');
+    if(dropdown) dropdown.setAttribute('hidden','');
+    if(bell) bell.setAttribute('aria-expanded','false');
+    if(!action || !action.tab) return;
+    if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
+    const btn=document.querySelector(`.nav-btn[data-tab="${action.tab}"]`);
+    attemptShowTab(action.tab, btn);
+    setTimeout(()=>{
+      if(action.tab==='certification'){
+        const select=$('certCycle');
+        if(select && action.cycleId){ select.value=String(action.cycleId); renderCertOutput(); }
+        if(action.payId){
+          const row=document.querySelector(`[data-cert-row="${CSS.escape(String(action.payId))}"]`);
+          if(row){ row.scrollIntoView({block:'center', behavior:'smooth'}); row.classList.add('unsaved'); setTimeout(()=>row.classList.remove('unsaved'), 2200); }
+        }
+      }
+    }, 30);
   }
   function toggleAlertsDropdown(event){
     event.stopPropagation();
@@ -196,7 +229,7 @@
         line.uncertifiedAt=new Date().toISOString();
         changed=true;
         const employeeName=currentLine ? currentLine.employeeName : (line.employeeName || 'An employee');
-        addAlert(`Certification removed: ${employeeName}'s pay changed after certification. Please review and certify again.`, `cert-paychanged-${c.id}-${lineId}-${Date.now()}`, 'warning');
+        addAlert(`Certification removed: ${employeeName}'s pay changed after certification. Please review and certify again.`, `cert-paychanged-${c.id}-${lineId}-${Date.now()}`, 'warning', { tab:'certification', cycleId:c.id, payId:lineId });
       }
     });
     if(changed){ rec.completed=false; rec.locked=false; rec.completedAt=''; }
@@ -1036,7 +1069,7 @@
     return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-header"><div>${employeeBlock}</div><div class="payslip-details">${detailRows}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Rate</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}<div class="section-title">Leave Balance</div>${table(['Leave','Accrued','Used','Balance'],leaveRows)}</div>`;
   }
 
-  function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${c.id===currentCycle().id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',renderCertOutput); renderCertOutput(); }
+  function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); const selected=selectedCertCycleId && visible.some(c=>String(c.id)===String(selectedCertCycleId)) ? String(selectedCertCycleId) : String(currentCycle().id); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${String(c.id)===selected?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',()=>{ selectedCertCycleId=v('certCycle'); renderCertOutput(); }); renderCertOutput(); }
   function renderCertOutput(){
     const c=E.cycleById(v('certCycle')||currentCycle().id);
     const rec=certificationRecord(c.id);
@@ -1049,7 +1082,7 @@
     h('certOutput', statusText + table(['Details','Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>{
       const line=rec.lines[String(p.id)] || {};
       const checked=locked || !!line.certified;
-      return [`<button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${checked?'checked':''} ${locked?'disabled':''}>`];
+      return [`<span data-cert-row="${esc(p.id)}"><button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button></span>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${checked?'checked':''} ${locked?'disabled':''}>`];
     })) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(rec.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(rec.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${rec.declaration?'checked':''} ${locked?'disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Complete Certification Report</button>`);
     document.querySelectorAll('[data-cert-detail]').forEach(b=>b.addEventListener('click',()=>openCertificationDetail(c.id,b.dataset.certDetail)));
     document.querySelectorAll('.certLine').forEach(ch=>ch.addEventListener('change',()=>autoSaveCertLine(c.id,ch.dataset.id,ch.checked)));
@@ -1207,6 +1240,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.13',notes:[
+      'Refined retro pay rate change display so difference-only retro amounts generally keep the applicable ordinary rate and adjust retro units, while allowing exceptions where a changed rate is clearer.',
+      'Enlarged printed payslips so the payment advice fills more of the A4 page, with the employee name/address moved right for an envelope window and right-side details aligned to the right edge.',
+      'Made the alerts dropdown larger and less condensed with clickable alert items that navigate to the relevant page, such as the Certification Report and selected PPE.',
+      'Fixed the page container layout so tab content is top-aligned under the fixed header instead of being vertically centred in the middle of the screen.'
+    ]},
     {version:'v1.1.12',notes:[
       'Tightened the printed payslip layout again to reduce unnecessary blank space on A4 output.',
       'Strengthened tab navigation so the actual page and content containers reset to the top after each tab renders.',
