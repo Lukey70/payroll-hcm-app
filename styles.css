@@ -21,7 +21,6 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 .payslip-list button{display:block;width:100%;margin:8px 0;background:#fff;color:#000;border:1px solid var(--border);text-align:left}.payslip-list button.active{background:#dbeafe;border-color:var(--primary)}.payslip{background:#fff;border:1px solid #aaa;color:#000;padding:16px;margin-top:14px}.payslip h2{margin:0 0 10px}.payslip-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:10px 0}.payslip-top div{border:1px solid #ddd;background:#fafafa;padding:8px}.section-title{color:var(--section);font-weight:bold;border-top:1px solid #aaa;border-bottom:1px solid #ccc;padding:8px 4px;margin-top:12px}.payslip-status{padding:10px;border-radius:10px;font-weight:bold;margin:10px 0}.pay-open{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}.pay-final{background:#ecfdf5;color:#166534;border:1px solid #bbf7d0}.history-item{padding:10px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:#f8fafc}
 .legend{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.legend span{padding:6px 10px;border-radius:999px;font-size:12px;font-weight:bold}.legend .annual{background:var(--annual);color:#1e40af}.legend .personal{background:var(--personal);color:#9a3412}.legend .lsl{background:var(--lsl);color:#5b21b6}.legend .lwop{background:var(--lwop);color:#fff}.legend .nonrostered{background:var(--nonrostered);color:#374151}.legend .publicholiday{background:var(--publicholiday);color:#fff}.calendar{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:12px}.month{border:1px solid var(--border);border-radius:12px;background:#fff;padding:10px}.month h4{margin:0 0 8px}.month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cal-head{font-size:11px;color:var(--muted);text-align:center}.cal-day{min-height:42px;border:1px solid #e5e7eb;border-radius:8px;padding:4px;font-size:11px;background:#fff}.cal-day.blank{border-color:transparent;background:transparent}.cal-day.annual{background:var(--annual);border-color:#93c5fd}.cal-day.personal{background:var(--personal);border-color:#fdba74}.cal-day.lsl{background:var(--lsl);border-color:#c4b5fd}.cal-day.lwop{background:var(--lwop);border-color:#450a0a;color:#fff}.cal-day.nonrostered{background:var(--nonrostered);color:#6b7280}.cal-day.publicholiday{background:var(--publicholiday);border-color:#000;color:#fff}.save-row{display:flex;justify-content:flex-end;margin-top:16px}.unsaved{border-left:4px solid var(--warning);padding-left:10px}
 @media(max-width:850px){.app-shell{grid-template-columns:1fr}.sidebar{position:relative;height:auto}.nav{flex-direction:row;flex-wrap:wrap}.nav-btn{font-size:13px}.two-col{grid-template-columns:1fr}}
-@media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{position:absolute;left:0;top:0;width:100%;box-shadow:none}.no-print{display:none!important}}
 
 .tax-record-list{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tax-record-list button{background:#fff;color:#111827;border:1px solid var(--border)}.tax-record-list button.active{background:var(--primary);color:#fff}.personal-card{line-height:1.7}
 
@@ -48,15 +47,6 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 .payslip table{margin-top:6px;}
 .payslip th,.payslip td{padding:4px 6px;font-size:11px;}
 .payslip-status{padding:6px 8px;margin:5px 0;font-size:11px;}
-@media print{
-  @page{size:A4;margin:10mm;}
-  .payslip{border:0;margin:0;max-width:none;font-size:10.5px;line-height:1.15;padding:0;page-break-after:always;}
-  .payslip h2{font-size:16px;margin-bottom:4px;}
-  .payslip-header{grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:6px;}
-  .payslip th,.payslip td{padding:3px 4px;font-size:9.5px;}
-  .payslip .section-title{padding:3px;margin-top:5px;}
-  .payslip-status{display:none;}
-}
 @media(max-width:850px){main{padding-top:22px}.top-actions,.metric-grid{position:static}}
 
 /* v1.1.12 sidebar Employee Data dropdown, alerts dropdown and payslip print fixes */
@@ -65,35 +55,11 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 .alerts-menu{position:relative;margin-left:auto;display:flex;align-items:center}.alert-bell{position:relative;background:#fff;color:#111827;border:1px solid var(--border);border-radius:999px;width:42px;height:42px;padding:0;font-size:20px;line-height:1;display:inline-flex;align-items:center;justify-content:center}.alerts-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}.alerts-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:260px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.18);padding:12px;color:var(--text);z-index:80}.alert-item{padding:8px 0;border-bottom:1px solid var(--border)}.alert-item:last-child{border-bottom:0}
 .legend .otherleave{background:#14532d;color:#fff}.cal-day.otherleave{background:#14532d;border-color:#052e16;color:#fff}
 @media screen{#printArea{display:none}}
-@media print{
-  @page{size:A4;margin:8mm;}
-  body *{visibility:visible!important;}
-  body > *:not(#printArea){display:none!important;}
-  html,body{margin:0!important;padding:0!important;background:#fff!important;width:100%!important;min-height:0!important;}
-  #printArea{display:block!important;position:static!important;left:auto!important;top:auto!important;width:100%!important;margin:0!important;padding:0!important;box-shadow:none!important;}
-  #printArea .payslip{display:flex;flex-direction:column;min-height:281mm;box-sizing:border-box;border:1px solid #777;margin:0!important;max-width:none!important;font-size:10.5px;line-height:1.15;padding:5mm!important;page-break-after:auto!important;break-after:auto!important;page-break-inside:avoid;}
-  #printArea .payslip h2{font-size:16px;margin-bottom:4px;}
-  #printArea .payslip-header{grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:6px;}
-  #printArea .payslip th,#printArea .payslip td{padding:3px 4px;font-size:9.5px;}
-  #printArea .payslip .section-title{padding:3px;margin-top:5px;}
-  #printArea .payslip-status{display:none;}
-}
 
 /* v1.1.12 print spacing and alert/certification refinements */
 .alert-item{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.alert-item>div{flex:1}.alert-read{font-size:12px;white-space:nowrap;margin-top:1px}.success-text{color:#166534}.warning-text{color:#92400e}
-@media print{
-  @page{size:A4;margin:8mm;}
-  #printArea .payslip{display:block!important;min-height:0!important;height:auto!important;border:1px solid #777!important;margin:0!important;padding:4mm!important;font-size:10px!important;line-height:1.08!important;page-break-after:auto!important;break-after:auto!important;page-break-inside:avoid!important;}
-  #printArea .payslip h2{font-size:15px!important;margin:0 0 2.5mm!important;}
-  #printArea .payslip-header{gap:8mm!important;margin:0 0 2mm!important;}
-  #printArea .payslip-address{min-height:0!important;padding:0!important;}
-  #printArea .payslip-details{gap:0!important;font-size:10px!important;}
-  #printArea .payslip table{margin-top:1.5mm!important;}
-  #printArea .payslip th,#printArea .payslip td{padding:1.3mm 1.6mm!important;font-size:9px!important;}
-  #printArea .payslip .section-title{padding:1.2mm 0.8mm!important;margin-top:2mm!important;}
-}
 
-/* v1.1.14 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
+/* v1.1.15 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
 .app-shell{align-items:start;}
 main{margin:0 auto;align-self:start;}
 .tab-section.active{display:block;align-self:start;}

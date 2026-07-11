@@ -1,13 +1,27 @@
-Payroll/HCM App v1.1.14 Test Results
-Generated: 2026-07-11T06:06:12+00:00
+Payroll/HCM App v1.1.15 — Code Review and Test Results
+Generated: 2026-07-11T06:58:23+00:00
 
-Syntax checks:
-node --check app.js: PASS
-node --check payroll-engine.js: PASS
-node --check data-store.js: PASS
-node --check test-cases.js: PASS
+REVIEW OUTCOME
+A comprehensive software review was completed across index.html, styles.css, app.js, payroll-engine.js and data-store.js. Identified software defects and unreachable legacy code were corrected or removed. This report verifies software behaviour covered by the automated and browser tests below; it is not a legal, accounting, security or payroll-compliance certification.
 
-Automated regression tests:
+KEY CORRECTIONS VERIFIED
+- Deductions: most recent closed pay period is available as an end date; a replacement deduction can start in the current open pay without overlap; historical deduction records are end-dated rather than deleted.
+- Multi-position pay: tax, percentage deductions and leave accrual are calculated once across the employee's whole pay and allocated accurately across payslip segments.
+- Retro: difference-only calculations by earnings type, duplicate-retro prevention, prior-retro tax base handling, normal-rate/unit display and rounding safeguards.
+- Leave: Annual Leave and Personal Leave accrue once per period from effective ordinary hours; retro ordinary-hour adjustments flow to accrual; overtime does not accrue leave; LSL entitlement conversion occurs once.
+- Certification: progress persists, current-period pay changes can uncertify affected lines, past completed reports remain locked, overdue/current-close alerts behave correctly, and completed-report alerts clear.
+- Finalisation and storage: duplicate finalisation is blocked, storage failures are surfaced, processing overlays close safely, and finalised payslip snapshots remain historical.
+- Dates/termination: invalid display dates are handled safely; manual termination effective dates are exclusive; fixed-term contract end dates remain inclusive when auto-expired.
+- UI/print: obsolete Change Centre code was removed; no duplicate rendered IDs were found; all tested tabs open top-aligned; print CSS is consolidated; the payslip prints as one A4 page.
+
+SYNTAX CHECKS
+- node --check app.js: PASS
+- node --check payroll-engine.js: PASS
+- node --check data-store.js: PASS
+- node --check test-cases.js: PASS
+
+AUTOMATED REGRESSION TESTS
+- 59 test groups executed: PASS
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -39,10 +53,32 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.14 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+PASS: v1.1.15 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.
 
-v1.1.14 changes verified:
-- Job Data unsaved changes prompt uses exact message: Are you sure you want to exit without saving?
-- Job Data unsaved prompt has only Yes and No buttons; Yes discards and exits, No returns to Job Data.
-- Retro rows already paid on a previous finalised payslip are treated as already satisfied and are not generated again in the current pay.
-- Retro split-by-day rounding now preserves row totals to prevent tiny duplicate residual retro amounts.
+BROWSER WORKFLOW TESTS
+- 14 navigation tabs rendered top-aligned under the fixed header: PASS
+- Browser console/page errors during navigation: NONE
+- Duplicate rendered HTML IDs across tested tabs: NONE
+- Previous closed deduction end-date option present and saved: PASS (2026-06-04)
+- Past incomplete certification could be completed and became locked: PASS
+- Certification alerts cleared on completion: PASS
+
+PRINT TEST
+- Chromium print-to-PDF: PASS
+- Output: one page, A4 (594.96 x 841.92 pt)
+- Browser console errors during print: NONE
+
+PERFORMANCE SMOKE BENCHMARK
+Node.js calculation benchmark on this test environment:
+100 employees: 100 payslips in 60.1 ms (0.601 ms/employee)
+500 employees: 500 payslips in 706.4 ms (1.413 ms/employee)
+1000 employees: 1000 payslips in 2354.1 ms (2.354 ms/employee)
+The app is responsive for demo-sized datasets. As a client-only app, very large datasets can still pause the browser during full recalculation.
+
+KNOWN LIMITATIONS / REQUIRED PRODUCTION WORK
+- The app is a client-side demonstration using localStorage and a hard-coded demo password. It is not secure for real employee/payroll information and has no server-side authentication, encryption, role permissions or immutable audit storage.
+- WA public holidays are embedded only for 2026 and 2027. Later years must be loaded and verified before processing those periods.
+- Embedded PAYG/STSL tables and super/tax rules must be independently revalidated whenever legislation or ATO tables change.
+- Termination leave tax and LSL calculations remain simplified demo logic and require jurisdiction/industrial-instrument review before real payroll use.
+- Recalculate Balances rebuilds from the history stored in the app. It should only be used where the stored history is complete from the intended opening point.
+- Bank Details and Super remain placeholder tabs.

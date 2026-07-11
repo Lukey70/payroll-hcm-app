@@ -1,0 +1,15 @@
+Payroll/HCM App v1.1.15 — Code Review Notes
+
+This build was reviewed as a browser-based demonstration application. The review covered payroll calculations, retro handling, leave accrual, deductions, certification locking/alerts, finalisation, effective dating, UI navigation, print output, persistence and dead-code cleanup.
+
+Main audit fixes
+1. Added the most recent closed pay period as a valid deduction end date and prevented overlapping replacement deductions.
+2. Corrected whole-employee tax, deductions and leave accrual for multiple position/payslip segments.
+3. Strengthened difference-only retro calculations and prevented previously paid retro from repeating.
+4. Added finalisation, storage, date and one-time LSL conversion safeguards.
+5. Corrected fixed-term expiry so the contract end date remains a paid, inclusive day while manual termination effective dates remain exclusive.
+6. Removed unreachable legacy Change Centre/rehire/contract handlers and consolidated print CSS.
+7. Verified tab alignment, certification workflow and one-page A4 payslip output in Chromium.
+
+Important
+Passing tests do not make this app production-ready. Real payroll use requires secure server-side storage and access control, complete effective-dated master data, official ongoing public-holiday maintenance, and independent Australian payroll/legal validation of tax, super, leave, termination and industrial-instrument rules.

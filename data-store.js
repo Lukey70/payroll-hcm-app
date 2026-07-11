@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.14';
+  const APP_VERSION = '1.1.15';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -46,7 +46,14 @@
 
   function save(state){
     state.version = APP_VERSION;
-    if(typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if(typeof localStorage === 'undefined') return true;
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      return true;
+    }catch(err){
+      console.error('Failed to save payroll data', err);
+      return false;
+    }
   }
 
   function migrate(state){
@@ -69,6 +76,7 @@
       if(e.lslAccruedBalance === undefined) e.lslAccruedBalance = e.lslBalance || 0;
       if(e.lslEntitlementDateOverride === undefined) e.lslEntitlementDateOverride = '';
       if(e.lslProRataOverride === undefined) e.lslProRataOverride = '';
+      if(e.lslEntitlementConvertedAt === undefined) e.lslEntitlementConvertedAt = '';
       if(e.type === 'Fixed Term' && e.autoTerminate === undefined) e.autoTerminate = true;
       if(!e.personalDetailsHistory) e.personalDetailsHistory = [];
       if(e.dateOfBirth === undefined) e.dateOfBirth = '';

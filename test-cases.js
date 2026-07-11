@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.14'), 'sidebar/version label must show v1.1.14');
-  assert(data.includes("APP_VERSION = '1.1.14'"), 'data-store version must be 1.1.14');
+  assert(html.includes('v1.1.15'), 'sidebar/version label must show v1.1.15');
+  assert(data.includes("APP_VERSION = '1.1.15'"), 'data-store version must be 1.1.15');
 })();
 
 (function testAnchorPayCycle(){
@@ -327,7 +327,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
   state.payslips.push(...paid);
   state.currentCycleId=2;
-  e.terminationDate='2026-06-04'; e.status='Terminated';
+  e.terminationDate='2026-06-05'; e.status='Terminated';
   state.additionalEarnings.push({id:'otretro',empId:e.id,cycleId:1,earningType:'Overtime 2.0',startDate:'2026-05-26',endDate:'2026-05-26',hours:5.5,amount:440,saved:true});
   const next=E.calculateEmployee(state,e.id,2,false);
   const p=next[0];
@@ -509,7 +509,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.14 top-aligned tab layout'), 'v1.1.14 print CSS should enlarge the payslip to fill the A4 page better');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.15 top-aligned tab layout'), 'v1.1.15 print CSS should enlarge the payslip to fill the A4 page better');
 })();
 
 
@@ -563,6 +563,134 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(Number(cycle3RetroAmount.toFixed(2)),0,'Retro already paid in the previous finalised pay must not be generated again in the current pay');
 })();
 
+
+(function testV1115DateValidationAndCleanRows(){
+  assert.strictEqual(E.fmtPay(''), '', 'Blank dates should render as blank');
+  assert.strictEqual(E.fmtLong('not-a-date'), '', 'Invalid dates should render as blank');
+  assert.strictEqual(E.parseDate('2026-02-30'), null, 'Impossible calendar dates should be rejected');
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  const rows=E.calculateEmployee(state,e.id,1,false).flatMap(p=>p.rows||[]);
+  assert(rows.length>0 && rows.every(r=>!Object.prototype.hasOwnProperty.call(r,'_key')), 'Internal row merge keys must not leak into saved payslip data');
+})();
+
+(function testV1115WholeEmployeeTaxDeductionsAndAccrualAcrossMultiplePayslips(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:0,personalLeaveBalance:0});
+  addSchedule(state,e.id);
+  addRate(state,e.id,'2026-05-22','Position A',40);
+  addRate(state,e.id,'2026-05-29','Position B',50);
+  state.taxDetails.push({id:'taxMulti',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  state.deductions.push({id:'dedMulti',empId:e.id,startDate:E.cycleById(1).start,endDate:'',deductionType:'Pre-tax Super Deduction',amount:'',percentage:5,saved:true,deleted:false});
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(payslips.length,2,'Position/rate changes should create two payslip segments');
+  const gross=E.round2(payslips.reduce((sum,p)=>sum+p.gross,0));
+  const preTax=E.round2(payslips.reduce((sum,p)=>sum+p.preTaxDeductionTotal,0));
+  const tax=E.round2(payslips.reduce((sum,p)=>sum+p.tax,0));
+  const expectedPreTax=E.round2(gross*0.05);
+  const expectedTax=E.taxForGross(state,e,gross-expectedPreTax,E.cycleById(1).end);
+  assert.strictEqual(preTax,expectedPreTax,'Percentage deductions must apply to the whole employee pay, not only the first segment');
+  assert.strictEqual(tax,expectedTax,'Tax must be calculated once on total employee pay and allocated across segments');
+  const expectedAccrual=E.leaveAccrualForOrdinaryHours(e,payslips[0].ordinaryHours);
+  payslips.forEach(p=>{
+    assert.strictEqual(p.annualAccrual,expectedAccrual.annual,'Every segment should show the same whole-pay annual leave accrual');
+    assert.strictEqual(p.personalAccrual,expectedAccrual.personal,'Every segment should show the same whole-pay personal leave accrual');
+  });
+})();
+
+(function testV1115DeductionEndDatingMostRecentClosedPeriod(){
+  const state=baseState(); const e=addEmployee(state); state.currentCycleId=2;
+  const previous=E.cycleById(1), current=E.cycleById(2);
+  state.deductions.push({id:'oldDed',empId:e.id,startDate:previous.start,endDate:previous.end,deductionType:'Pre-tax Super Deduction',amount:20,percentage:'',saved:true,deleted:false});
+  state.deductions.push({id:'newDed',empId:e.id,startDate:current.start,endDate:'',deductionType:'Pre-tax Super Deduction',amount:25,percentage:'',saved:true,deleted:false});
+  const active=E.activeDeductions(state,e,current,'Pre-tax Super Deduction');
+  assert.deepStrictEqual(active.map(d=>d.id),['newDed'],'A deduction end-dated in the most recent closed pay must not continue into the current open pay');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("kind==='end' ? Math.max(0,curIdx-1) : curIdx"),'Deduction end-date options should include the most recent closed pay period');
+  assert(app.includes('Overlapping ${a.deductionType} records are not allowed'),'Replacement deductions should be protected from overlapping records');
+})();
+
+(function testV1115RetroDisplayUsesChangedNormalRateForPartialPeriodRateChange(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  const paid=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.payslips.push(...paid); state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.currentCycleId=2;
+  state.payRates.push({id:'partialRate',empId:e.id,effectiveDate:'2026-05-25',position:'Officer',hourlyRate:41,changeType:'Permanent'});
+  const retro=E.calculateEmployee(state,e.id,2,false).flatMap(p=>p.rows||[]).filter(r=>r.kind==='retro');
+  const regular=retro.find(r=>r.description==='Regular Pay Retro');
+  const publicHoliday=retro.find(r=>r.description==='Public Holiday Retro');
+  assert(regular && Math.abs(regular.amount-60)<0.01,'Partial-period rate change should pay only the Regular Pay difference');
+  assert.strictEqual(regular.rate,41,'Regular Pay Retro should generally retain the changed normal rate');
+  assert(publicHoliday && Math.abs(publicHoliday.amount-7.5)<0.01 && publicHoliday.rate===41,'Public Holiday Retro should remain a separate earnings type at the applicable normal rate');
+})();
+
+(function testV1115IncrementalRetroTaxUsesPreviouslyPaidRetroAsBase(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22'});
+  state.taxDetails.push({id:'taxIncremental',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const c1=E.cycleById(1), c2=E.cycleById(2), c3=E.cycleById(3);
+  state.payslips.push({id:'original',empId:e.id,cycleId:1,finalised:true,rows:[{description:'Regular Pay',kind:'regular',units:12.5,rate:40,amount:500,startDate:c1.start,endDate:c1.end,ote:true}]});
+  state.payslips.push({id:'priorRetro',empId:e.id,cycleId:2,finalised:true,rows:[{description:'Regular Pay Retro',kind:'retro',units:1,rate:50,amount:50,startDate:c1.start,endDate:c1.end,ote:true,accrualUnits:0,balanceUnits:0}]});
+  const currentRetro={description:'Regular Pay Retro',kind:'retro',units:4,rate:50,amount:200,startDate:c1.start,endDate:c1.end,ote:true,accrualUnits:0,balanceUnits:0};
+  const parts=E.calculateTaxComponents(state,e,[currentRetro],c3,0);
+  const expected=E.taxForGross(state,e,750,c1.end)-E.taxForGross(state,e,550,c1.end);
+  assert.strictEqual(parts.marginalTaxRetro,expected,'Later retro top-ups must calculate withholding from original pay plus retro already paid');
+  assert.notStrictEqual(expected,E.taxForGross(state,e,700,c1.end)-E.taxForGross(state,e,500,c1.end),'Test setup must exercise a nonlinear tax-table difference');
+})();
+
+(function testV1115FinalisationCannotDoubleCommitBalances(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:0,personalLeaveBalance:0}); addSchedule(state,e.id); addRate(state,e.id);
+  E.finaliseCurrentPay(state);
+  const balances={annual:e.annualLeaveBalance,personal:e.personalLeaveBalance};
+  state.currentCycleId=1;
+  assert.throws(()=>E.finaliseCurrentPay(state),/already been finalised/,'A finalised pay period must not be finalised a second time');
+  assert.deepStrictEqual({annual:e.annualLeaveBalance,personal:e.personalLeaveBalance},balances,'Blocked re-finalisation must not double-add leave accruals');
+})();
+
+(function testV1115LeaveCannotBeBookedOnTerminationEffectiveDate(){
+  const state=baseState(); const e=addEmployee(state,{terminationDate:'2026-05-26'}); addSchedule(state,e.id); addRate(state,e.id);
+  const result=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-05-26','2026-05-26',7.5);
+  assert.strictEqual(result.ok,false,'Leave must not be bookable on or after the termination effective date');
+  assert(result.message.includes('termination effective date'));
+})();
+
+(function testV1115LslEntitlementConversionOccursOnce(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22',lslServiceDate:'2016-06-01',lslEntitlementDateOverride:'2026-06-01',lslProRataOverride:100,lslAccruedBalance:10,lslEntitlementConvertedAt:''});
+  addSchedule(state,e.id); addRate(state,e.id);
+  const before=E.lslBalances(state,e,E.cycleById(1).end);
+  assert.strictEqual(before.lslAccrued,undefined);
+  assert.strictEqual(before.accrued,110,'Pro-rata LSL should move into accrued LSL at entitlement');
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(e.lslAccruedBalance,110,'LSL conversion should be committed at finalisation');
+  assert(e.lslEntitlementConvertedAt,'LSL conversion should be marked as completed');
+  const after=E.lslBalances(state,e,E.cycleById(2).end);
+  assert.strictEqual(after.accrued,110,'Converted pro-rata LSL must not be added again in a later pay period');
+})();
+
+(function testV1115CertificationAlertCleanupAndSafeDeductionHistoryStrings(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('function clearCertificationAlerts(cycleId)') && app.includes('clearCertificationAlerts(cycleId);'),'Completing a certification report should clear its outstanding alerts');
+  assert(app.includes("return !E.isFinalised(state,currentCycle()) && !!startCycle && Number(startCycle.id)===Number(currentCycle().id)"),'Historical deductions should be end-dated rather than deleted');
+  assert(app.includes("finally{ $('processingScreen').classList.remove('open'); }"),'Processing overlay should always close even when an operation fails');
+})();
+
+
+(function testV1115FixedTermExpiryIsInclusiveButManualTerminationIsExclusive(){
+  const state=baseState();
+  const e=addEmployee(state,{type:'Fixed Term',contractEndDate:'2026-06-02',autoTerminate:true});
+  addSchedule(state,e.id); addRate(state,e.id);
+  E.autoProcessContractExpiries(state,'2026-06-04');
+  assert.strictEqual(e.terminationDate,'2026-06-02','Auto expiry should retain the contract end date for display/history');
+  assert.strictEqual(e.terminationReason,'Expiry of Fixed Term');
+  assert.strictEqual(E.isEmployedOn(e,'2026-06-02'),true,'A fixed-term employee must remain employed and payable on the inclusive contract end date');
+  assert.strictEqual(E.isTerminatedOn(e,'2026-06-02'),false,'Expiry status should not take effect until after the inclusive contract end date');
+  assert.strictEqual(E.isTerminatedOn(e,'2026-06-03'),true,'Expiry status should take effect after the contract end date');
+  const leave=E.validateLeaveBooking(state,e.id,'LWOP','2026-06-02','2026-06-02',7.5);
+  assert.strictEqual(leave.ok,true,'An absence may be booked on the inclusive fixed-term contract end date');
+  const pay=E.calculateEmployee(state,e.id,1,false);
+  assert(pay.flatMap(p=>p.rows||[]).some(r=>r.description==='Regular Pay' && E.compare(r.startDate,'2026-06-02')<=0 && E.compare(r.endDate,'2026-06-02')>=0),'The scheduled contract end date must still be included in pay');
+
+  const manual=addEmployee(baseState(),{id:'000002',terminationDate:'2026-06-01',terminationReason:'Voluntary - Resignation'});
+  assert.strictEqual(E.isEmployedOn(manual,'2026-06-01'),false,'A manually entered termination effective date is the day after the last working day and is exclusive');
+  assert.strictEqual(E.isTerminatedOn(manual,'2026-06-01'),true,'Manual termination status should take effect on the termination effective date');
+})();;
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -596,4 +724,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.14 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
+console.log('PASS: v1.1.15 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');

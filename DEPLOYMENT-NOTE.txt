@@ -1,2 +1,6 @@
-This package includes .github/workflows/pages.yml for explicit GitHub Actions deployment.
+Payroll/HCM App v1.1.15
+
+This package includes .github/workflows/pages.yml for GitHub Pages deployment.
 In GitHub Settings > Pages, set Source to GitHub Actions, then upload/commit these files.
+
+Before replacing an existing version, export the current app data. This remains a client-side demonstration and must not be used for real payroll data without production security and compliance work.

@@ -88,6 +88,17 @@
     const a=(state.alerts||[]).find(x=>x.id===alertId);
     if(a){ a.read=true; a.readAt=new Date().toISOString(); save(); renderAlerts(); }
   }
+  function clearCertificationAlerts(cycleId){
+    const cycleToken=String(cycleId);
+    let changed=false;
+    (state.alerts||[]).forEach(a=>{
+      const action=inferredAlertAction(a);
+      if(a.read!==true && action && action.tab==='certification' && String(action.cycleId||'')===cycleToken){
+        a.read=true; a.readAt=new Date().toISOString(); changed=true;
+      }
+    });
+    return changed;
+  }
   function certificationRecord(cycleId){
     const key=String(cycleId);
     const rec = state.certifications[key] || { lines:{}, completed:false, locked:false };
@@ -203,7 +214,7 @@
     timeoutLogout = setTimeout(logout, 15*60*1000);
   }
 
-  function save(){ DataStore.save(state); }
+  function save(){ if(!DataStore.save(state)) toast('Unable to save data in this browser. Export a backup before continuing.',6000); }
   function toast(message, duration=2200){ h('toast', esc(message)); $('toast').classList.add('open'); setTimeout(()=>$('toast').classList.remove('open'), duration); }
   function log(message){ state.auditLog.unshift(new Date().toLocaleString('en-AU') + ' — ' + message); save(); renderAudit(); }
   function emp(id){ return state.employees.find(e=>e.id===id); }
@@ -223,16 +234,23 @@
       const line=rec.lines[lineId];
       if(!line || !line.certified) return;
       const currentLine=byId.get(String(lineId));
-      const newHash=currentLine ? paySignature(currentLine) : '';
-      if(!currentLine || (line.payHash && line.payHash !== newHash)){
+      const newHash=currentLine?paySignature(currentLine):'';
+      if(!currentLine || (line.payHash && line.payHash!==newHash)){
         line.certified=false;
         line.uncertifiedAt=new Date().toISOString();
         changed=true;
-        const employeeName=currentLine ? currentLine.employeeName : (line.employeeName || 'An employee');
-        addAlert(`Certification removed: ${employeeName}'s pay changed after certification. Please review and certify again.`, `cert-paychanged-${c.id}-${lineId}-${Date.now()}`, 'warning', { tab:'certification', cycleId:c.id, payId:lineId });
+        const employeeName=currentLine?currentLine.employeeName:(line.employeeName||'An employee');
+        addAlert(`Certification removed: ${employeeName}'s pay changed after certification. Please review and certify again.`, `cert-paychanged-${c.id}-${lineId}-${Date.now()}`, 'warning', {tab:'certification',cycleId:c.id,payId:lineId});
       }
     });
-    if(changed){ rec.completed=false; rec.locked=false; rec.completedAt=''; }
+    if(rec.completed){
+      const added=(newResults||[]).filter(p=>!(rec.lines[String(p.id)]&&rec.lines[String(p.id)].certified));
+      if(added.length){
+        changed=true;
+        addAlert(`Certification Report for ${E.ppeLabel(c)} was unlocked because new or changed pay lines require review.`, `cert-lineschanged-${c.id}-${Date.now()}`, 'warning', {tab:'certification',cycleId:c.id,payId:added[0].id});
+      }
+    }
+    if(changed){ rec.completed=false; rec.locked=false; rec.completedAt=''; rec.updatedAt=new Date().toISOString(); }
   }
   function calculateAllForCurrent(){
     const c=currentCycle();
@@ -251,7 +269,7 @@
     save();
   }
   function employeeDisplayStatus(e){
-    if(e && e.terminationDate && E.compare(todayIso(), e.terminationDate)>0) return 'Terminated';
+    if(e && e.terminationDate) return E.isTerminatedOn(e,todayIso()) ? 'Terminated' : 'Active';
     return e && e.status === 'Terminated' ? 'Terminated' : 'Active';
   }
   function activeEmployees(){ return state.employees.filter(e=>employeeDisplayStatus(e) !== 'Terminated'); }
@@ -430,26 +448,10 @@
   }
   function getSchedule(prefix){ return {1:Number(v(`${prefix}Mon`)||0),2:Number(v(`${prefix}Tue`)||0),3:Number(v(`${prefix}Wed`)||0),4:Number(v(`${prefix}Thu`)||0),5:Number(v(`${prefix}Fri`)||0),6:Number(v(`${prefix}Sat`)||0),0:Number(v(`${prefix}Sun`)||0)}; }
   function weeklyHours(map){ return Object.values(map||{}).reduce((s,x)=>s+Number(x||0),0); }
-  function autoInitialLeaveBalances(startDate, schedule){
-    if(!startDate) return {annual:0, personal:0};
-    const from = E.compare(startDate, E.RETRO_PROCESSING_START) < 0 ? E.RETRO_PROCESSING_START : startDate;
-    const to = E.addDays(currentCycle().start,-1);
-    if(E.compare(from,to)>0) return {annual:0, personal:0};
-    let ordinary = 0;
-    E.daysBetween(from,to).forEach(d=>{ ordinary += Number((schedule||{})[E.parseDate(d).getDay()]||0); });
-    return E.leaveAccrualForOrdinaryHours({type:'Permanent'}, ordinary);
-  }
-  function refreshAutoLeaveBalance(prefix){
-    if(!$(`${prefix}AL`) || !$(`${prefix}PL`)) return;
-    const b = autoInitialLeaveBalances(v(`${prefix}Start`) || v(`${prefix}rehireStart`), getSchedule(prefix));
-    setv(`${prefix}AL`, b.annual.toFixed(2));
-    setv(`${prefix}PL`, b.personal.toFixed(2));
-  }
   function openAddEmployee(){
     modal('Add New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div><label>Address</label><input id="newAddress" autocomplete="street-address" placeholder="Start typing address"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" value="${todayIso()}"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div>`, `<button id="saveNewEmployee">Add Employee</button>`, false);
     $('saveNewEmployee').addEventListener('click', saveNewEmployee);
   }
-  function toggleContractFields(typeId,endId,autoId){ /* kept for legacy handlers */ }
   function saveNewEmployee(){
     if(!v('newFirst').trim() || !v('newLast').trim()) return alert('Enter first and last name.');
     const taxEffective = v('newTaxEffective') || todayIso();
@@ -481,38 +483,12 @@
     const body = `<div class="personal-card"><p><strong>${esc(E.employeeName(e))}</strong></p><p><strong>Date of Birth:</strong> ${esc(e.dateOfBirth||'')}</p><p><strong>Email:</strong> ${esc(e.email||'')}</p><p><strong>Phone number:</strong> ${esc(e.phone||'')}</p><p><strong>Address:</strong> ${esc(e.address||'')}</p></div>`;
     modal('Current Personal Details', body, '', true);
   }
-  function openScheduleView(empId){ const e=emp(empId); const s=E.activeSchedule(state,empId,currentCycle().start) || state.schedules.filter(x=>x.empId===empId).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate))[0]; const rows=s? [['Monday',s.hoursByDay[1]||0],['Tuesday',s.hoursByDay[2]||0],['Wednesday',s.hoursByDay[3]||0],['Thursday',s.hoursByDay[4]||0],['Friday',s.hoursByDay[5]||0],['Saturday',s.hoursByDay[6]||0],['Sunday',s.hoursByDay[0]||0]]:[]; modal('Current Work Schedule', `<p><strong>${esc(E.employeeName(e))}</strong></p>${s?`<p><strong>Effective date:</strong> ${E.fmtPay(s.effectiveDate)}</p>${table(['Day','Hours'],rows)}`:'<p>No schedule found.</p>'}`, '', true); }
-
-  function openRehire(){
-    const terms = state.employees.filter(e=>employeeDisplayStatus(e)==='Terminated');
-    modal('Rehire Employee', `<div class="grid form-grid"><div><label>Terminated Employee</label><select id="rehireEmp">${employeeOptions(terms)}</select></div><div><label>Employee ID</label><input id="rehireId" readonly></div><div><label>First Name</label><input id="rehireFirst" readonly></div><div><label>Last Name</label><input id="rehireLast" readonly></div><div><label>New Start Date</label><input id="rehireStart" type="date"></div><div><label>Employment Type</label><select id="rehireType"><option>Permanent</option><option>Fixed Term</option></select></div><div><label>Contract End Date</label><input id="rehireContractEnd" type="date" disabled></div><div><label>Auto Terminate?</label><select id="rehireAutoTerm" disabled><option value="false">No</option><option value="true">Yes</option></select></div><div><label>Department</label><input id="rehireDept"></div><div><label>Position</label><input id="rehirePosition"></div><div><label>Hourly Rate</label><input id="rehireRate" type="number" step="0.01"></div><div><label>Annual Leave Balance (Hours)</label><input id="rehireAL" type="number" step="0.01" readonly class="readonly" value="0.00"></div><div><label>Personal Leave Balance (Hours)</label><input id="rehirePL" type="number" step="0.01" readonly class="readonly" value="0.00"></div></div><div class="divider"></div><h3>New Work Schedule</h3>${scheduleInputs('rehire')}`, `<button id="saveRehire">Rehire Employee</button>`, false);
-    const populate=()=>{ const e=emp(v('rehireEmp'))||{}; setv('rehireId',e.id); setv('rehireFirst',e.firstName); setv('rehireLast',e.lastName); setv('rehireDept',e.department); setv('rehirePosition',e.position); setv('rehireRate',e.hourlyRate); };
-    $('rehireEmp').addEventListener('change',populate); $('rehireType').addEventListener('change',()=>toggleContractFields('rehireType','rehireContractEnd','rehireAutoTerm')); $('rehireStart').addEventListener('change',()=>refreshAutoLeaveBalance('rehire')); ['rehireMon','rehireTue','rehireWed','rehireThu','rehireFri','rehireSat','rehireSun'].forEach(id=>$(id).addEventListener('input',()=>refreshAutoLeaveBalance('rehire'))); populate(); toggleContractFields('rehireType','rehireContractEnd','rehireAutoTerm'); $('saveRehire').addEventListener('click',saveRehire);
-  }
-  function saveRehire(){ const e=emp(v('rehireEmp')); if(!e) return alert('Select a terminated employee.'); const start=v('rehireStart'); const sched=getSchedule('rehire'); const type=v('rehireType'); if(!start) return alert('Enter a new start date.'); if(type==='Fixed Term' && !v('rehireContractEnd')) return alert('Fixed-term rehires require a contract end date.'); if(weeklyHours(sched)<=0) return alert('Enter a work schedule.'); const oldTerm=e.terminationDate; e.status='Active'; e.startDate=start; e.lslServiceDate=start; e.lslEntitlementDateOverride=''; e.lslProRataOverride=''; e.type=type; e.contractEndDate=type==='Fixed Term'?v('rehireContractEnd'):''; e.autoTerminate=type==='Fixed Term'; e.terminationDate=''; e.terminationReason=''; e.department=v('rehireDept')||e.department; e.position=v('rehirePosition')||e.position; e.hourlyRate=Number(v('rehireRate')||e.hourlyRate||0); const autoBalances=autoInitialLeaveBalances(start,sched); e.annualLeaveBalance=autoBalances.annual; e.personalLeaveBalance=autoBalances.personal; e.lslAccruedBalance=0; const rateId=uid('rate'), schedId=uid('schedule'); state.payRates.push({id:rateId,empId:e.id,changeType:'Permanent',effectiveDate:start,endDate:'',position:e.position,hourlyRate:e.hourlyRate}); state.schedules.push({id:schedId,empId:e.id,effectiveDate:start,hoursByDay:sched}); addJobEvent(e.id,'Rehire',start,`Employee rehired. Previous termination ${E.fmtPay(oldTerm)}`,'employee',e.id); addJobEvent(e.id,'Employment Type',start,`${type}${e.contractEndDate?` — Contract end ${E.fmtPay(e.contractEndDate)}`:''}`,'employee',e.id); addJobEvent(e.id,'Position/Pay Rate',start,`${e.position} — ${E.money(e.hourlyRate)}`,'rate',rateId); addJobEvent(e.id,'Schedule',start,`Rehire schedule ${weeklyHours(sched).toFixed(2)} hours/week`,'schedule',schedId); save(); closeModal(); calculateAllForCurrent(); log(`Employee rehired: ${E.employeeName(e)}`); renderAll(); toast("Employee's personal and tax details may have changed since last employment. Please update if necessary", 15000); }
-  function openExtendContract(){ const fixed=state.employees.filter(e=>e.type==='Fixed Term'); modal('Extend Contract', `<div class="grid form-grid"><div><label>Fixed-Term Employee</label><select id="extendEmp">${employeeOptions(fixed)}</select></div><div><label>New Contract End Date</label><input id="extendEnd" type="date"></div></div>`, `<button id="saveExtend">Save Contract Extension</button>`, true); $('saveExtend').addEventListener('click',()=>{ const e=emp(v('extendEmp')); if(!e) return alert('Select a fixed-term employee.'); if(!v('extendEnd')) return alert('Enter a new contract end date.'); const old=e.contractEndDate; e.contractEndDate=v('extendEnd'); e.status='Active'; e.terminationDate=''; e.terminationReason=''; addJobEvent(e.id,'New Fixed Term Contract',v('extendEnd'),`Contract extended from ${E.fmtPay(old)} to ${E.fmtPay(v('extendEnd'))}`,'employee',e.id); save(); closeModal(); log(`Contract extended for ${E.employeeName(e)}`); renderAll(); }); }
-  function openTermination(){ modal('Process Termination', `<div class="grid form-grid"><div><label>Employee</label><select id="termEmp">${employeeOptions(activeEmployees())}</select></div><div><label>Last Working Date</label><input id="termDate" type="date"></div><div><label>Reason for Termination</label><select id="termReason"><option>Voluntary - Resignation</option><option>Voluntary - Retirement</option></select></div></div>`, `<button id="saveTermination" class="danger">Terminate Employee</button>`, true); $('saveTermination').addEventListener('click',()=>{ const e=emp(v('termEmp')); if(!e) return alert('Select employee.'); if(!v('termDate')) return alert('Enter last working date.'); e.terminationDate=v('termDate'); e.terminationReason=v('termReason'); e.status = E.compare(todayIso(), e.terminationDate)>0 ? 'Terminated' : 'Active'; addJobEvent(e.id,'Termination',e.terminationDate,e.terminationReason,'employee',e.id); save(); closeModal(); calculateAllForCurrent(); log(`Termination processed for ${E.employeeName(e)}`); renderAll(); }); }
-
-  function renderChangeCentre(){
-    const empOpts = employeeOptions(employeeList(showTerminatedByTab.changeCentre));
-    h('changeCentre', `<h2>Change Centre</h2><p class="small-note">Use this tab for master data, position/pay and work schedule changes. Backdated changes will calculate retro when required.</p><div class="controls">${showTerminatedControl('ccShowTerminated','changeCentre')}</div><h3>Employee master change</h3><div class="grid form-grid"><div><label>Employee</label><select id="editEmp">${empOpts}</select></div><div><label>Start Date</label><input id="editStart" type="date"></div><div><label>Employment Type</label><select id="editType"><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></div><div><label>Contract End Date</label><input id="editContractEnd" type="date"></div><div><label>Auto Terminate?</label><select id="editAutoTerm"><option value="false">No</option><option value="true">Yes</option></select></div><div><label>Status</label><select id="editStatus"><option>Active</option><option>Terminated</option></select></div></div><div class="controls" style="margin-top:14px"><button id="saveMasterChange">Save Master Change</button></div><div class="divider"></div><h3>Position / pay rate change</h3><div class="grid form-grid"><div><label>Employee</label><select id="rateEmp">${empOpts}</select></div><div><label>Change Type</label><select id="rateType"><option>Permanent</option><option>Temporary</option></select></div><div><label>Effective Date</label><input id="rateStart" type="date"></div><div><label>Temporary End Date</label><input id="rateEnd" type="date" disabled></div><div><label>New Position</label><input id="ratePosition"></div><div><label>New Hourly Rate</label><input id="rateAmount" type="number" step="0.01"></div></div><div class="controls" style="margin-top:14px"><button id="saveRateChange">Add Position/Pay Change</button></div><div class="divider"></div><h3>Work schedule change</h3><div class="grid form-grid"><div><label>Employee</label><select id="schedEmp">${empOpts}</select></div><div><label>Effective Date</label><input id="schedStart" type="date"></div></div>${scheduleInputs('sched')}<div class="controls" style="margin-top:14px"><button id="saveScheduleChange">Add Schedule Change</button></div>`);
-    $('rateType').addEventListener('change',()=>{ $('rateEnd').disabled = v('rateType') !== 'Temporary'; if(v('rateType')!=='Temporary') setv('rateEnd',''); });
-    $('editType').addEventListener('change',()=>toggleContractFields('editType','editContractEnd','editAutoTerm'));
-    $('saveMasterChange').addEventListener('click',saveMasterChange); $('saveRateChange').addEventListener('click',saveRateChange); $('saveScheduleChange').addEventListener('click',saveScheduleChange); bindShowTerminated('ccShowTerminated','changeCentre',renderChangeCentre);
-  }
-  function saveMasterChange(){ const e=emp(v('editEmp')); if(!e) return alert('Select employee.'); const type=v('editType'); if(type==='Permanent'&&v('editContractEnd')) return alert('Permanent employees cannot have a contract end date.'); e.startDate=v('editStart')||e.startDate; e.type=type; e.contractEndDate=type==='Fixed Term'?v('editContractEnd'):''; e.autoTerminate=type==='Fixed Term'&&v('editAutoTerm')==='true'; e.status=(e.terminationDate&&E.compare(todayIso(),e.terminationDate)<=0)?'Active':v('editStatus'); addJobEvent(e.id,'Master Change',e.startDate,`Employment/status updated to ${e.type}/${e.status}`,'employee',e.id); save(); calculateAllForCurrent(); log('Employee master updated'); renderAll(); }
-  function saveRateChange(){ const empId=v('rateEmp'); if(!empId || !v('rateStart') || !v('ratePosition') || !v('rateAmount')) return alert('Complete all pay change fields.'); if(v('rateType')==='Temporary' && !v('rateEnd')) return alert('Temporary changes require an end date.'); const id=uid('rate'); state.payRates.push({id,empId,changeType:v('rateType'),effectiveDate:v('rateStart'),endDate:v('rateType')==='Temporary'?v('rateEnd'):'',position:v('ratePosition'),hourlyRate:Number(v('rateAmount'))}); addJobEvent(empId,'Position/Pay Rate',v('rateStart'),`${v('rateType')} — ${v('ratePosition')} — ${E.money(v('rateAmount'))}`,'rate',id); save(); calculateAllForCurrent(); log('Position/pay rate change added'); renderAll(); }
-  function saveScheduleChange(){ const empId=v('schedEmp'); const sched=getSchedule('sched'); if(!empId || !v('schedStart') || weeklyHours(sched)<=0) return alert('Complete employee, effective date and schedule hours.'); const id=uid('schedule'); state.schedules.push({id,empId,effectiveDate:v('schedStart'),hoursByDay:sched}); addJobEvent(empId,'Schedule',v('schedStart'),`Schedule changed to ${weeklyHours(sched).toFixed(2)} hours/week`,'schedule',id); save(); calculateAllForCurrent(); log('Schedule change added'); renderAll(); }
-
   const JOB_REASON_OPTIONS = {
     Commencement: ['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],
     Variation: ['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change'],
     Movement: ['Acting Same Level','Acting Higher Level','Return from Temp Assignment','Promotion','Regression'],
     Termination: ['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term']
   };
-  function positionOptions(activeOnly=true){
-    return (state.positions||[]).filter(p=>!activeOnly || p.active!==false).sort((a,b)=>String(a.positionName||'').localeCompare(String(b.positionName||''))).map(p=>`<option value="${esc(p.positionNumber)}">${esc(p.positionNumber)} — ${esc(p.positionName||'')}</option>`).join('');
-  }
   function positionByNumber(num){ return (state.positions||[]).find(p=>String(p.positionNumber)===String(num)); }
   function sortedJobDataRows(empId){
     return (state.jobDataRows||[]).filter(r=>r.empId===empId).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
@@ -622,7 +598,7 @@
     state.schedules = (state.schedules||[]).filter(r=>!(r.empId===e.id && r.jobDataId===row.id && r.id!==row.scheduleId));
     state.jobEvents = (state.jobEvents||[]).filter(j=>j.refKind!=='jobData' || j.refId!==row.id);
     if(row.action==='Termination'){
-      e.terminationDate=row.effectiveDate; e.terminationReason=row.reason; e.status=E.compare(todayIso(), row.effectiveDate)>=0?'Terminated':'Active';
+      e.terminationDate=row.effectiveDate; e.terminationReason=row.reason; e.status=E.isTerminatedOn(e,todayIso())?'Terminated':'Active';
       addJobEvent(e.id,'Termination',row.effectiveDate,row.reason,'jobData',row.id); return;
     }
     if(!e.startDate || row.action==='Commencement'){
@@ -646,7 +622,7 @@
   }
 
   function renderJobSummary(){
-    h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Read-only list of saved Job Data rows.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
+    h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
     bindShowTerminated('jobShowTerminated','jobSummary',renderJobSummary); $('jobEmp').addEventListener('change',renderJobOutput); renderJobOutput();
   }
   function renderJobOutput(){
@@ -654,7 +630,6 @@
     const rows=(state.jobDataRows||[]).filter(r=>r.empId===id).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
     h('jobOutput', rows.length?table(['Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'], rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>');
   }
-  function deleteJobEntry(kind,id,eventId){ alert('Job Summary is read-only. Use Job Data to process job changes.'); }
 
   function renderAdditionalEarnings(){
     if(additionalPeriodOffset === undefined) additionalPeriodOffset = 0;
@@ -717,13 +692,14 @@
 
   function deductionCycleOptions(kind='start', selected=''){
     const curIdx = E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id);
-    return E.PAY_CYCLES.slice(curIdx, Math.min(E.PAY_CYCLES.length, curIdx+26)).map(c=>{
+    const fromIdx = kind==='end' ? Math.max(0,curIdx-1) : curIdx;
+    return E.PAY_CYCLES.slice(fromIdx, Math.min(E.PAY_CYCLES.length, curIdx+26)).map(c=>{
       const val = kind === 'end' ? c.end : c.start;
       return `<option value="${esc(val)}" ${selected===val?'selected':''}>${E.cycleDisplay(c)}</option>`;
     }).join('');
   }
   function renderDeductions(){
-    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="saveDeductionsBtn">Save</button></div>`);
+    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="saveDeductionsBtn">Save</button></div>`);
     bindShowTerminated('dedShowTerminated','deductions',renderDeductions);
     if(selectedDeductionEmp && employeeList(showTerminatedByTab.deductions).some(e=>e.id===selectedDeductionEmp)) setv('dedEmp',selectedDeductionEmp);
     $('dedEmp').addEventListener('change',()=>{ selectedDeductionEmp=v('dedEmp'); loadDeductionDraft(); });
@@ -766,15 +742,19 @@
     closeModal(); markDeductionDirty(); renderDeductionsTable();
   }
   function deductionCanEditEnd(d){ return !d.endDate || E.compare(d.endDate,currentCycle().start)>=0; }
-  function deductionCanDelete(d){ return !E.isFinalised(state,currentCycle()) && E.compare(d.startDate,currentCycle().end)<=0 && (!d.endDate || E.compare(d.endDate,currentCycle().start)>=0); }
+  function deductionCanDelete(d){
+    if(d.saved===false) return true;
+    const startCycle=E.PAY_CYCLES.find(c=>c.start===d.startDate);
+    return !E.isFinalised(state,currentCycle()) && !!startCycle && Number(startCycle.id)===Number(currentCycle().id);
+  }
   function renderDeductionsTable(){
-    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.'); return; }
-    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period only.');
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.'); return; }
+    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for pre-tax and post-tax super deductions. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.');
     const rows=(deductionDraftRows||[]).filter(d=>d.empId===empId && d.deleted!==true).sort((a,b)=>E.compare(a.startDate,b.startDate)).map(d=>{
       const endCell=deductionCanEditEnd(d)?`<select data-ded-end="${esc(d.id)}"><option value="" ${!d.endDate?'selected':''}></option>${deductionCycleOptions('end',d.endDate||'')}</select>`:E.fmtPay(d.endDate);
       const amountCell=d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>';
       const percentageCell=d.percentage!==''&&d.percentage!=null?`${Number(d.percentage).toFixed(2)}%`:'<span class="muted">—</span>';
-      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">Locked after finalised/current period</span>'];
+      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">End-date only</span>'];
     });
     h('deductionsTable', rows.length?table(['Deduction Type','Start Date','End Date','Amount','Percentage','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
     document.querySelectorAll('[data-ded-end]').forEach(el=>el.addEventListener('change',()=>stageDeductionEnd(el.dataset.dedEnd,el.value)));
@@ -782,7 +762,7 @@
   }
   function stageDeductionEnd(id,endDate){
     const d=(deductionDraftRows||[]).find(x=>x.id===id); if(!d) return;
-    if(endDate){ const c=E.PAY_CYCLES.find(x=>x.end===endDate); if(!c || c.id<currentCycle().id || E.compare(endDate,d.startDate)<0){ renderDeductionsTable(); return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.'); } }
+    if(endDate){ const c=E.PAY_CYCLES.find(x=>x.end===endDate); const minimumId=d.saved===false?currentCycle().id:Math.max(1,currentCycle().id-1); if(!c || c.id<minimumId || E.compare(endDate,d.startDate)<0){ renderDeductionsTable(); return alert('End Date must be the last day of the most recent closed, current or a future pay period and cannot be before the effective date.'); } }
     d.endDate=endDate||''; markDeductionDirty(); renderDeductionsTable();
   }
   function stageDeleteDeduction(id){
@@ -797,9 +777,18 @@
       if(!d.startDate) return alert('Every deduction must have a Start Date.');
       const startCycle=E.PAY_CYCLES.find(c=>c.start===d.startDate);
       if(!startCycle || startCycle.id < currentCycle().id && d.saved===false) return alert('Effective Date must be the first day of the current or a future pay period.');
-      if(d.endDate){ const endCycle=E.PAY_CYCLES.find(c=>c.end===d.endDate); if(!endCycle || endCycle.id < currentCycle().id || E.compare(d.endDate,d.startDate)<0) return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.'); }
+      if(d.endDate){ const endCycle=E.PAY_CYCLES.find(c=>c.end===d.endDate); const minimumId=d.saved===false?currentCycle().id:Math.max(1,currentCycle().id-1); if(!endCycle || endCycle.id<minimumId || E.compare(d.endDate,d.startDate)<0) return alert('End Date must be the last day of the most recent closed, current or a future pay period and cannot be before the effective date.'); }
       if((d.amount===''||d.amount==null) && (d.percentage===''||d.percentage==null)) return alert('Each deduction must have either an Amount or Percentage.');
       if(String(d.amount)!=='' && d.amount!=null && String(d.percentage)!=='' && d.percentage!=null) return alert('Each deduction can have Amount OR Percentage, not both.');
+    }
+    const activeRows=deductionDraftRows.filter(d=>d.empId===empId&&d.deleted!==true);
+    for(let i=0;i<activeRows.length;i++){
+      for(let j=i+1;j<activeRows.length;j++){
+        const a=activeRows[i], b=activeRows[j];
+        if(a.deductionType!==b.deductionType) continue;
+        const aEnd=a.endDate||'9999-12-31', bEnd=b.endDate||'9999-12-31';
+        if(E.compare(a.startDate,bEnd)<=0&&E.compare(b.startDate,aEnd)<=0) return alert(`Overlapping ${a.deductionType} records are not allowed. End-date the existing deduction before starting the replacement deduction.`);
+      }
     }
     loadingModal('Saving Deductions','Save Successful',()=>{
       const before=(state.deductions||[]).filter(d=>d.empId===empId).map(d=>DataStore.clone(d));
@@ -1040,7 +1029,7 @@
       e.personalLeaveBalance=E.round4(recalculated.personal);
       e.lslAccruedBalance=E.round4(recalculated.lslAccrued);
       e.lslProRataOverride=E.round4(recalculated.lslProRata);
-      e.lslEntitlementDateOverride=recalculated.lslEntitlementDate;
+      e.lslEntitlementDateOverride=recalculated.lslEntitlementDate; e.lslEntitlementConvertedAt=(recalculated.lslEntitlementDate&&E.compare(recalculated.lslEntitlementDate,currentCycle().end)<=0)?currentCycle().end:'';
       addJobEvent(e.id,'Absence Balance Recalculation',todayIso(),`Balances recalculated. Annual ${before.annual.toFixed(2)} → ${recalculated.annual.toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${recalculated.personal.toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${recalculated.lslAccrued.toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${recalculated.lslProRata.toFixed(2)}.`, 'employee', e.id);
       save(); calculateAllForCurrent(); toast('Balances recalculated'); renderAll();
     });
@@ -1053,7 +1042,7 @@
     modal('Adjustment Comment', '<p>Please enter a comment/explanation for this adjustment.</p><textarea id="absenceComment" rows="4" style="width:100%"></textarea>', '<button id="saveAbsenceComment">Save</button><button data-close-modal class="secondary">Cancel</button>', true);
     $('saveAbsenceComment').addEventListener('click',()=>{
       const comment=v('absenceComment').trim(); if(!comment) return alert('A comment is required.');
-      e.annualLeaveBalance=E.round4(Number(draft.annual||0)); e.personalLeaveBalance=E.round4(Number(draft.personal||0)); e.lslAccruedBalance=E.round4(Number(draft.lslAccrued||0)); e.lslProRataOverride=E.round4(Number(draft.lslProRata||0)); e.lslEntitlementDateOverride=draft.lslEntitlementDate||'';
+      e.annualLeaveBalance=E.round4(Number(draft.annual||0)); e.personalLeaveBalance=E.round4(Number(draft.personal||0)); e.lslAccruedBalance=E.round4(Number(draft.lslAccrued||0)); e.lslProRataOverride=E.round4(Number(draft.lslProRata||0)); e.lslEntitlementDateOverride=draft.lslEntitlementDate||''; e.lslEntitlementConvertedAt=(draft.lslEntitlementDate&&E.compare(draft.lslEntitlementDate,currentCycle().end)<=0)?currentCycle().end:'';
       const desc=`Balances adjusted. Annual ${before.annual.toFixed(2)} → ${Number(draft.annual||0).toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${Number(draft.personal||0).toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${Number(draft.lslAccrued||0).toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${Number(draft.lslProRata||0).toFixed(2)}, LSL Date ${E.fmtPay(before.lslEntitlementDate)} → ${E.fmtPay(draft.lslEntitlementDate)}. Comment: ${comment}`;
       addJobEvent(e.id,'Absence Balance Adjustment',todayIso(),desc,'employee',e.id); absenceEditing=false; absenceDraft=null; save(); calculateAllForCurrent(); closeModal(); log('Absence balances adjusted.'); renderAll();
     });
@@ -1175,6 +1164,7 @@
     if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.');
     rec.name=v('certName'); rec.position=v('certPosition'); rec.declaration=true; rec.completed=true; rec.locked=true; rec.completedAt=new Date().toISOString(); rec.savedAt=rec.completedAt;
     lines.forEach(p=>{ rec.lines[String(p.id)]={ certified:true, certifiedAt:rec.completedAt, employeeName:p.employeeName, payHash:paySignature(p) }; });
+    clearCertificationAlerts(cycleId);
     save(); log(`Certification Report completed for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); renderAlerts();
   }
 
@@ -1282,12 +1272,20 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.15',notes:[
+      'Completed a full code audit and removed obsolete Change Centre/legacy handlers that were no longer reachable from the interface.',
+      'Added the most recent closed pay period as a valid deduction end date, with overlap validation and protection against deleting historical deductions.',
+      'Corrected whole-employee tax, deductions and leave accrual allocation when an employee has multiple payslips/positions in one pay period.',
+      'Strengthened difference-only retro calculations, duplicate-retro prevention, incremental retro tax and normal-rate/unit presentation.',
+      'Added finalisation, date, storage, certification-alert and one-time LSL conversion safeguards, and corrected fixed-term expiry so the contract end date remains inclusive.',
+      'Consolidated print CSS and verified a single-page A4 payslip, top-aligned tab navigation and key browser workflows.'
+    ]},
     {version:'v1.1.14',notes:[
       'Added Job Data unsaved-change confirmation with exact message: Are you sure you want to exit without saving? Yes discards changes and exits; No returns to Job Data.',
       'Fixed retro duplication logic so retro already included on a finalised later payslip is treated as already paid and is not generated again in the next pay.',
       'Added regression tests for Job Data unsaved-change prompts and duplicate retro suppression.'
     ]},
-    {version:'v1.1.14',notes:[
+    {version:'v1.1.13',notes:[
       'Refined retro pay rate change display so difference-only retro amounts generally keep the applicable ordinary rate and adjust retro units, while allowing exceptions where a changed rate is clearer.',
       'Enlarged printed payslips so the payment advice fills more of the A4 page, with the employee name/address moved right for an envelope window and right-side details aligned to the right edge.',
       'Made the alerts dropdown larger and less condensed with clickable alert items that navigate to the relevant page, such as the Certification Report and selected PPE.',
@@ -1393,8 +1391,18 @@
   function openChangeNotes(){ modal('Change Notes', changeNotes.map(n=>`<div class="history-item"><strong>${esc(n.version)}</strong><ul>${n.notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`).join(''), '', false); }
   function openPublicHolidays(){ modal('Western Australia Public Holidays', table(['Date','Public Holiday'], E.PUBLIC_HOLIDAYS_WA.map(p=>[E.fmtPay(p[0]),esc(p[1])])), '', false); }
   function checkOvernightProcessing(manual){ const today=todayIso(); if(manual && state.lastOvernightDate===today) return alert('Overnight processing has already been checked today.'); if(manual && !confirm('If overnight processing should have run, do you want to run it now?')) return; state.lastOvernightDate=today; calculateAllForCurrent(); save(); if(manual) showProcessing('Overnight Processing in Progress',()=>{ log('Overnight processing checked/run. Pay was calculated but not finalised.'); renderAll(); }); }
-  function openFinalisePay(){ const c=currentCycle(); confirmModal(`Are you sure you want to finalise the pay for ${E.ppeLabel(c)}?`, 'Yes', ()=>showProcessing('Pay Finalisation in Progress',()=>{ const result=E.finaliseCurrentPay(state); save(); calculateAllForCurrent(); log(`Pay finalised for ${E.ppeLabel(result.finalisedCycle)}. Next pay opened: ${E.ppeLabel(result.nextCycle)}`); renderAll(); })); }
-  function showProcessing(title,callback){ logout(); h('processingTitle',title); $('processingScreen').classList.add('open'); setTimeout(()=>{ callback && callback(); $('processingScreen').classList.remove('open'); }, 1600); }
+  function openFinalisePay(){
+    const c=currentCycle();
+    confirmModal(`Are you sure you want to finalise the pay for ${E.ppeLabel(c)}?`, 'Yes', ()=>showProcessing('Pay Finalisation in Progress',()=>{
+      try{
+        const result=E.finaliseCurrentPay(state); save(); calculateAllForCurrent(); log(`Pay finalised for ${E.ppeLabel(result.finalisedCycle)}. Next pay opened: ${E.ppeLabel(result.nextCycle)}`); renderAll();
+      }catch(err){ alert(err && err.message ? err.message : 'Pay finalisation failed.'); }
+    }));
+  }
+  function showProcessing(title,callback){
+    logout(); h('processingTitle',title); $('processingScreen').classList.add('open');
+    setTimeout(()=>{ try{ if(callback) callback(); } finally{ $('processingScreen').classList.remove('open'); } }, 1600);
+  }
 
   function openCalculateModal(){ modal('Calculate Pay', `<label>Select Employee</label><select id="calcEmp">${employeeOptions(activeEmployees())}</select>`, `<button id="calcCancel" class="secondary" data-close-modal>Cancel</button><button id="calcRun">Calculate</button>`, true); $('calcRun').addEventListener('click',()=>{ const id=v('calcEmp'); if(!id) return alert('Select an employee.'); closeModal(); loadingModal('Calculate Pay','Pay Run Successful',()=>{ calculateOne(id); log(`Calculate Pay run for ${E.employeeName(emp(id))}`); renderAll(); },800); }); }
 
