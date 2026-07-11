@@ -1,10 +1,13 @@
-Payroll/HCM App v1.1.13 test results
-Generated: 2026-06-25 08:56:22 UTC
+Payroll/HCM App v1.1.14 Test Results
+Generated: 2026-07-11T06:06:12+00:00
 
-$ node --check app.js
-$ node --check payroll-engine.js
-$ node --check data-store.js
-$ node test-cases.js
+Syntax checks:
+node --check app.js: PASS
+node --check payroll-engine.js: PASS
+node --check data-store.js: PASS
+node --check test-cases.js: PASS
+
+Automated regression tests:
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -36,4 +39,10 @@ PASS: Additional Earnings Amount and Overpayment Adjustment are calculated corre
 PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
 PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
 PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.13 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+PASS: v1.1.14 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.
+
+v1.1.14 changes verified:
+- Job Data unsaved changes prompt uses exact message: Are you sure you want to exit without saving?
+- Job Data unsaved prompt has only Yes and No buttons; Yes discards and exits, No returns to Job Data.
+- Retro rows already paid on a previous finalised payslip are treated as already satisfied and are not generated again in the current pay.
+- Retro split-by-day rounding now preserves row totals to prevent tiny duplicate residual retro amounts.

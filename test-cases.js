@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.13'), 'sidebar/version label must show v1.1.13');
-  assert(data.includes("APP_VERSION = '1.1.13'"), 'data-store version must be 1.1.13');
+  assert(html.includes('v1.1.14'), 'sidebar/version label must show v1.1.14');
+  assert(data.includes("APP_VERSION = '1.1.14'"), 'data-store version must be 1.1.14');
 })();
 
 (function testAnchorPayCycle(){
@@ -509,7 +509,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.13 top-aligned tab layout'), 'v1.1.13 print CSS should enlarge the payslip to fill the A4 page better');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.14 top-aligned tab layout'), 'v1.1.14 print CSS should enlarge the payslip to fill the A4 page better');
 })();
 
 
@@ -533,6 +533,34 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(Number(regular.amount.toFixed(2)),67.5,'Retro amount should still be difference-only');
   assert.strictEqual(Number(regular.rate.toFixed(2)),41,'Retro pay rate display should generally keep the applicable normal rate');
   assert(Math.abs(Number(regular.units)-1.6463)<0.0002,'Retro units should represent amount divided by applicable normal rate');
+})();
+
+
+
+(function testV1114JobDataUnsavedPromptStrings(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('function jobDataHasUnsavedChanges'), 'Job Data should detect unsaved changes before navigation');
+  assert(app.includes('discardJobDataUnsavedChanges'), 'Job Data should be able to discard unsaved changes when the user confirms exit');
+  assert(app.includes('function jobDataExitConfirm') && app.includes('id="jobDataExitYes">Yes') && app.includes('id="jobDataExitNo">No'), 'Job Data exit prompt should use exact message with only Yes and No buttons');
+  assert(!app.includes('Save changes, then continue leaving the page'), 'Job Data unsaved prompt should not include a Save button flow');
+})();
+
+(function testV1114RetroAlreadyPaidDoesNotDuplicateNextPay(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  const cycle1Paid=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
+  state.payslips.push(...cycle1Paid);
+  state.currentCycleId=2;
+  state.payRates.push({id:'r_new',empId:e.id,effectiveDate:'2026-05-22',position:'Officer',hourlyRate:41,changeType:'Permanent'});
+  const cycle2Paid=E.calculateEmployee(state,e.id,2,true).map(p=>Object.assign({},p,{finalised:true}));
+  const cycle2RetroAmount=cycle2Paid.flatMap(p=>p.rows||[]).filter(r=>r.description==='Regular Pay Retro').reduce((sum,r)=>sum+Number(r.amount||0),0);
+  assert.strictEqual(Number(cycle2RetroAmount.toFixed(2)),67.5,'Cycle 2 should pay the original backdated Regular Pay Retro difference once');
+  state.finalisedCycles['2']={id:2,finalisedAt:'2026-06-18'};
+  state.payslips.push(...cycle2Paid);
+  state.currentCycleId=3;
+  const cycle3=E.calculateEmployee(state,e.id,3,false);
+  const cycle3RetroAmount=cycle3.flatMap(p=>p.rows||[]).filter(r=>r.description==='Regular Pay Retro' || r.description==='Public Holiday Retro').reduce((sum,r)=>sum+Number(r.amount||0),0);
+  assert.strictEqual(Number(cycle3RetroAmount.toFixed(2)),0,'Retro already paid in the previous finalised pay must not be generated again in the current pay');
 })();
 
 console.log('PASS: Login button/password strings and app version are present');
@@ -568,4 +596,4 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.13 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');
+console.log('PASS: v1.1.14 Job Data ordering, copy-new-row, saved-row edit, termination effective date and source-of-truth rules are present.');

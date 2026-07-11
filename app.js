@@ -286,9 +286,46 @@
     modal('Confirm', `<p>${esc(message)}</p>`, `<button type="button" class="danger" id="confirmYes">${esc(yesLabel)}</button><button type="button" class="secondary" data-close-modal>${esc(noLabel)}</button>`, true);
     $('confirmYes').addEventListener('click', ()=>{ closeModal(); onYes(); });
   }
+
+  function jobDataExitConfirm(onYes){
+    $('modalRoot').innerHTML = `<div class="modal small"><div class="modal-header"><h2>Confirm</h2></div><p>Are you sure you want to exit without saving?</p><div class="modal-footer"><button type="button" class="danger" id="jobDataExitYes">Yes</button><button type="button" class="secondary" id="jobDataExitNo">No</button></div></div>`;
+    $('modalRoot').classList.add('open');
+    $('jobDataExitYes').addEventListener('click', ()=>{ closeModal(); onYes(); });
+    $('jobDataExitNo').addEventListener('click', closeModal);
+  }
   function loadingModal(title, doneMessage, callback, delay=900){
     modal(title, `<div class="spinner"></div><p class="muted">Please wait...</p>`, '', true);
     setTimeout(()=>{ callback && callback(); modal(title, `<p class="success-text"><strong>${esc(doneMessage)}</strong></p>`, `<button type="button" data-close-modal>Close</button>`, true); }, delay);
+  }
+
+
+  function normaliseJobDataCompare(row){
+    const hours = Object.assign({0:0,1:0,2:0,3:0,4:0,5:0,6:0}, (row && row.hoursByDay) || {});
+    const normalHours = {};
+    [0,1,2,3,4,5,6].forEach(k=>{ normalHours[k] = Number(hours[k] || 0); });
+    return {
+      id: row && row.id ? String(row.id) : '',
+      empId: row && row.empId ? String(row.empId) : '',
+      effectiveDate: row && row.effectiveDate ? String(row.effectiveDate) : '',
+      effectiveSequence: Number((row && row.effectiveSequence) || 0),
+      action: row && row.action ? String(row.action) : '',
+      reason: row && row.reason ? String(row.reason) : '',
+      positionNumber: row && row.positionNumber ? String(row.positionNumber) : '',
+      positionClass: row && row.positionClass ? String(row.positionClass) : '',
+      hoursByDay: normalHours
+    };
+  }
+  function jobDataHasUnsavedChanges(){
+    const section = $('jobData');
+    if(!section || !section.classList.contains('active') || !$('jdEffectiveDate')) return false;
+    const current = readJobDataForm();
+    const original = (state.jobDataRows||[]).find(r=>r.id===current.id);
+    if(!original) return true;
+    return JSON.stringify(normaliseJobDataCompare(current)) !== JSON.stringify(normaliseJobDataCompare(original));
+  }
+  function discardJobDataUnsavedChanges(){
+    selectedJobDataDraft = null;
+    selectedJobDataRowIndex = 0;
   }
 
   function attemptShowTab(tab, btn){
@@ -300,6 +337,11 @@
     if(document.getElementById('taxDetails').classList.contains('active') && tab !== 'taxDetails' && taxDirty){
       pendingTab = { tab, btn };
       confirmModal('Are you sure you want to exit without saving?', 'Yes', ()=>{ taxDirty=false; pendingTab && showTab(pendingTab.tab,pendingTab.btn); pendingTab=null; }, 'No');
+      return;
+    }
+    if(document.getElementById('jobData') && document.getElementById('jobData').classList.contains('active') && tab !== 'jobData' && jobDataHasUnsavedChanges()){
+      pendingTab = { tab, btn };
+      jobDataExitConfirm(()=>{ discardJobDataUnsavedChanges(); const next=pendingTab; pendingTab=null; if(next) showTab(next.tab,next.btn); });
       return;
     }
     if(document.getElementById('deductions').classList.contains('active') && tab !== 'deductions' && deductionDirty){
@@ -1240,7 +1282,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
-    {version:'v1.1.13',notes:[
+    {version:'v1.1.14',notes:[
+      'Added Job Data unsaved-change confirmation with exact message: Are you sure you want to exit without saving? Yes discards changes and exits; No returns to Job Data.',
+      'Fixed retro duplication logic so retro already included on a finalised later payslip is treated as already paid and is not generated again in the next pay.',
+      'Added regression tests for Job Data unsaved-change prompts and duplicate retro suppression.'
+    ]},
+    {version:'v1.1.14',notes:[
       'Refined retro pay rate change display so difference-only retro amounts generally keep the applicable ordinary rate and adjust retro units, while allowing exceptions where a changed rate is clearer.',
       'Enlarged printed payslips so the payment advice fills more of the A4 page, with the employee name/address moved right for an envelope window and right-side details aligned to the right edge.',
       'Made the alerts dropdown larger and less condensed with clickable alert items that navigate to the relevant page, such as the Certification Report and selected PPE.',

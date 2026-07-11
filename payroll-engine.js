@@ -465,12 +465,18 @@
     const days = daysBetween(row.startDate,row.endDate);
     if(days.length <= 1) return [Object.assign({}, row, { startDate:row.startDate, endDate:row.endDate })];
     const divisor = Math.max(1, days.length);
-    return days.map(d=>Object.assign({}, row, {
-      startDate:d,
-      endDate:d,
-      units:round4(Number(row.units||0)/divisor),
-      amount:round2(Number(row.amount||0)/divisor)
-    }));
+    const totalUnits = round4(Number(row.units||0));
+    const totalAmount = round2(Number(row.amount||0));
+    let unitsSoFar = 0;
+    let amountSoFar = 0;
+    return days.map((d,idx)=>{
+      const isLast = idx === days.length - 1;
+      const units = isLast ? round4(totalUnits - unitsSoFar) : round4(totalUnits / divisor);
+      const amount = isLast ? round2(totalAmount - amountSoFar) : round2(totalAmount / divisor);
+      unitsSoFar = round4(unitsSoFar + units);
+      amountSoFar = round2(amountSoFar + amount);
+      return Object.assign({}, row, { startDate:d, endDate:d, units, amount });
+    });
   }
   function retroDescription(desc){ return String(desc||'Regular Pay').endsWith(' Retro') ? String(desc||'Regular Pay') : `${desc || 'Regular Pay'} Retro`; }
   function retroRowsFromComparison(expectedRows, paidRows){
@@ -515,7 +521,7 @@
     map.forEach(r=>{
       const amount = round2(Number(r.expectedAmount||0) - Number(r.paidAmount||0));
       const unitDiff = round4(Number(r.expectedUnits||0) - Number(r.paidUnits||0));
-      if(Math.abs(amount)<0.01 && Math.abs(unitDiff)<0.0001) return;
+      if(Math.abs(amount)<0.01) return;
       let units = unitDiff;
       let rate = Number(r.expectedRate || r.paidRate || 0);
       // If the only change is the rate/amount for the same earnings type and units,
@@ -542,8 +548,13 @@
     PAY_CYCLES.filter(x=>x.id < c.id && isFinalised(state,x) && compare(x.end,RETRO_PROCESSING_START)>=0).forEach(prev=>{
       const retroPrev = Object.assign({}, prev, { start: compare(prev.start, RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : prev.start });
       const expectedRows = expectedGross(state,e,retroPrev).rows;
-      const paidRows = (state.payslips||[]).filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised).flatMap(p=>p.rows||[])
+      const originalPaidRows = (state.payslips||[]).filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised).flatMap(p=>p.rows||[])
+        .filter(r=>r.kind !== 'retro')
         .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0);
+      const alreadyPaidRetroRows = (state.payslips||[]).filter(p=>p.empId===e.id && p.finalised && Number(p.cycleId)<Number(c.id)).flatMap(p=>p.rows||[])
+        .filter(r=>r.kind === 'retro')
+        .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0);
+      const paidRows = originalPaidRows.concat(alreadyPaidRetroRows);
       rows.push(...retroRowsFromComparison(expectedRows, paidRows));
     });
     const anyPriorFinalised = PAY_CYCLES.some(x=>x.id < c.id && isFinalised(state,x));

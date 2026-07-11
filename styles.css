@@ -93,7 +93,7 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
   #printArea .payslip .section-title{padding:1.2mm 0.8mm!important;margin-top:2mm!important;}
 }
 
-/* v1.1.13 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
+/* v1.1.14 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
 .app-shell{align-items:start;}
 main{margin:0 auto;align-self:start;}
 .tab-section.active{display:block;align-self:start;}
