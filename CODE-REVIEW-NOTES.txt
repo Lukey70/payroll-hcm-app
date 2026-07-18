@@ -1,15 +1,50 @@
-Payroll/HCM App v1.1.15 — Code Review Notes
+Payroll/HCM App v1.1.16 — Code Review Notes
+Date: 18 July 2026
+Baseline: v1.1.15
 
-This build was reviewed as a browser-based demonstration application. The review covered payroll calculations, retro handling, leave accrual, deductions, certification locking/alerts, finalisation, effective dating, UI navigation, print output, persistence and dead-code cleanup.
+Scope
+The review covered the new leave, address, rehire, payout and accrual requirements, plus regression checks across payroll calculations, effective dating, retro processing, finalisation, certification, navigation, printing and persistence.
 
-Main audit fixes
-1. Added the most recent closed pay period as a valid deduction end date and prevented overlapping replacement deductions.
-2. Corrected whole-employee tax, deductions and leave accrual for multiple position/payslip segments.
-3. Strengthened difference-only retro calculations and prevented previously paid retro from repeating.
-4. Added finalisation, storage, date and one-time LSL conversion safeguards.
-5. Corrected fixed-term expiry so the contract end date remains a paid, inclusive day while manual termination effective dates remain exclusive.
-6. Removed unreachable legacy Change Centre/rehire/contract handlers and consolidated print CSS.
-7. Verified tab alignment, certification workflow and one-page A4 payslip output in Chromium.
+Implemented changes
+1. Leave payout history
+- Finalised termination leave payouts and leave cash-outs are excluded from automatic later-period retro comparisons.
+- A future recovery is created only when the original cash-out transaction is deliberately deleted/amended.
 
-Important
-Passing tests do not make this app production-ready. Real payroll use requires secure server-side storage and access control, complete effective-dated master data, official ongoing public-holiday maintenance, and independent Australian payroll/legal validation of tax, super, leave, termination and industrial-instrument rules.
+2. Rehire calculation boundary
+- Employees now retain separate employment segments before termination and after rehire.
+- Current pay and retro processing do not compare the new employment segment with finalised earnings from the previous segment.
+- Rehire through Job Data resets the current employment start and applicable LSL service baseline while retaining historical payroll records.
+
+3. Structured, effective-dated addresses
+- Address data is split into Address, Town/Suburb, State, Postcode and Country.
+- Payslips display: employee full name; address; suburb/state/postcode; country.
+- Finalised payslips retain their saved address snapshot; open/future payslips use the address effective for the payment date.
+- Legacy free-text address data is migrated into the new Address field.
+
+4. Personal Leave evidence
+- The booking form displays “Evidence Provided?” under Absence Duration for Personal Leave only.
+- A booking of 3 or more scheduled working days is blocked unless evidence is selected.
+
+5. Overpayment Adjustment
+- Overpayment Adjustment is non-ordinary, non-OTE and non-leave-accruing.
+- It contributes no ordinary hours, service hours, Annual Leave, Personal Leave or LSL accrual.
+
+6. Bereavement Leave
+- Added as a leave type.
+- Maximum 5 scheduled working days per booking.
+- Displayed under Other Leave on the Absence Calendar.
+
+7. Confidential Family and Domestic Violence Leave
+- Models 10 paid days upfront for all employment types, renewing on the current employment anniversary with no carryover or progressive accrual.
+- Supports scheduled hours and partial-day bookings within the app’s existing roster/rate model.
+- The true leave type and balance remain internal; the booking form shows the confidential available balance for authorised processing.
+- Employee-facing calendar display uses Private Leave.
+- Payslip rows use the employee’s normal earnings description and do not reveal the leave name or balance.
+
+Quality fixes made during review
+- Corrected invalid hidden control characters in Job Data New Hire/Rehire regular expressions.
+- Added migration coverage for legacy addresses and rehire histories.
+- Added targeted tests for payout suppression, rehire boundaries, confidential leave, evidence validation, non-accruing adjustments and print sizing.
+
+Important limitation
+This package is a client-side demonstration, not certified payroll software. Production use requires server-side security, role-based access, privacy protections, complete industrial-instrument rate handling and independent legal/payroll validation.

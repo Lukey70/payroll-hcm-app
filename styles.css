@@ -59,7 +59,7 @@ table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid
 /* v1.1.12 print spacing and alert/certification refinements */
 .alert-item{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.alert-item>div{flex:1}.alert-read{font-size:12px;white-space:nowrap;margin-top:1px}.success-text{color:#166534}.warning-text{color:#92400e}
 
-/* v1.1.15 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
+/* v1.1.16 top-aligned tab layout, larger alert dropdown and enlarged payslip print layout */
 .app-shell{align-items:start;}
 main{margin:0 auto;align-self:start;}
 .tab-section.active{display:block;align-self:start;}

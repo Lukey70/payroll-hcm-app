@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.15';
+  const APP_VERSION = '1.1.16';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -83,13 +83,61 @@
       if(e.email === undefined) e.email = '';
       if(e.phone === undefined) e.phone = '';
       if(e.address === undefined) e.address = '';
-      if(!e.personalDetailsHistory.length && (e.dateOfBirth || e.email || e.phone || e.address)){
-        e.personalDetailsHistory.push({ id:uid('personal'), effectiveDate:e.startDate || '', dateOfBirth:e.dateOfBirth || '', email:e.email || '', phone:e.phone || '', address:e.address || '' });
+      if(e.addressLine === undefined) e.addressLine = e.address || '';
+      if(e.townSuburb === undefined) e.townSuburb = '';
+      if(e.state === undefined) e.state = '';
+      if(e.postcode === undefined) e.postcode = '';
+      if(e.country === undefined) e.country = 'Australia';
+      e.personalDetailsHistory.forEach(r=>{
+        if(r.addressLine === undefined) r.addressLine = r.address || '';
+        if(r.townSuburb === undefined) r.townSuburb = '';
+        if(r.state === undefined) r.state = '';
+        if(r.postcode === undefined) r.postcode = '';
+        if(r.country === undefined) r.country = e.country || 'Australia';
+      });
+      if(!e.personalDetailsHistory.length && (e.dateOfBirth || e.email || e.phone || e.addressLine || e.townSuburb || e.state || e.postcode || e.country)){
+        e.personalDetailsHistory.push({ id:uid('personal'), effectiveDate:e.startDate || '', dateOfBirth:e.dateOfBirth || '', email:e.email || '', phone:e.phone || '', addressLine:e.addressLine || '', townSuburb:e.townSuburb || '', state:e.state || '', postcode:e.postcode || '', country:e.country || 'Australia' });
       }
+      if(!Array.isArray(e.employmentSegments)) e.employmentSegments = [];
+      e.employmentSegments = e.employmentSegments.map((seg,index)=>({
+        id:seg.id || `segment_${e.id}_${index+1}`,
+        startDate:seg.startDate || '',
+        endDate:seg.endDate || '',
+        inclusiveEnd:!!seg.inclusiveEnd,
+        terminationReason:seg.terminationReason || '',
+        source:seg.source || 'stored'
+      })).filter(seg=>seg.startDate);
+    });
+    state.employees.forEach(e=>{
+      if(e.employmentSegments.length) return;
+      const rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id && r.saved!==false)
+        .sort((a,b)=>String(a.effectiveDate||'').localeCompare(String(b.effectiveDate||'')) || Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
+      const segments=[];
+      rows.forEach(r=>{
+        if(r.action==='Commencement'){
+          const last=segments[segments.length-1];
+          if(!last || last.endDate || last.startDate!==r.effectiveDate){
+            segments.push({ id:`segment_${e.id}_${segments.length+1}`, startDate:r.effectiveDate||'', endDate:'', inclusiveEnd:false, terminationReason:'', source:'jobData' });
+          }
+        }else if(r.action==='Termination'){
+          let last=[...segments].reverse().find(seg=>!seg.endDate);
+          if(!last && e.startDate) { last={ id:`segment_${e.id}_${segments.length+1}`, startDate:e.originalStartDate||e.startDate, endDate:'', inclusiveEnd:false, terminationReason:'', source:'legacy' }; segments.push(last); }
+          if(last){ last.endDate=r.effectiveDate||''; last.terminationReason=r.reason||''; last.inclusiveEnd=(r.reason==='Expiry of Fixed Term'); }
+        }
+      });
+      if(!segments.length && e.startDate){
+        segments.push({ id:`segment_${e.id}_1`, startDate:e.startDate, endDate:e.terminationDate||'', inclusiveEnd:!!(e.terminationReason==='Expiry of Fixed Term'), terminationReason:e.terminationReason||'', source:'legacy' });
+      }else if(e.startDate && !segments.some(seg=>seg.startDate===e.startDate)){
+        segments.push({ id:`segment_${e.id}_${segments.length+1}`, startDate:e.startDate, endDate:e.terminationDate||'', inclusiveEnd:!!(e.terminationReason==='Expiry of Fixed Term'), terminationReason:e.terminationReason||'', source:'legacy-current' });
+      }else if(e.terminationDate){
+        const open=[...segments].reverse().find(seg=>!seg.endDate);
+        if(open){ open.endDate=e.terminationDate; open.terminationReason=e.terminationReason||''; open.inclusiveEnd=!!(e.terminationReason==='Expiry of Fixed Term'); }
+      }
+      e.employmentSegments=segments.filter(seg=>seg.startDate);
     });
     state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
-    state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; });
+    state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; if(l.evidenceProvided===undefined) l.evidenceProvided=false; if(l.confidential===undefined) l.confidential=(l.type==='Family and Domestic Violence Leave'); });
     state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(!a.earningType) a.earningType = 'Additional Day'; if(a.saved === undefined) a.saved = true; if(a.amount === undefined) a.amount = 0; if(a.earningType === 'Overpayment Adjustment'){ a.hours = 0; } });
     state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; });
     state.positions.forEach(pos=>{ if(!pos.id) pos.id = uid('pos'); if(!pos.positionNumber) pos.positionNumber = String(Math.floor(1000 + Math.random()*9000)); if(pos.active === undefined) pos.active = true; if(pos.hourlyRate === undefined) pos.hourlyRate = 0; });

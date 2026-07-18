@@ -34,8 +34,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.15'), 'sidebar/version label must show v1.1.15');
-  assert(data.includes("APP_VERSION = '1.1.15'"), 'data-store version must be 1.1.15');
+  assert(html.includes('v1.1.16'), 'sidebar/version label must show v1.1.16');
+  assert(data.includes("APP_VERSION = '1.1.16'"), 'data-store version must be 1.1.16');
 })();
 
 (function testAnchorPayCycle(){
@@ -509,7 +509,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.15 top-aligned tab layout'), 'v1.1.15 print CSS should enlarge the payslip to fill the A4 page better');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.16 print CSS should enlarge the payslip to fill the A4 page better');
 })();
 
 
@@ -691,6 +691,140 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(E.isTerminatedOn(manual,'2026-06-01'),true,'Manual termination status should take effect on the termination effective date');
 })();;
 
+
+(function testV1116FinalisedLeavePayoutIsNotRecoveredNextPay(){
+  const state=baseState();
+  const e=addEmployee(state,{terminationDate:'2026-06-03',terminationReason:'Voluntary Resignation',annualLeaveBalance:40,employmentSegments:[{id:'segOld',startDate:'2026-05-22',endDate:'2026-06-03',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}]});
+  addSchedule(state,e.id); addRate(state,e.id);
+  const finalised=E.finaliseCurrentPay(state);
+  assert(finalised.payslips.flatMap(p=>p.rows||[]).some(r=>r.description==='Annual Leave Payout'&&r.amount>0),'Termination pay should include the leave payout');
+  const nextRetro=E.retroRows(state,e,E.cycleById(2));
+  assert(!nextRetro.some(r=>/Payout|Cash Out/.test(r.description)||r.amount<0),'A finalised leave payout must not be automatically recovered in the following pay');
+})();
+
+(function testV1116RehireStartsNewRetroBaseline(){
+  const state=baseState();
+  const e=addEmployee(state,{startDate:'2026-05-22',terminationDate:'2026-06-03',terminationReason:'Voluntary Resignation',annualLeaveBalance:20,employmentSegments:[{id:'seg1',startDate:'2026-05-22',endDate:'2026-06-03',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}]});
+  addSchedule(state,e.id,'2026-05-22'); addRate(state,e.id,'2026-05-22','Officer',40);
+  E.finaliseCurrentPay(state);
+  e.startDate='2026-06-05'; e.terminationDate=''; e.terminationReason=''; e.status='Active';
+  e.employmentSegments.push({id:'seg2',startDate:'2026-06-05',endDate:'',inclusiveEnd:false,terminationReason:''});
+  addSchedule(state,e.id,'2026-06-05'); addRate(state,e.id,'2026-06-05','Officer',40);
+  const rows=E.calculateEmployee(state,e.id,2,false).flatMap(p=>p.rows||[]);
+  assert(rows.some(r=>r.description==='Regular Pay'&&r.amount>0),'Rehired employee should receive current regular pay');
+  assert(!rows.some(r=>r.kind==='retro'&&r.amount<0),'Rehire must not recover regular pay or leave from the previous employment segment');
+})();
+
+(function testV1116EffectiveDatedStructuredAddressSnapshots(){
+  const state=baseState();
+  const e=addEmployee(state,{addressLine:'1 Old Street',townSuburb:'Perth',state:'WA',postcode:'6000',country:'Australia',personalDetailsHistory:[
+    {id:'a1',effectiveDate:'2026-05-22',addressLine:'1 Old Street',townSuburb:'Perth',state:'WA',postcode:'6000',country:'Australia'},
+    {id:'a2',effectiveDate:'2026-06-05',addressLine:'2 New Road',townSuburb:'Subiaco',state:'WA',postcode:'6008',country:'Australia'}
+  ]});
+  addSchedule(state,e.id); addRate(state,e.id);
+  const oldPay=E.calculateEmployee(state,e.id,1,true)[0];
+  const newPay=E.calculateEmployee(state,e.id,2,false)[0];
+  assert.strictEqual(oldPay.employeeSnapshot.addressLine,'1 Old Street','Finalised/historical payslip snapshot should use the address effective for that payment date');
+  assert.strictEqual(oldPay.employeeSnapshot.townSuburb,'Perth');
+  assert.strictEqual(newPay.employeeSnapshot.addressLine,'2 New Road','Current/future payslip should use the new effective-dated address');
+  assert.strictEqual(newPay.employeeSnapshot.postcode,'6008');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Town/Suburb')&&app.includes('newPostcode')&&app.includes("[e.townSuburb,e.state,e.postcode]"),'Personal Details and payslip must use structured address fields and the requested line format');
+})();
+
+(function testV1116PersonalLeaveEvidenceValidation(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-06-01',employmentSegments:[{id:'seg',startDate:'2026-06-01',endDate:'',inclusiveEnd:false}]});
+  addSchedule(state,e.id,'2026-06-01'); addRate(state,e.id,'2026-06-01');
+  const without=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-06-08','2026-06-10');
+  assert.strictEqual(without.ok,false,'Personal Leave of 3 working days must be blocked without evidence');
+  assert(without.message.includes('Evidence must be provided'));
+  const withEvidence=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-06-08','2026-06-10',undefined,undefined,{evidenceProvided:true});
+  assert.strictEqual(withEvidence.ok,true,'Personal Leave of 3 working days must be allowed when Evidence Provided is selected');
+  const twoDays=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-06-08','2026-06-09');
+  assert.strictEqual(twoDays.ok,true,'Personal Leave of 2 working days must not require evidence');
+})();
+
+(function testV1116OverpaymentAdjustmentNeverAccruesLeave(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:0,personalLeaveBalance:0}); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'over',empId:e.id,cycleId:1,earningType:'Overpayment Adjustment',amount:500,saved:true,startDate:E.ANCHOR_CYCLE.start,endDate:E.ANCHOR_CYCLE.end});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(p.ordinaryHours,75,'Overpayment Adjustment must not increase ordinary/service hours');
+  assert.strictEqual(p.annualAccrual,E.leaveAccrualForOrdinaryHours(e,75).annual,'Overpayment Adjustment must not increase Annual Leave accrual');
+  assert.strictEqual(p.personalAccrual,E.leaveAccrualForOrdinaryHours(e,75).personal,'Overpayment Adjustment must not increase Personal Leave accrual');
+})();
+
+(function testV1116BereavementMaximumFiveWorkingDays(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-06-01',employmentSegments:[{id:'seg',startDate:'2026-06-01',endDate:'',inclusiveEnd:false}]});
+  addSchedule(state,e.id,'2026-06-01'); addRate(state,e.id,'2026-06-01');
+  const five=E.validateLeaveBooking(state,e.id,E.BEREAVEMENT_LEAVE_TYPE,'2026-06-08','2026-06-12');
+  assert.strictEqual(five.ok,true,'Bereavement Leave should allow up to 5 scheduled working days');
+  const six=E.validateLeaveBooking(state,e.id,E.BEREAVEMENT_LEAVE_TYPE,'2026-06-08','2026-06-15');
+  assert.strictEqual(six.ok,false,'Bereavement Leave should block a 6-working-day booking');
+  assert(six.message.includes('5 working days'));
+})();
+
+(function testV1116FamilyDomesticViolenceLeaveConfidentialNESLogic(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22',employmentSegments:[{id:'seg',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  addSchedule(state,e.id); addRate(state,e.id);
+  assert.strictEqual(E.fdvRemainingDays(state,e,'2026-05-26'),10,'FDV leave must be available as 10 days upfront');
+  state.leaveBookings.push({id:'fdv1',empId:e.id,type:E.FDV_LEAVE_TYPE,startDate:'2026-05-26',endDate:'2026-05-26',hours:7.5,requestedHours:7.5,confidential:true,status:'Approved'});
+  const payRows=E.calculateEmployee(state,e.id,1,false).flatMap(p=>p.rows||[]).filter(r=>r.startDate==='2026-05-26');
+  assert(payRows.some(r=>r.description==='Regular Pay'&&r.leaveType===E.FDV_LEAVE_TYPE&&r.confidential),'FDV leave must be retained internally but shown as ordinary earnings on the payslip');
+  assert(!payRows.some(r=>r.description===E.FDV_LEAVE_TYPE),'Payslip earnings must not reveal the confidential leave name');
+
+  const entitlementState=baseState(); const e2=addEmployee(entitlementState,{id:'000002',startDate:'2026-06-01',employmentSegments:[{id:'seg2',startDate:'2026-06-01',endDate:'',inclusiveEnd:false}]});
+  addSchedule(entitlementState,e2.id,'2026-06-01'); addRate(entitlementState,e2.id,'2026-06-01');
+  const ten=E.validateLeaveBooking(entitlementState,e2.id,E.FDV_LEAVE_TYPE,'2026-06-08','2026-06-19');
+  assert.strictEqual(ten.ok,true); entitlementState.leaveBookings.push({id:'fdv10',empId:e2.id,type:E.FDV_LEAVE_TYPE,startDate:'2026-06-08',endDate:'2026-06-19',hours:ten.hours,status:'Approved',confidential:true});
+  assert.strictEqual(E.fdvRemainingDays(entitlementState,e2,'2026-06-20'),0,'Used FDV leave must reduce the confidential balance');
+  assert.strictEqual(E.validateLeaveBooking(entitlementState,e2.id,E.FDV_LEAVE_TYPE,'2026-06-22','2026-06-22').ok,false,'Bookings cannot exceed the remaining FDV entitlement');
+  assert.strictEqual(E.fdvRemainingDays(entitlementState,e2,'2027-06-01'),10,'FDV leave must renew to 10 days on the work anniversary and not carry over');
+
+  const casualState=baseState(); const casual=addEmployee(casualState,{id:'000003',type:'Casual',startDate:'2026-05-22',employmentSegments:[{id:'seg3',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  addSchedule(casualState,casual.id); addRate(casualState,casual.id);
+  casualState.leaveBookings.push({id:'cfdv',empId:casual.id,type:E.FDV_LEAVE_TYPE,startDate:'2026-05-26',endDate:'2026-05-26',hours:7.5,requestedHours:7.5,confidential:true,status:'Approved'});
+  const casualPay=E.calculateEmployee(casualState,casual.id,1,false)[0];
+  assert(casualPay.rows.some(r=>r.leaveType===E.FDV_LEAVE_TYPE&&r.amount>0),'Casual employees must be paid for rostered FDV leave hours');
+  assert.strictEqual(casualPay.annualAccrual,0); assert.strictEqual(casualPay.personalAccrual,0);
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("title=leave.type==='Family and Domestic Violence Leave'?'Private Leave'")&&app.includes('will not appear on the payslip or Absence Balance'),'Employee-facing calendar and balance displays must preserve FDV confidentiality');
+  assert(app.includes("const isRehire=/^Rehire\\b/")&&app.includes("const isNewHire=/^New Hire\\b/"),'Job Data must recognise New Hire and Rehire reasons using valid word-boundary regular expressions');
+})();
+
+(function testV1116ExplicitCashOutDeletionCreatesOnlyRequestedRecovery(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.cashOutRequests.push({id:'cash1',empId:e.id,cycleId:1,effectiveDate:'2026-05-22',leaveType:'Annual Leave',hours:5,saved:true,deleted:false});
+  E.finaliseCurrentPay(state);
+  const cash=state.cashOutRequests[0]; cash.deleted=true; cash.deletedAtCycleId=2;
+  const rows=E.calculateEmployee(state,e.id,2,false).flatMap(p=>p.rows||[]);
+  const recoveries=rows.filter(r=>r.description==='Annual Leave Cash Out Recovery');
+  assert.strictEqual(recoveries.length,1,'An explicitly deleted finalised cash-out should create one deliberate recovery');
+  assert(recoveries[0].amount<0);
+  assert(!rows.some(r=>r.kind==='retro'&&/Cash Out/.test(r.description)),'Cash-out correction must not also generate a duplicate retro recovery');
+})();
+
+
+(function testV1116MigrationFromLegacyAddressAndRehireHistory(){
+  const legacy={
+    version:'1.1.15',
+    employees:[{id:'legacy1',firstName:'Legacy',lastName:'Employee',name:'Legacy Employee',startDate:'2026-06-05',originalStartDate:'2026-05-01',terminationDate:'',terminationReason:'',address:'99 Old Format Road',status:'Active'}],
+    jobDataRows:[
+      {id:'j1',empId:'legacy1',action:'Commencement',effectiveDate:'2026-05-01',saved:true,effectiveSequence:0},
+      {id:'j2',empId:'legacy1',action:'Termination',effectiveDate:'2026-06-03',reason:'Voluntary Resignation',saved:true,effectiveSequence:0},
+      {id:'j3',empId:'legacy1',action:'Commencement',effectiveDate:'2026-06-05',saved:true,effectiveSequence:0}
+    ]
+  };
+  const migrated=DataStore.migrate(Object.assign(DataStore.emptyState(),legacy));
+  const e=migrated.employees[0];
+  assert.strictEqual(e.addressLine,'99 Old Format Road','Legacy free-text addresses must migrate to the Address field');
+  assert.strictEqual(e.country,'Australia','Legacy addresses should receive the default country');
+  assert.strictEqual(e.employmentSegments.length,2,'Legacy rehire history must migrate into separate employment segments');
+  assert.strictEqual(e.employmentSegments[0].startDate,'2026-05-01');
+  assert.strictEqual(e.employmentSegments[0].endDate,'2026-06-03');
+  assert.strictEqual(e.employmentSegments[1].startDate,'2026-06-05');
+  assert.strictEqual(e.employmentSegments[1].endDate,'');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -724,4 +858,5 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.15 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
+console.log('PASS: v1.1.16 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
+console.log('PASS: v1.1.16 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.');

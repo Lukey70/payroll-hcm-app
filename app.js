@@ -449,14 +449,14 @@
   function getSchedule(prefix){ return {1:Number(v(`${prefix}Mon`)||0),2:Number(v(`${prefix}Tue`)||0),3:Number(v(`${prefix}Wed`)||0),4:Number(v(`${prefix}Thu`)||0),5:Number(v(`${prefix}Fri`)||0),6:Number(v(`${prefix}Sat`)||0),0:Number(v(`${prefix}Sun`)||0)}; }
   function weeklyHours(map){ return Object.values(map||{}).reduce((s,x)=>s+Number(x||0),0); }
   function openAddEmployee(){
-    modal('Add New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div><label>Address</label><input id="newAddress" autocomplete="street-address" placeholder="Start typing address"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" value="${todayIso()}"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div>`, `<button id="saveNewEmployee">Add Employee</button>`, false);
+    modal('Add New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div class="full-line"><label>Address</label><input id="newAddressLine" autocomplete="address-line1"></div><div><label>Town/Suburb</label><input id="newTownSuburb" autocomplete="address-level2"></div><div><label>State</label><input id="newState" autocomplete="address-level1"></div><div><label>Postcode</label><input id="newPostcode" autocomplete="postal-code"></div><div><label>Country</label><input id="newCountry" autocomplete="country-name" value="Australia"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" value="${todayIso()}"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div>`, `<button id="saveNewEmployee">Add Employee</button>`, false);
     $('saveNewEmployee').addEventListener('click', saveNewEmployee);
   }
   function saveNewEmployee(){
     if(!v('newFirst').trim() || !v('newLast').trim()) return alert('Enter first and last name.');
     const taxEffective = v('newTaxEffective') || todayIso();
-    const personal = { id:uid('personal'), effectiveDate:taxEffective, dateOfBirth:v('newDOB'), email:v('newEmail'), phone:v('newPhone'), address:v('newAddress') };
-    const e = { id:v('newId'), firstName:v('newFirst').trim(), lastName:v('newLast').trim(), name:`${v('newFirst').trim()} ${v('newLast').trim()}`, department:'', position:'', type:'', startDate:'', originalStartDate:'', lslServiceDate:'', contractEndDate:'', autoTerminate:false, hourlyRate:0, annualLeaveBalance:0, personalLeaveBalance:0, lslAccruedBalance:0, dateOfBirth:personal.dateOfBirth, email:personal.email, phone:personal.phone, address:personal.address, personalDetailsHistory:[personal], status:'Active' };
+    const personal = { id:uid('personal'), effectiveDate:taxEffective, dateOfBirth:v('newDOB'), email:v('newEmail'), phone:v('newPhone'), addressLine:v('newAddressLine'), townSuburb:v('newTownSuburb'), state:v('newState'), postcode:v('newPostcode'), country:v('newCountry')||'Australia' };
+    const e = { id:v('newId'), firstName:v('newFirst').trim(), lastName:v('newLast').trim(), name:`${v('newFirst').trim()} ${v('newLast').trim()}`, department:'', position:'', type:'', startDate:'', originalStartDate:'', lslServiceDate:'', contractEndDate:'', autoTerminate:false, hourlyRate:0, annualLeaveBalance:0, personalLeaveBalance:0, lslAccruedBalance:0, dateOfBirth:personal.dateOfBirth, email:personal.email, phone:personal.phone, addressLine:personal.addressLine, townSuburb:personal.townSuburb, state:personal.state, postcode:personal.postcode, country:personal.country, address:personal.addressLine, personalDetailsHistory:[personal], employmentSegments:[], status:'Active' };
     state.employees.push(e);
     addJobEvent(e.id,'Personal Details',taxEffective,'Personal details recorded','employee',e.id);
     state.taxDetails.push({ id:uid('tax'), empId:e.id, effectiveDate:taxEffective, taxFileNumber:v('newTaxFileNumber'), claimTaxFreeThreshold:v('newTaxThreshold')==='true', stsl:v('newTaxStsl')==='true' });
@@ -467,20 +467,23 @@
 
   function openEditEmployeeDetails(empId){
     const e=emp(empId); if(!e) return;
-    modal('Edit Employee Details', `<input id="editDetailsId" type="hidden" value="${esc(empId)}"><div class="grid form-grid"><div class="full-line"><label>Effective Date of Change</label><input id="editDetailsEffective" type="date" value="${esc(todayIso())}"></div><div><label>First Name</label><input id="editFirst" value="${esc(e.firstName||'')}" autocomplete="given-name"></div><div><label>Last Name</label><input id="editLast" value="${esc(e.lastName||'')}" autocomplete="family-name"></div><div><label>Date of Birth</label><input id="editDOB" type="date" value="${esc(e.dateOfBirth||'')}"></div><div><label>Email</label><input id="editEmail" type="email" value="${esc(e.email||'')}" autocomplete="email"></div><div><label>Phone number</label><input id="editPhone" type="tel" value="${esc(e.phone||'')}" autocomplete="tel"></div><div><label>Address</label><input id="editAddress" value="${esc(e.address||'')}" autocomplete="street-address"></div></div>`, `<button id="saveDetails">Save Details</button>`, true);
+    const current=E.activePersonalDetails(state,e.id,todayIso());
+    modal('Edit Employee Details', `<input id="editDetailsId" type="hidden" value="${esc(empId)}"><div class="grid form-grid"><div class="full-line"><label>Effective Date of Change</label><input id="editDetailsEffective" type="date" value="${esc(todayIso())}"></div><div><label>First Name</label><input id="editFirst" value="${esc(e.firstName||'')}" autocomplete="given-name"></div><div><label>Last Name</label><input id="editLast" value="${esc(e.lastName||'')}" autocomplete="family-name"></div><div><label>Date of Birth</label><input id="editDOB" type="date" value="${esc(current.dateOfBirth||'')}"></div><div><label>Email</label><input id="editEmail" type="email" value="${esc(current.email||'')}" autocomplete="email"></div><div><label>Phone number</label><input id="editPhone" type="tel" value="${esc(current.phone||'')}" autocomplete="tel"></div><div class="full-line"><label>Address</label><input id="editAddressLine" value="${esc(current.addressLine||'')}" autocomplete="address-line1"></div><div><label>Town/Suburb</label><input id="editTownSuburb" value="${esc(current.townSuburb||'')}" autocomplete="address-level2"></div><div><label>State</label><input id="editState" value="${esc(current.state||'')}" autocomplete="address-level1"></div><div><label>Postcode</label><input id="editPostcode" value="${esc(current.postcode||'')}" autocomplete="postal-code"></div><div><label>Country</label><input id="editCountry" value="${esc(current.country||'Australia')}" autocomplete="country-name"></div></div>`, `<button id="saveDetails">Save Details</button>`, true);
     $('saveDetails').addEventListener('click',()=>{
       if(!v('editDetailsEffective')) return alert('Enter an effective date.');
       e.firstName=v('editFirst').trim(); e.lastName=v('editLast').trim(); e.name=`${e.firstName} ${e.lastName}`.trim();
-      e.dateOfBirth=v('editDOB'); e.email=v('editEmail'); e.phone=v('editPhone'); e.address=v('editAddress');
+      e.dateOfBirth=v('editDOB'); e.email=v('editEmail'); e.phone=v('editPhone'); e.addressLine=v('editAddressLine'); e.townSuburb=v('editTownSuburb'); e.state=v('editState'); e.postcode=v('editPostcode'); e.country=v('editCountry')||'Australia'; e.address=e.addressLine;
       if(!Array.isArray(e.personalDetailsHistory)) e.personalDetailsHistory=[];
-      e.personalDetailsHistory.push({ id:uid('personal'), effectiveDate:v('editDetailsEffective'), dateOfBirth:e.dateOfBirth, email:e.email, phone:e.phone, address:e.address });
+      e.personalDetailsHistory.push({ id:uid('personal'), effectiveDate:v('editDetailsEffective'), dateOfBirth:e.dateOfBirth, email:e.email, phone:e.phone, addressLine:e.addressLine, townSuburb:e.townSuburb, state:e.state, postcode:e.postcode, country:e.country });
       addJobEvent(e.id,'Personal Details Change',v('editDetailsEffective'),'Personal details updated','employee',e.id);
       save(); closeModal(); log('Employee personal details updated'); renderAll();
     });
   }
   function openPersonalDetailsView(empId){
     const e=emp(empId); if(!e) return;
-    const body = `<div class="personal-card"><p><strong>${esc(E.employeeName(e))}</strong></p><p><strong>Date of Birth:</strong> ${esc(e.dateOfBirth||'')}</p><p><strong>Email:</strong> ${esc(e.email||'')}</p><p><strong>Phone number:</strong> ${esc(e.phone||'')}</p><p><strong>Address:</strong> ${esc(e.address||'')}</p></div>`;
+    const d=E.activePersonalDetails(state,e.id,todayIso());
+    const locality=[d.townSuburb,d.state,d.postcode].filter(Boolean).join(' ');
+    const body = `<div class="personal-card"><p><strong>${esc(E.employeeName(e))}</strong></p><p><strong>Date of Birth:</strong> ${esc(d.dateOfBirth||'')}</p><p><strong>Email:</strong> ${esc(d.email||'')}</p><p><strong>Phone number:</strong> ${esc(d.phone||'')}</p><p><strong>Address:</strong><br>${esc(d.addressLine||'')}<br>${esc(locality)}<br>${esc(d.country||'')}</p></div>`;
     modal('Current Personal Details', body, '', true);
   }
   const JOB_REASON_OPTIONS = {
@@ -594,15 +597,27 @@
   }
   function applyJobDataToEmployee(row){
     const e=emp(row.empId); if(!e) return;
+    if(!Array.isArray(e.employmentSegments)) e.employmentSegments=[];
     state.payRates = (state.payRates||[]).filter(r=>!(r.empId===e.id && r.jobDataId===row.id && r.id!==row.rateId));
     state.schedules = (state.schedules||[]).filter(r=>!(r.empId===e.id && r.jobDataId===row.id && r.id!==row.scheduleId));
     state.jobEvents = (state.jobEvents||[]).filter(j=>j.refKind!=='jobData' || j.refId!==row.id);
     if(row.action==='Termination'){
-      e.terminationDate=row.effectiveDate; e.terminationReason=row.reason; e.status=E.isTerminatedOn(e,todayIso())?'Terminated':'Active';
+      e.terminationDate=row.effectiveDate; e.terminationReason=row.reason;
+      let segment=[...e.employmentSegments].reverse().find(seg=>seg.startDate===e.startDate)||[...e.employmentSegments].reverse().find(seg=>!seg.endDate);
+      if(!segment && e.startDate){ segment={id:uid('segment'),startDate:e.startDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'}; e.employmentSegments.push(segment); }
+      if(segment){ segment.endDate=row.effectiveDate; segment.terminationReason=row.reason; segment.inclusiveEnd=row.reason==='Expiry of Fixed Term'; }
+      e.status=E.isTerminatedOn(e,todayIso())?'Terminated':'Active';
       addJobEvent(e.id,'Termination',row.effectiveDate,row.reason,'jobData',row.id); return;
     }
-    if(!e.startDate || row.action==='Commencement'){
-      e.startDate = row.effectiveDate; if(!e.originalStartDate) e.originalStartDate=row.effectiveDate; if(!e.lslServiceDate) e.lslServiceDate=row.effectiveDate; e.status='Active'; e.terminationDate=''; e.terminationReason='';
+    const isRehire=/^Rehire\b/.test(row.reason||'');
+    const isNewHire=/^New Hire\b/.test(row.reason||'');
+    if(isRehire || isNewHire || !e.startDate){
+      if(!e.employmentSegments.some(seg=>seg.startDate===row.effectiveDate)) e.employmentSegments.push({id:uid('segment'),startDate:row.effectiveDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'});
+      e.startDate=row.effectiveDate;
+      if(!e.originalStartDate) e.originalStartDate=row.effectiveDate;
+      if(isRehire || !e.lslServiceDate) e.lslServiceDate=row.effectiveDate;
+      if(isRehire){ e.lslEntitlementConvertedAt=''; e.lslEntitlementDateOverride=''; e.lslProRataOverride=''; }
+      e.status='Active'; e.terminationDate=''; e.terminationReason='';
     }
     e.position=row.positionName; e.department=row.department; e.hourlyRate=Number(row.hourlyRate||0); e.type=row.positionClass==='Fixed-Term'?'Fixed Term':row.positionClass; if(row.positionClass!=='Fixed-Term'){ e.contractEndDate=''; e.autoTerminate=false; }
     const rateId=row.rateId||uid('rate'); row.rateId=rateId;
@@ -861,7 +876,7 @@
     $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
     ['leaveEmp','leaveType','leaveStart','leaveEnd'].forEach(id=>$(id).addEventListener('change',updateLeaveDuration));
     $('leaveDuration').addEventListener('input',()=>updateLeaveDuration(false));
     $('leaveStart').addEventListener('change',()=>{ setv('leaveEnd',v('leaveStart')); updateLeaveDuration(); });
@@ -870,25 +885,27 @@
   }
   function updateLeaveDuration(resetValue=true){
     if(!$('leaveDuration')) return;
-    const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'));
+    const evidence=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
+    const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence});
     const duration=$('leaveDuration');
     const single=v('leaveStart') && v('leaveStart')===v('leaveEnd');
-    const editable=single && ['Annual Leave','Personal Leave','LWOP'].includes(v('leaveType')) && basic.partialAllowed;
+    const editable=single && ['Annual Leave','Personal Leave','LWOP','Family and Domestic Violence Leave'].includes(v('leaveType')) && basic.partialAllowed;
     duration.readOnly=!editable;
     duration.disabled=!editable && v('leaveType')==='Long Service Leave';
     duration.max=basic.maxHours || '';
-    if(resetValue){
-      setv('leaveDuration', basic.hours ? Number(basic.hours).toFixed(2) : '0.00');
-    }
+    if(resetValue) setv('leaveDuration', basic.hours ? Number(basic.hours).toFixed(2) : '0.00');
+    if($('personalEvidenceRow')) $('personalEvidenceRow').style.display=v('leaveType')==='Personal Leave'?'block':'none';
+    if($('fdvPrivacyNote')) $('fdvPrivacyNote').style.display=v('leaveType')==='Family and Domestic Violence Leave'?'block':'none';
     if($('leaveBalanceNote')){
-      const le=emp(v('leaveEmp'));
-      const lt=v('leaveType');
+      const le=emp(v('leaveEmp')); const lt=v('leaveType');
       if(le && ['Annual Leave','Personal Leave','Long Service Leave'].includes(lt)){
         const bal=E.projectedBalances(state,le,currentCycle(),false);
         const label=lt==='Annual Leave'?'Annual Leave Balance (Hours)':lt==='Personal Leave'?'Personal Leave Balance (Hours)':'LSL Accrued Balance (Hours)';
         const val=lt==='Annual Leave'?bal.annual:lt==='Personal Leave'?bal.personal:bal.lslAccrued;
         h('leaveBalanceNote', `${label}: ${Number(val||0).toFixed(2)}`);
-      } else h('leaveBalanceNote','');
+      }else if(le && lt==='Family and Domestic Violence Leave'){
+        h('leaveBalanceNote', `Available balance remaining: ${Number(E.fdvRemainingDays(state,le,v('leaveStart')||currentCycle().start)||0).toFixed(2)} days`);
+      }else h('leaveBalanceNote','');
     }
     if($('leaveDurationNote')){
       if(editable) h('leaveDurationNote', `Partial-day leave is available. Maximum for this date is ${Number(basic.maxHours||0).toFixed(2)} hours.`);
@@ -897,9 +914,10 @@
   }
   function saveLeave(){
     const requested = $('leaveDuration') && !$('leaveDuration').readOnly ? Number(v('leaveDuration')||0) : undefined;
-    const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested);
+    const evidenceProvided=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
+    const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided});
     if(!result.ok) return alert(result.message);
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, status:'Approved' });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, confidential:v('leaveType')==='Family and Domestic Violence Leave', status:'Approved' });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
@@ -925,7 +943,7 @@
         const leave=employed?state.leaveBookings.find(l=>l.empId===e.id&&E.between(d,l.startDate,l.endDate)):null;
         const isPH=E.isPublicHoliday(d);
         let cls=hrs<=0?'nonrostered':''; let title=hrs<=0?'Non Rostered Day':'';
-        if(leave && hrs>0 && !isPH){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave'; title=leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave'); }
+        if(leave && hrs>0 && !isPH){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave'; title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave'); }
         if(isPH){ cls='publicholiday'; title=E.publicHolidayName(d)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); }
         body+=`<div class="cal-day ${cls}" title="${esc(title)}"><strong>${day}</strong></div>`;
       }
@@ -1069,8 +1087,10 @@
     const e=p.employeeSnapshot||emp(p.empId)||{};
     const status=p.finalised?'<div class="payslip-status pay-final">This pay has been finalised</div>':'<div class="payslip-status pay-open">This pay has not yet been finalised</div>';
     const ytd=ytdTotalsForPayslip(p);
-    const address = esc(e.address||'');
-    const employeeBlock = `<div class="payslip-address"><strong>${esc(E.employeeName(e))}</strong>${address?`<br>${address}`:''}</div>`;
+    const addressLine=esc(e.addressLine||e.address||'');
+    const locality=[e.townSuburb,e.state,e.postcode].filter(Boolean).map(esc).join(' ');
+    const country=esc(e.country||'');
+    const employeeBlock = `<div class="payslip-address"><strong>${esc(E.employeeName(e))}</strong><br>${addressLine}<br>${locality}<br>${country}</div>`;
     const detailRows = [
       ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(e.department||'')], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
     ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
@@ -1263,7 +1283,7 @@
     results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
       const e=emp(l.empId); if(!e) return;
-      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.hours,l.id);
+      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided});
       if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
     });
     const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
@@ -1272,6 +1292,15 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.16',notes:[
+      'Stopped finalised leave payouts and prior-employment earnings from being automatically recovered in later pay periods, including after rehire.',
+      'Added employment-segment boundaries so retro calculations do not compare across a termination and rehire break.',
+      'Split employee addresses into Address, Town/Suburb, State, Postcode and Country and updated payslip address formatting.',
+      'Added Personal Leave evidence validation for bookings of 3 working days or more.',
+      'Confirmed Overpayment Adjustment is excluded from leave and service-hour accrual calculations.',
+      'Added Bereavement Leave with a maximum of 5 scheduled working days per booking.',
+      'Added confidential NES Family and Domestic Violence Leave with 10 days upfront, work-anniversary renewal, casual eligibility, private calendar display and ordinary payslip earnings descriptions.'
+    ]},
     {version:'v1.1.15',notes:[
       'Completed a full code audit and removed obsolete Change Centre/legacy handlers that were no longer reachable from the interface.',
       'Added the most recent closed pay period as a valid deduction end date, with overlap validation and protection against deleting historical deductions.',

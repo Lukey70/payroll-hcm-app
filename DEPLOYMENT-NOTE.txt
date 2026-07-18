@@ -1,6 +1,8 @@
-Payroll/HCM App v1.1.15
+Payroll/HCM App v1.1.16
 
 This package includes .github/workflows/pages.yml for GitHub Pages deployment.
-In GitHub Settings > Pages, set Source to GitHub Actions, then upload/commit these files.
+In GitHub Settings > Pages, set Source to GitHub Actions, then upload or commit the package contents.
 
-Before replacing an existing version, export the current app data. This remains a client-side demonstration and must not be used for real payroll data without production security and compliance work.
+Before replacing an existing version, export the current app data. Version 1.1.16 includes data migration for legacy address fields and employment segments, but a backup is still strongly recommended.
+
+This remains a client-side demonstration and must not be used for real payroll or confidential employee information without production-grade security, access control, privacy and compliance work.
