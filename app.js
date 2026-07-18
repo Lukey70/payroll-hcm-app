@@ -15,6 +15,8 @@
   let additionalDirty = false;
   let selectedDeductionEmp = '';
   let selectedCertCycleId = '';
+  let selectedReportEmp = '';
+  let statementPreviewHtml = '';
   let deductionDraftRows = [];
   let deductionDirty = false;
   let deductionDraftLoadedFor = '';
@@ -394,6 +396,7 @@
     if(tab==='deductions') renderDeductions();
     if(tab==='taxDetails') renderTaxDetails();
     if(tab==='certification') renderCertification();
+    if(tab==='reports') renderReports();
     if(tab==='payslip') renderPayslip();
     resetTabScroll();
     requestAnimationFrame(resetTabScroll);
@@ -412,7 +415,7 @@
   }
 
   function renderAll(){
-    renderMetrics(); renderEmployees(); renderBankDetails(); renderSuperDetails(); renderJobData(); renderJobSummary(); renderAdditionalEarnings(); renderTaxDetails(); renderDeductions(); renderLeave(); renderAbsenceBalance(); renderPayslip(); renderCertification(); renderAudit(); renderSettings(); renderAlerts();
+    renderMetrics(); renderEmployees(); renderBankDetails(); renderSuperDetails(); renderJobData(); renderJobSummary(); renderAdditionalEarnings(); renderTaxDetails(); renderDeductions(); renderLeave(); renderAbsenceBalance(); renderPayslip(); renderCertification(); renderReports(); renderAudit(); renderSettings(); renderAlerts();
   }
   function renderMetrics(){
     const c = currentCycle();
@@ -658,7 +661,7 @@
   function addAdditionalRow(){ if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Day',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function additionalDraftAmount(a){
     const c=additionalCycle();
-    if((a.earningType||'')==='Overpayment Adjustment') return Number(a.amount||0);
+    if(['Overpayment Adjustment','Reimbursement'].includes(a.earningType||'')) return Number(a.amount||0);
     const rate=E.activePayRate(state,v('addEmp')||a.empId,a.startDate||c.start);
     const multiplier=a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1;
     return E.round2(Number(a.hours||0)*Number(rate.hourlyRate||0)*multiplier);
@@ -669,8 +672,10 @@
     const c=additionalCycle();
     const rows=additionalDraftRows.map((a,i)=>{
       const isOver=a.earningType==='Overpayment Adjustment';
+      const isReimbursement=a.earningType==='Reimbursement';
+      const isAmountOnly=isOver||isReimbursement;
       const amount=additionalDraftAmount(a);
-      return [`<select data-add-field="${i}|earningType"><option ${a.earningType==='Additional Day'?'selected':''}>Additional Day</option><option ${a.earningType==='Overtime 1.5'?'selected':''}>Overtime 1.5</option><option ${a.earningType==='Overtime 2.0'?'selected':''}>Overtime 2.0</option><option ${a.earningType==='Overpayment Adjustment'?'selected':''}>Overpayment Adjustment</option></select>`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" value="${esc(isOver?0:(a.hours||0))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${isOver?'':'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
+      return [`<select data-add-field="${i}|earningType"><option ${a.earningType==='Additional Day'?'selected':''}>Additional Day</option><option ${a.earningType==='Overtime 1.5'?'selected':''}>Overtime 1.5</option><option ${a.earningType==='Overtime 2.0'?'selected':''}>Overtime 2.0</option><option ${a.earningType==='Overpayment Adjustment'?'selected':''}>Overpayment Adjustment</option><option ${a.earningType==='Reimbursement'?'selected':''}>Reimbursement</option></select>`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${isAmountOnly?'':'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
     h('addRows', table(['Earnings Type','Start Date','End Date','Hours','Amount','Delete'], rows));
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
@@ -678,8 +683,9 @@
       if(field==='earningType' && el.value==='Overpayment Adjustment' && Number(additionalCycle().id)!==Number(currentCycle().id)){ el.value=row.earningType||'Additional Day'; return alert('Overpayment Adjustment can only be entered in the current open pay period.'); }
       row[field]=(field==='hours'||field==='amount')?Number(el.value||0):el.value;
       if(field==='earningType' && row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=0; }
+      if(field==='earningType' && row.earningType==='Reimbursement'){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; }
       if(field==='startDate' && row.earningType!=='Overpayment Adjustment') row.endDate=el.value;
-      if(row.earningType!=='Overpayment Adjustment') row.amount=additionalDraftAmount(row);
+      if(!['Overpayment Adjustment','Reimbursement'].includes(row.earningType)) row.amount=additionalDraftAmount(row);
       markAdditionalDirty(); renderAdditionalRows();
     }));
     document.querySelectorAll('[data-del-add]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this entry? This may result in pay recalculations','Yes',()=>{ additionalDraftRows=additionalDraftRows.filter(a=>a.id!==b.dataset.delAdd); markAdditionalDirty(); renderAdditionalRows(); })));
@@ -697,6 +703,7 @@
       additionalDraftRows.forEach(a=>{
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
         if(row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=Number(row.amount||0); }
+        else if(row.earningType==='Reimbursement'){ row.hours=0; row.amount=Number(row.amount||0); }
         else row.amount=additionalDraftAmount(row);
         state.additionalEarnings.push(row);
       });
@@ -1188,6 +1195,78 @@
     save(); log(`Certification Report completed for ${E.ppeLabel(E.cycleById(cycleId))}`); renderCertification(); renderAlerts();
   }
 
+  function reportLongDate(dateIso){
+    const d=E.parseDate(dateIso); if(!d) return '';
+    try{return new Intl.DateTimeFormat('en-AU',{day:'numeric',month:'long',year:'numeric'}).format(d);}catch(err){return E.fmtLong(dateIso);}
+  }
+  function statementJobNumberMap(rows){
+    const keys=[];
+    rows.forEach(r=>{ const key=String(r.positionNumber||r.positionName||r.position||'Job'); if(!keys.includes(key)) keys.push(key); });
+    const map=new Map(); keys.forEach((key,i)=>map.set(key,i+1)); return map;
+  }
+  function statementRowsForEmployee(e,asAt){
+    let rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&r.effectiveDate&&E.compare(r.effectiveDate,asAt)<=0)
+      .slice().sort((a,b)=>E.compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
+    if(!rows.length&&e.startDate){
+      const schedule=E.activeSchedule(state,e.id,e.startDate); const rate=E.activePayRate(state,e.id,e.startDate);
+      rows=[{effectiveDate:e.startDate,positionNumber:'1',positionName:(rate&&rate.position)||e.position||'',department:e.department||'',hoursByDay:(schedule&&schedule.hoursByDay)||{},reason:'New Hire'}];
+      if(e.terminationDate&&E.compare(e.terminationDate,asAt)<=0) rows.push({effectiveDate:e.terminationDate,positionNumber:'1',positionName:(rate&&rate.position)||e.position||'',department:e.department||'',hoursByDay:(schedule&&schedule.hoursByDay)||{},reason:e.terminationReason||'Termination'});
+    }
+    const jobMap=statementJobNumberMap(rows);
+    return rows.map(r=>{
+      const sched=(r.hoursByDay&&Object.values(r.hoursByDay).some(x=>Number(x)>0))?r:{hoursByDay:(E.activeSchedule(state,e.id,r.effectiveDate)||{}).hoursByDay||{}};
+      const weekly=Object.values(sched.hoursByDay||{}).reduce((sum,x)=>sum+Number(x||0),0);
+      const fte=weekly>0?weekly/E.STANDARD_WEEKLY_HOURS:0;
+      const key=String(r.positionNumber||r.positionName||r.position||'Job');
+      return { job:jobMap.get(key)||1, date:r.effectiveDate, position:r.positionName||r.position||((E.activePayRate(state,e.id,r.effectiveDate)||{}).position)||e.position||'', location:r.location||r.department||e.department||'', fte, action:r.reason||r.action||'' };
+    });
+  }
+  function statementLeaveWithoutPayRows(e,asAt,serviceRows){
+    return (state.leaveBookings||[]).filter(l=>l.empId===e.id&&l.type==='LWOP'&&l.startDate&&E.compare(l.startDate,asAt)<=0).map(l=>{
+      const prior=[...serviceRows].filter(r=>E.compare(r.date,l.startDate)<=0).sort((a,b)=>E.compare(b.date,a.date))[0];
+      return {job:(prior&&prior.job)||1,begin:l.startDate,end:E.compare(l.endDate,asAt)>0?asAt:l.endDate};
+    });
+  }
+  function statementOfServiceHtml(empId,asAt,options={}){
+    const e=emp(empId); if(!e) return '';
+    const personal=E.activePersonalDetails(state,e.id,asAt);
+    const locality=[personal.townSuburb,personal.state,personal.postcode].filter(Boolean).join(' ');
+    const serviceRows=statementRowsForEmployee(e,asAt);
+    const lwopRows=statementLeaveWithoutPayRows(e,asAt,serviceRows);
+    const segments=E.employmentSegments(e).filter(seg=>E.compare(seg.startDate,asAt)<=0);
+    const commencement=(segments.length?segments.map(s=>s.startDate).sort((a,b)=>E.compare(a,b))[0]:e.originalStartDate||e.startDate)||'';
+    const reference=options.reference||`D${String(asAt||todayIso()).slice(0,4)}/${String(e.id).replace(/\D/g,'')||e.id}`;
+    const signatory=(options.signatory||'').trim();
+    const signatoryPosition=(options.signatoryPosition||'PAYROLL OFFICER').trim();
+    const contact=(options.contact||'(08) 9264 8383').trim();
+    const serviceBody=serviceRows.length?serviceRows.map(r=>`<tr><td>${esc(r.job)}</td><td>${esc(E.fmtPay(r.date))}</td><td>${esc(r.position)}</td><td>${esc(r.location)}</td><td>${Number(r.fte||0).toFixed(2)}</td><td>${esc(r.action)}</td></tr>`).join(''):'<tr><td colspan="6">No service history was available as at the selected date.</td></tr>';
+    const lwopBody=lwopRows.length?lwopRows.map(r=>`<tr><td>${esc(r.job)}</td><td>${esc(E.fmtPay(r.begin))}</td><td>${esc(E.fmtPay(r.end))}</td></tr>`).join(''):'<tr><td colspan="3">No Leave Without Pay recorded.</td></tr>';
+    return `<article class="statement-service"><header class="statement-header"><div class="statement-brand"><div class="statement-wa">Government of Western Australia</div><div class="statement-dept">Department of Education</div></div><div class="statement-reference">${esc(reference)}</div></header><div class="statement-office-address">151 Royal Street, East Perth Western Australia 6004</div><div class="statement-address"><strong>${esc(E.employeeName(e))}</strong><br>${esc(String(personal.addressLine||'').toUpperCase())}<br>${esc(String(locality||'').toUpperCase())}<br>${esc(String(personal.country||'').toUpperCase())}</div><h1>STATEMENT OF SERVICE</h1><p>${esc(E.employeeName(e))} commenced service with the Department of Education on ${esc(reportLongDate(commencement))}. Employment is full time equivalent (FTE) and continuous unless otherwise stated.</p><p>Job number indicates employment in different roles within the Department. Multiple jobs may be active concurrently.</p><h2>Service History:</h2><table class="statement-table"><thead><tr><th>Job</th><th>Date</th><th>Position</th><th>Location</th><th>FTE</th><th>Action</th></tr></thead><tbody>${serviceBody}</tbody></table><h2>Leave Without Pay Taken:</h2><table class="statement-table statement-lwop"><thead><tr><th>Job</th><th>Begin Date</th><th>End Date</th></tr></thead><tbody>${lwopBody}</tbody></table><p>This statement is a true indication of service as at ${esc(reportLongDate(asAt))}.</p><p>Please contact the Customer Contact Centre on ${esc(contact)}, if you have any enquiries relating to this matter.</p><div class="statement-signature"><p>Yours sincerely</p><div class="signature-space"></div><p><strong>${esc(String(signatory||'').toUpperCase())}</strong><br><strong>${esc(String(signatoryPosition||'').toUpperCase())}</strong><br>${esc(reportLongDate(todayIso()))}</p></div><footer class="statement-footer"><span>151 Royal Street, East Perth Western Australia 6004</span><span class="statement-page-number">Page</span></footer></article>`;
+  }
+  function renderReports(){
+    const list=state.employees.slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
+    const selected=selectedReportEmp&&list.some(e=>e.id===selectedReportEmp)?selectedReportEmp:'';
+    h('reports', `<h2>Reports</h2><p class="small-note">Generate payroll and employment reports. Statement of Service is available now; additional payroll reports can be added later.</p><div class="report-controls"><div class="grid form-grid"><div><label>Report</label><select id="reportType"><option>Statement of Service</option></select></div><div><label>Employee</label><select id="reportEmp">${employeeOptions(list)}</select></div><div><label>As at date</label><input id="reportAsAt" type="date" value="${esc(todayIso())}"></div><div><label>Reference number</label><input id="reportReference" placeholder="Auto-generated if blank"></div><div><label>Signatory name</label><input id="reportSignatory"></div><div><label>Signatory position</label><input id="reportSignatoryPosition" value="PAYROLL OFFICER"></div><div><label>Contact number</label><input id="reportContact" value="(08) 9264 8383"></div></div><div class="controls" style="margin-top:14px"><button id="previewStatement">Generate Preview</button><button id="printStatement" class="secondary" ${statementPreviewHtml?'':'disabled'}>Print / Save PDF</button><button id="downloadStatement" class="success" ${statementPreviewHtml?'':'disabled'}>Download HTML</button></div></div><div id="reportPreview" class="report-preview">${statementPreviewHtml||'<p class="small-note">Select an employee and generate the Statement of Service.</p>'}</div>`);
+    if(selected) setv('reportEmp',selected);
+    $('reportEmp').addEventListener('change',()=>{selectedReportEmp=v('reportEmp');});
+    $('previewStatement').addEventListener('click',()=>{
+      const empId=v('reportEmp'); const asAt=v('reportAsAt'); if(!empId) return alert('Select an employee.'); if(!asAt) return alert('Select an as at date.');
+      const employee=emp(empId); const firstStart=(E.employmentSegments(employee)[0]||{}).startDate||employee.originalStartDate||employee.startDate||'';
+      if(firstStart&&E.compare(asAt,firstStart)<0) return alert('The as at date cannot be before the employee commenced service.');
+      selectedReportEmp=empId;
+      statementPreviewHtml=statementOfServiceHtml(empId,asAt,{reference:v('reportReference'),signatory:v('reportSignatory'),signatoryPosition:v('reportSignatoryPosition'),contact:v('reportContact')});
+      h('reportPreview',statementPreviewHtml); $('printStatement').disabled=false; $('downloadStatement').disabled=false;
+    });
+    $('printStatement').addEventListener('click',()=>{ if(!statementPreviewHtml) return alert('Generate the report preview first.'); h('printArea',statementPreviewHtml); setTimeout(()=>window.print(),0); });
+    $('downloadStatement').addEventListener('click',()=>{
+      if(!statementPreviewHtml) return alert('Generate the report preview first.');
+      const employee=emp(selectedReportEmp); const filename=`Statement-of-Service-${String((employee&&E.employeeName(employee))||selectedReportEmp).replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')}.html`;
+      const standaloneCss=`*{box-sizing:border-box}body{margin:0;background:#fff;color:#111;font-family:Arial,sans-serif}.statement-service{position:relative;box-sizing:border-box;background:#fff;color:#111;max-width:210mm;min-height:270mm;margin:0 auto;padding:18mm 18mm 20mm;font-size:12px;line-height:1.45}.statement-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.statement-brand{line-height:1.15}.statement-wa{font-size:11px}.statement-dept{font-size:25px;font-weight:700;letter-spacing:-.5px}.statement-reference{font-weight:700}.statement-office-address{text-align:center;margin:3mm 0 8mm;font-weight:700}.statement-address{margin:0 0 9mm;line-height:1.45;min-height:25mm}.statement-service h1{font-size:14px;margin:0 0 4mm}.statement-service h2{font-size:12px;margin:6mm 0 2mm}.statement-service p{margin:0 0 4mm}.statement-table{width:100%;border-collapse:collapse;margin:0 0 8mm}.statement-table th,.statement-table td{border:0;padding:1.4mm 1.2mm;font-size:10.5px;vertical-align:top}.statement-table th{border-bottom:1px solid #333;text-align:left}.statement-table th:nth-child(1),.statement-table td:nth-child(1){width:8%}.statement-table th:nth-child(2),.statement-table td:nth-child(2){width:12%}.statement-table th:nth-child(5),.statement-table td:nth-child(5){width:8%;text-align:center}.statement-table th:nth-child(6),.statement-table td:nth-child(6){width:24%}.statement-lwop{max-width:75mm}.statement-lwop th,.statement-lwop td{width:auto!important;text-align:left!important}.statement-signature{margin-top:8mm}.signature-space{height:16mm}.statement-footer{position:absolute;left:18mm;right:18mm;bottom:8mm;border-top:1px solid #444;padding-top:2mm;display:flex;justify-content:space-between;font-size:9px}.statement-page-number::after{content:' ' counter(page)}@page{size:A4;margin:7mm}@media print{.statement-service{width:100%;max-width:none;min-height:282mm;padding:14mm 16mm 18mm}.statement-table thead{display:table-header-group}.statement-table tr{break-inside:avoid;page-break-inside:avoid}.statement-footer{position:fixed;left:16mm;right:16mm;bottom:5mm}}`;
+      const html=`<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Statement of Service</title><style>${standaloneCss}</style></head><body class="statement-download">${statementPreviewHtml}</body></html>`;
+      const blob=new Blob([html],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500);
+    });
+  }
+
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
   function renderSettings(){
     h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button></div><div id="settingsOutput"></div>`);
@@ -1292,6 +1371,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.17',notes:[
+      'Added a Reports tab under Certification Report with a Statement of Service report generator.',
+      'Added a Department of Education-style Statement of Service layout with service history, Leave Without Pay, effective-dated address, preview, print/PDF and HTML download.',
+      'Added Reimbursement as an amount-based Additional Earnings type that does not create hours or leave accrual.',
+      'Added automatic 17.5% Annual Leave Loading for booked Annual Leave and historical Annual Leave Loading Retro for previously unpaid loading.'
+    ]},
     {version:'v1.1.16',notes:[
       'Stopped finalised leave payouts and prior-employment earnings from being automatically recovered in later pay periods, including after rehire.',
       'Added employment-segment boundaries so retro calculations do not compare across a termination and rehire break.',
@@ -1453,5 +1538,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml };
 })();

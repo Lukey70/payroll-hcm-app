@@ -3,6 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const DataStore = require('./data-store.js');
 const E = require('./payroll-engine.js');
 
@@ -34,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.16'), 'sidebar/version label must show v1.1.16');
-  assert(data.includes("APP_VERSION = '1.1.16'"), 'data-store version must be 1.1.16');
+  assert(html.includes('v1.1.17'), 'sidebar/version label must show v1.1.17');
+  assert(data.includes("APP_VERSION = '1.1.17'"), 'data-store version must be 1.1.17');
 })();
 
 (function testAnchorPayCycle(){
@@ -509,7 +510,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.16 print CSS should enlarge the payslip to fill the A4 page better');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.17 print CSS should enlarge the payslip to fill the A4 page better');
 })();
 
 
@@ -825,6 +826,78 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(e.employmentSegments[1].endDate,'');
 })();
 
+
+(function testV1117ReportsTabAndStatementOfService(){
+  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const certIndex=html.indexOf('data-tab="certification"');
+  const reportsIndex=html.indexOf('data-tab="reports"');
+  const auditIndex=html.indexOf('data-tab="audit"');
+  assert(certIndex>=0&&reportsIndex>certIndex&&auditIndex>reportsIndex,'Reports must be positioned between Certification Report and Audit');
+  assert(html.includes('id="reports"'),'Reports section must exist');
+  assert(app.includes('function statementOfServiceHtml')&&app.includes('Service History:')&&app.includes('Leave Without Pay Taken:'),'Statement of Service generator and required sections must exist');
+  assert(app.includes('Print / Save PDF')&&app.includes('Download HTML'),'Statement of Service must support print/PDF and download');
+})();
+
+
+(function testV1117StatementOfServiceGeneratedContent(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}};
+  const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp;
+  assert(app&&typeof app.statementOfServiceHtml==='function','Statement of Service generator must be exposed for verification');
+  const state=app.getState();
+  state.employees.push({id:'E4038039',firstName:'Courtney',lastName:'De Lange',name:'Courtney De Lange',department:'Clarkson Primary School',position:'Teacher',type:'Permanent',startDate:'2009-01-29',originalStartDate:'2009-01-29',lslServiceDate:'2009-01-29',addressLine:'6 Rooke Way',townSuburb:'Clarkson',state:'WA',postcode:'6030',country:'Australia',personalDetailsHistory:[{id:'pd1',effectiveDate:'2009-01-29',addressLine:'6 Rooke Way',townSuburb:'Clarkson',state:'WA',postcode:'6030',country:'Australia'}],employmentSegments:[{id:'seg1',startDate:'2009-01-29',endDate:'2017-01-27',inclusiveEnd:true},{id:'seg2',startDate:'2022-01-27',endDate:'',inclusiveEnd:false}]});
+  state.schedules.push({id:'s1',empId:'E4038039',effectiveDate:'2009-01-29',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
+  state.payRates.push({id:'r1',empId:'E4038039',effectiveDate:'2009-01-29',position:'Teacher',hourlyRate:40,changeType:'Permanent'});
+  state.jobDataRows.push({id:'j1',empId:'E4038039',effectiveDate:'2009-01-29',effectiveSequence:0,action:'Commencement',reason:'New Hire Fixed-Term',positionNumber:'1001',positionName:'Teacher - PrePrimary',department:'Quinns North Primary School',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},saved:true});
+  state.leaveBookings.push({id:'lw1',empId:'E4038039',type:'LWOP',startDate:'2023-09-15',endDate:'2023-09-15',hours:7.5,status:'Approved'});
+  const output=app.statementOfServiceHtml('E4038039','2025-10-15',{reference:'D25/1058552',signatory:'Luke McGuiness',signatoryPosition:'Payroll Officer'});
+  assert(output.includes('STATEMENT OF SERVICE')&&output.includes('Service History:')&&output.includes('Leave Without Pay Taken:'),'Generated Statement of Service must contain the required sections');
+  assert(output.includes('Courtney De Lange')&&output.includes('6 ROOKE WAY')&&output.includes('CLARKSON WA 6030'),'Generated report must use the employee name and structured effective-dated address');
+  assert(output.includes('Teacher - PrePrimary')&&output.includes('Quinns North Primary School')&&output.includes('New Hire Fixed-Term'),'Generated report must include service-history details');
+  assert(output.includes('15/9/23')&&output.includes('LUKE MCGUINESS')&&output.includes('PAYROLL OFFICER'),'Generated report must include LWOP and signatory details');
+})();
+
+(function testV1117ReimbursementAmountAndNoLeaveAccrual(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes("a.earningType==='Reimbursement'")&&appSource.includes('isAmountOnly=isOver||isReimbursement'),'Additional Earnings UI must provide amount-only Reimbursement entry');
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'reimb1',empId:e.id,cycleId:1,earningType:'Reimbursement',startDate:'2026-05-26',endDate:'2026-05-26',hours:99,amount:125.50,saved:true});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  const row=p.rows.find(r=>r.description==='Reimbursement');
+  assert(row,'Reimbursement must flow to the payslip');
+  assert.strictEqual(row.amount,125.50,'Reimbursement must use the entered amount');
+  assert.strictEqual(row.units,0,'Reimbursement must not create units/hours');
+  assert.strictEqual(p.ordinaryHours,75,'Reimbursement must not increase ordinary/service hours');
+  assert.strictEqual(p.annualAccrual,E.leaveAccrualForOrdinaryHours(e,75).annual,'Reimbursement must not increase Annual Leave accrual');
+  assert.strictEqual(p.personalAccrual,E.leaveAccrualForOrdinaryHours(e,75).personal,'Reimbursement must not increase Personal Leave accrual');
+})();
+
+(function testV1117AnnualLeaveLoadingCurrentAndHistoricalRetro(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'al1',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const current=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(totalAmountByDesc(current,'Annual Leave'),300,'Annual Leave must pay at the ordinary rate');
+  assert.strictEqual(totalAmountByDesc(current,'Annual Leave Loading'),52.5,'Annual Leave must automatically receive 17.5% loading');
+  assert.strictEqual(current[0].ordinaryHours,75,'Annual Leave Loading must not add ordinary/service hours');
+
+  const oldPayslips=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true,rows:p.rows.filter(r=>r.description!=='Annual Leave Loading')}));
+  state.payslips=oldPayslips; state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.currentCycleId=2;
+  const next=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(totalAmountByDesc(next,'Annual Leave Loading Retro'),52.5,'Past Annual Leave without loading must create the missing loading as retro in the open pay');
+
+  const cycle2=E.cycleById(2);
+  state.payslips=state.payslips.concat(next.map(p=>Object.assign({},p,{finalised:true,cycleId:2,cycle:cycle2})));
+  state.finalisedCycles['2']={id:2,finalisedAt:cycle2.end}; state.currentCycleId=3;
+  const third=E.calculateEmployee(state,e.id,3,false);
+  assert.strictEqual(totalAmountByDesc(third,'Annual Leave Loading Retro'),0,'Finalised Annual Leave Loading Retro must not be paid again');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -858,5 +931,7 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.16 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
-console.log('PASS: v1.1.16 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.');
+console.log('PASS: v1.1.17 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
+console.log('PASS: v1.1.17 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.');
+
+console.log('PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.');

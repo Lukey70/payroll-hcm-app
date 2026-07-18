@@ -88,3 +88,18 @@ main{margin:0 auto;align-self:start;}
   #printArea .payslip .section-title{padding:1.8mm 1.2mm!important;margin-top:3mm!important;font-size:12.5px!important;}
   #printArea .payslip-status{display:none!important;}
 }
+
+
+/* v1.1.17 Reports and Statement of Service */
+.report-controls{border:1px solid var(--border);border-radius:12px;padding:14px;background:#f8fafc;margin-bottom:16px}
+.report-preview{background:#e5e7eb;border-radius:12px;padding:18px;overflow:auto}
+.statement-service{position:relative;box-sizing:border-box;background:#fff;color:#111;max-width:210mm;min-height:270mm;margin:0 auto;padding:18mm 18mm 20mm;font-family:Arial,sans-serif;font-size:12px;line-height:1.45;box-shadow:0 4px 18px rgba(15,23,42,.12)}
+.statement-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.statement-brand{line-height:1.15}.statement-wa{font-size:11px}.statement-dept{font-size:25px;font-weight:700;letter-spacing:-.5px}.statement-reference{font-weight:700}.statement-office-address{text-align:center;margin:3mm 0 8mm;font-weight:700}.statement-address{margin:0 0 9mm;line-height:1.45;min-height:25mm}.statement-service h1{font-size:14px;margin:0 0 4mm;font-weight:700}.statement-service h2{font-size:12px;margin:6mm 0 2mm}.statement-service p{margin:0 0 4mm}.statement-table{width:100%;border-collapse:collapse;margin:0 0 8mm}.statement-table th,.statement-table td{border:0;padding:1.4mm 1.2mm;font-size:10.5px;vertical-align:top}.statement-table th{background:transparent;border-bottom:1px solid #333;font-weight:700}.statement-table th:nth-child(1),.statement-table td:nth-child(1){width:8%}.statement-table th:nth-child(2),.statement-table td:nth-child(2){width:12%}.statement-table th:nth-child(5),.statement-table td:nth-child(5){width:8%;text-align:center}.statement-table th:nth-child(6),.statement-table td:nth-child(6){width:24%}.statement-lwop{max-width:75mm}.statement-lwop th,.statement-lwop td{width:auto!important;text-align:left!important}.statement-signature{margin-top:8mm}.signature-space{height:16mm}.statement-footer{position:absolute;left:18mm;right:18mm;bottom:8mm;border-top:1px solid #444;padding-top:2mm;display:flex;justify-content:space-between;font-size:9px}.statement-page-number::after{content:' ' counter(page)}
+@media(max-width:850px){.report-preview{padding:6px}.statement-service{min-width:700px;box-shadow:none}}
+@media print{
+  #printArea .statement-service{display:block!important;position:relative!important;box-sizing:border-box!important;width:100%!important;max-width:none!important;min-height:282mm!important;margin:0!important;padding:14mm 16mm 18mm!important;box-shadow:none!important;font-size:11.5px!important;page-break-after:auto!important;break-after:auto!important;}
+  #printArea .statement-service thead{display:table-header-group!important}
+  #printArea .statement-service tr{break-inside:avoid!important;page-break-inside:avoid!important}
+  #printArea .statement-footer{position:fixed!important;left:16mm!important;right:16mm!important;bottom:5mm!important}
+  #printArea .statement-table th,#printArea .statement-table td{font-size:10px!important;padding:1.2mm 1mm!important}
+}

@@ -1,8 +1,15 @@
-Payroll/HCM App v1.1.16
+Payroll/HCM App v1.1.17
 
-This package includes .github/workflows/pages.yml for GitHub Pages deployment.
-In GitHub Settings > Pages, set Source to GitHub Actions, then upload or commit the package contents.
+Open index.html to run the client-side demonstration app. The demonstration login password remains 1234.
 
-Before replacing an existing version, export the current app data. Version 1.1.16 includes data migration for legacy address fields and employment segments, but a backup is still strongly recommended.
+Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.17 migrates existing v1.1.16 data without deleting employees, pay history, leave, deductions or certifications.
 
-This remains a client-side demonstration and must not be used for real payroll or confidential employee information without production-grade security, access control, privacy and compliance work.
+New in this release:
+- Reports tab and Statement of Service report
+- Reimbursement Additional Earnings type
+- automatic 17.5% Annual Leave Loading
+- historical Annual Leave Loading Retro audit/correction
+
+The Statement of Service relies on complete Personal Details, Job Data, schedules, locations/departments and Leave Without Pay history. Review generated statements before issuing them.
+
+This is a demonstration application and is not certified production payroll software.

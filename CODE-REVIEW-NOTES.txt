@@ -1,50 +1,48 @@
-Payroll/HCM App v1.1.16 — Code Review Notes
+Payroll/HCM App v1.1.17 — Code Review Notes
 Date: 18 July 2026
-Baseline: v1.1.15
+Baseline: v1.1.16
 
-Scope
-The review covered the new leave, address, rehire, payout and accrual requirements, plus regression checks across payroll calculations, effective dating, retro processing, finalisation, certification, navigation, printing and persistence.
+SUMMARY
+Version 1.1.17 adds the first Reports function, a Statement of Service report, an amount-only Reimbursement earning, and automatic/historical Annual Leave Loading processing.
 
-Implemented changes
-1. Leave payout history
-- Finalised termination leave payouts and leave cash-outs are excluded from automatic later-period retro comparisons.
-- A future recovery is created only when the original cash-out transaction is deliberately deleted/amended.
+REPORTS / STATEMENT OF SERVICE
+- Added Reports to the left navigation under Certification Report and above Audit.
+- Added a Statement of Service generator modelled on the supplied Department of Education example.
+- Uses effective-dated employee address information at the selected as-at date.
+- Builds Service History from saved Job Data rows in effective-date/effective-sequence order.
+- Assigns stable report job numbers to different position/job identifiers.
+- Calculates FTE from the effective work schedule against the app's 37.5-hour standard week.
+- Includes Leave Without Pay bookings up to the as-at date.
+- Supports reference number, signatory name, signatory position and contact number.
+- Supports on-screen preview, browser Print / Save PDF, and a self-contained styled HTML download.
+- Validates that the as-at date is not before the employee's commencement.
+- Long tables use repeating print table headers and avoid breaking individual rows where possible.
 
-2. Rehire calculation boundary
-- Employees now retain separate employment segments before termination and after rehire.
-- Current pay and retro processing do not compare the new employment segment with finalised earnings from the previous segment.
-- Rehire through Job Data resets the current employment start and applicable LSL service baseline while retaining historical payroll records.
+REIMBURSEMENT
+- Added Reimbursement to Additional Earnings.
+- Reimbursement is entered as a fixed amount.
+- Hours are locked to zero.
+- It does not generate ordinary/service hours or leave accrual.
+- It is not treated as ordinary time earnings by the current demo rule.
+- Tax treatment remains part of gross under the existing engine because no separate taxable/non-taxable configuration was requested.
 
-3. Structured, effective-dated addresses
-- Address data is split into Address, Town/Suburb, State, Postcode and Country.
-- Payslips display: employee full name; address; suburb/state/postcode; country.
-- Finalised payslips retain their saved address snapshot; open/future payslips use the address effective for the payment date.
-- Legacy free-text address data is migrated into the new Address field.
+ANNUAL LEAVE LOADING
+- Added a constant 17.5% Annual Leave Loading rate.
+- A separate Annual Leave Loading earnings row is created for paid Annual Leave hours only.
+- Public holidays and non-working days remain excluded because they do not create Annual Leave units.
+- Loading does not create ordinary/service hours or additional leave accrual.
+- Existing retro comparison logic now identifies finalised Annual Leave that was paid without loading and creates only the missing Annual Leave Loading Retro amount in the open pay.
+- Finalised retro loading is recognised as already paid so it is not duplicated in later pay periods.
+- Original finalised payslips remain unchanged.
 
-4. Personal Leave evidence
-- The booking form displays “Evidence Provided?” under Absence Duration for Personal Leave only.
-- A booking of 3 or more scheduled working days is blocked unless evidence is selected.
+EFFICIENCY / MAINTAINABILITY
+- Reused the existing effective-dated data, report table and retro comparison structures rather than introducing a second calculation path.
+- Annual Leave Loading rows are merged for contiguous dates with the same rate and position.
+- Report generation reads saved Job Data once, sorts once, and derives display rows without mutating payroll records.
+- Downloaded Statement of Service HTML contains its own stylesheet and does not depend on app files after download.
 
-5. Overpayment Adjustment
-- Overpayment Adjustment is non-ordinary, non-OTE and non-leave-accruing.
-- It contributes no ordinary hours, service hours, Annual Leave, Personal Leave or LSL accrual.
-
-6. Bereavement Leave
-- Added as a leave type.
-- Maximum 5 scheduled working days per booking.
-- Displayed under Other Leave on the Absence Calendar.
-
-7. Confidential Family and Domestic Violence Leave
-- Models 10 paid days upfront for all employment types, renewing on the current employment anniversary with no carryover or progressive accrual.
-- Supports scheduled hours and partial-day bookings within the app’s existing roster/rate model.
-- The true leave type and balance remain internal; the booking form shows the confidential available balance for authorised processing.
-- Employee-facing calendar display uses Private Leave.
-- Payslip rows use the employee’s normal earnings description and do not reveal the leave name or balance.
-
-Quality fixes made during review
-- Corrected invalid hidden control characters in Job Data New Hire/Rehire regular expressions.
-- Added migration coverage for legacy addresses and rehire histories.
-- Added targeted tests for payout suppression, rehire boundaries, confidential leave, evidence validation, non-accruing adjustments and print sizing.
-
-Important limitation
-This package is a client-side demonstration, not certified payroll software. Production use requires server-side security, role-based access, privacy protections, complete industrial-instrument rate handling and independent legal/payroll validation.
+VALIDATION
+- JavaScript syntax checks passed for all source/test files.
+- 72 automated regression test blocks passed.
+- Static asset, duplicate ID and control-character checks passed.
+- The final ZIP was extracted and tested again.

@@ -1,66 +1,52 @@
-Payroll/HCM App v1.1.16 — Test Results
+Payroll/HCM App v1.1.17 — Test Results
 Date: 18 July 2026
-Baseline: Payroll/HCM App v1.1.15
+Baseline: Payroll/HCM App v1.1.16
 
 RESULT
-PASS — all completed syntax, calculation, migration and browser workflow checks passed.
+PASS — all completed syntax, calculation, migration, report-generation and package checks passed.
 
 STATIC AND PACKAGE CHECKS
 PASS — app.js JavaScript syntax
 PASS — payroll-engine.js JavaScript syntax
 PASS — data-store.js JavaScript syntax
 PASS — test-cases.js JavaScript syntax
-PASS — version labels and asset query strings use v1.1.16
+PASS — version labels and asset query strings use v1.1.17
+PASS — Reports is positioned under Certification Report and above Audit
 PASS — all local files referenced by index.html are present
 PASS — no duplicate static HTML IDs
-PASS — no unexpected control characters remain in JavaScript source
+PASS — no unexpected control characters in JavaScript source
 
 AUTOMATED REGRESSION SUITE
-PASS — 68 Node.js regression test blocks completed without an assertion failure.
+PASS — 72 Node.js regression test blocks completed without an assertion failure.
 
 Existing behaviour rechecked included:
-- fixed PPE 04/06/2026 pay-cycle dates and prior-processing cut-off
+- fixed PPE 04/06/2026 pay-cycle dates and the 03/05/2026 prior-processing cut-off
 - ordinary pay, public holidays, leave, partial-day leave and zero-pay suppression
+- Annual Leave and Personal Leave accruals, balances and finalisation
 - tax, STSL, superannuation, deductions and multiple-position calculations
 - difference-only retro, retro tax, duplicate-retro suppression and rate/unit presentation
-- certification report saving, locking, alerts and overdue reports
-- payslip, LSL entitlement date, print CSS and top-aligned tab navigation
-- finalisation, termination, fixed-term expiry and deduction end-dating
+- finalised leave payout and rehire calculation boundaries
+- Certification Report saving, locking, alerts and overdue reports
+- effective-dated addresses, payslip snapshots and confidential leave handling
+- Job Data unsaved-change prompts and deduction end-dating
 
-V1.1.16 TARGETED CALCULATION AND MIGRATION CHECKS
-PASS — a finalised termination leave payout is not automatically recovered in the following pay.
-PASS — a rehire creates a new employment calculation segment and does not recover prior employment Regular Pay, leave earnings or leave payouts.
-PASS — legacy address data migrates into Address, Town/Suburb, State, Postcode and Country fields.
-PASS — legacy termination/rehire Job Data migrates into separate employment segments.
-PASS — effective-dated address snapshots preserve the address on finalised payslips and use the new address for later payslips.
-PASS — Personal Leave of 3 working days or more is blocked without “Evidence Provided?” and allowed when selected.
-PASS — Personal Leave of 2 working days or less does not require the evidence checkbox.
-PASS — Overpayment Adjustment does not increase ordinary/service hours or Annual Leave/Personal Leave accruals.
-PASS — Bereavement Leave allows up to 5 scheduled working days and blocks a longer booking.
-PASS — Family and Domestic Violence Leave provides 10 days upfront, reduces confidentially as used, renews on the work anniversary and does not carry over.
-PASS — Family and Domestic Violence Leave is payable to a rostered casual employee under the app’s existing rate model.
-PASS — Family and Domestic Violence Leave appears as normal earnings on the payslip and its true name/balance is not displayed there.
-PASS — an explicitly deleted finalised leave cash-out creates one deliberate recovery only, without a duplicate automatic retro recovery.
-PASS — Job Data recognises New Hire and Rehire reasons using valid word-boundary matching.
+V1.1.17 TARGETED CHECKS
+PASS — Reports tab exists in the requested sidebar position.
+PASS — Statement of Service generator produces a professional Department of Education-style report.
+PASS — Statement of Service includes the employee address, commencement wording, Service History, Job/Date/Position/Location/FTE/Action columns, Leave Without Pay, as-at statement, contact wording and signatory details.
+PASS — Statement of Service uses effective-dated personal details and stored Job Data history.
+PASS — Statement of Service supports preview, Print / Save PDF and a self-contained styled HTML download.
+PASS — an as-at date before commencement is rejected.
+PASS — Reimbursement is available as an amount-only Additional Earnings type.
+PASS — Reimbursement creates no units, ordinary/service hours or Annual Leave/Personal Leave accrual.
+PASS — booked Annual Leave automatically creates a separate Annual Leave Loading line at 17.5%.
+PASS — Annual Leave Loading does not add ordinary/service hours or additional leave accrual.
+PASS — a prior finalised Annual Leave payment with missing loading creates Annual Leave Loading Retro in the current open pay.
+PASS — the historical correction is difference-only and does not alter the original finalised payslip.
+PASS — once Annual Leave Loading Retro is included in a finalised pay, it is not generated again.
 
-CHROMIUM BROWSER WORKFLOW CHECKS
-PASS — structured employee address fields render in Personal Details.
-PASS — Bereavement Leave and Family and Domestic Violence Leave appear as booking options.
-PASS — “Evidence Provided?” appears only for Personal Leave.
-PASS — the confidential Family and Domestic Violence Leave booking note and remaining balance display for authorised booking purposes.
-PASS — the payslip address uses the requested four-line format and does not reveal Family and Domestic Violence Leave.
-PASS — Personal Leave evidence validation blocks and then allows a 3-working-day booking.
-PASS — Bereavement Leave blocks a booking longer than 5 working days.
-PASS — Job Data rehire creates a new employment segment, clears the current termination state and resets the current service start.
-PASS — all 14 navigation tabs render and remain top-aligned.
-PASS — no browser console errors or uncaught page errors occurred in these workflows.
-
-PRINT LAYOUT CHECK
-PASS — a finalised payslip populated the print-only area at approximately 1065.8 CSS pixels high, matching the intended full-page A4 layout within the printable-height allowance.
-PASS — the print-only payslip retained the structured address block and did not overflow the intended single-page height in the tested Chromium layout.
-
-REVIEW CORRECTION FOUND DURING FINAL TESTING
-A hidden control character was found in the Job Data New Hire/Rehire reason matching expressions. It was replaced with a valid JavaScript word-boundary expression and the actual rehire workflow was retested successfully.
+PACKAGE RE-TEST
+The completed v1.1.17 ZIP was extracted into a clean directory and the JavaScript syntax and 72-test regression suite were run again successfully.
 
 LIMITATIONS
-This remains a browser-based demonstration application using client-side storage. Passing automated tests does not certify it for production payroll use. Real deployment requires secure server-side storage, role-based permissions, audit controls, maintained tax/public-holiday/industrial-instrument data, and independent Australian payroll, employment-law and privacy validation. Family and Domestic Violence Leave pay uses the app’s existing roster and earnings-rate model; production implementation would need complete award/agreement loadings, allowances, overtime, incentives and confidentiality controls.
+This remains a browser-based demonstration application using client-side storage. Automated testing verifies the implemented rules and common workflows but does not certify the app for production payroll use. Production deployment requires secure server-side storage, role-based permissions, maintained tax/public-holiday/industrial-instrument data, privacy controls, and independent payroll, employment-law and information-security validation. The Statement of Service is generated from data held in this demo; its accuracy depends on complete Job Data, schedule, location and leave history.
