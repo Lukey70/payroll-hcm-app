@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.17'), 'sidebar/version label must show v1.1.17');
-  assert(data.includes("APP_VERSION = '1.1.17'"), 'data-store version must be 1.1.17');
+  assert(html.includes('v1.1.18'), 'sidebar/version label must show v1.1.18');
+  assert(data.includes("APP_VERSION = '1.1.18'"), 'data-store version must be 1.1.18');
 })();
 
 (function testAnchorPayCycle(){
@@ -510,7 +510,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
-  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.17 print CSS should enlarge the payslip to fill the A4 page better');
+  assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.18 print CSS should enlarge the payslip to fill the A4 page better');
 })();
 
 
@@ -827,7 +827,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 })();
 
 
-(function testV1117ReportsTabAndStatementOfService(){
+(function testV1118ReportsTabAndStatementOfService(){
   const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const certIndex=html.indexOf('data-tab="certification"');
@@ -840,7 +840,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 })();
 
 
-(function testV1117StatementOfServiceGeneratedContent(){
+(function testV1118StatementOfServiceGeneratedContent(){
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}};
@@ -861,6 +861,38 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(output.includes('Courtney De Lange')&&output.includes('6 ROOKE WAY')&&output.includes('CLARKSON WA 6030'),'Generated report must use the employee name and structured effective-dated address');
   assert(output.includes('Teacher - PrePrimary')&&output.includes('Quinns North Primary School')&&output.includes('New Hire Fixed-Term'),'Generated report must include service-history details');
   assert(output.includes('15/9/23')&&output.includes('LUKE MCGUINESS')&&output.includes('PAYROLL OFFICER'),'Generated report must include LWOP and signatory details');
+  assert(output.includes("McDonald&#39;s California Franchise"),'Generated report must use McDonald\'s California Franchise branding');
+  assert(output.includes("commenced service with McDonald&#39;s California Franchise"),'Commencement wording must use the requested company name');
+  assert(output.includes('different roles within the company'),'Job-number explanation must refer to the company');
+  assert(output.includes('Please contact the Human Resources Department on HR@mcdonaldscf.com'),'Contact wording must use the requested HR email');
+  assert(!output.includes('Government of Western Australia')&&!output.includes('Department of Education')&&!output.includes('151 Royal Street'),'Government, Department of Education and company-address branding must be absent from the generated report');
+})();
+
+(function testV1118PayslipAnnualLeaveRowsAreConsolidated(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}};
+  const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp;
+  assert(app&&typeof app.consolidatePayslipDisplayRows==='function','Payslip display consolidation helper must be exposed for verification');
+  const rows=[];
+  ['2026-05-25','2026-05-26','2026-05-27','2026-05-28','2026-05-29'].forEach(date=>{
+    rows.push({description:'Annual Leave',units:7.5,rate:40,amount:300,startDate:date,endDate:date,position:'Crew Member',kind:'leave',ote:true});
+    rows.push({description:'Annual Leave Loading',units:7.5,rate:7,amount:52.5,startDate:date,endDate:date,position:'Crew Member',kind:'leaveLoading',ote:true});
+  });
+  const grouped=app.consolidatePayslipDisplayRows(rows);
+  const annual=grouped.filter(r=>r.description==='Annual Leave');
+  const loading=grouped.filter(r=>r.description==='Annual Leave Loading');
+  assert.strictEqual(annual.length,1,'Five same-rate Annual Leave days must display as one payslip row');
+  assert.strictEqual(loading.length,1,'Five same-rate Annual Leave Loading days must display as one payslip row');
+  assert.strictEqual(annual[0].units,37.5); assert.strictEqual(annual[0].amount,1500);
+  assert.strictEqual(loading[0].units,37.5); assert.strictEqual(loading[0].amount,262.5);
+  assert.strictEqual(annual[0].startDate,'2026-05-25'); assert.strictEqual(annual[0].endDate,'2026-05-29');
+  const mixed=app.consolidatePayslipDisplayRows(rows.concat([{description:'Annual Leave',units:7.5,rate:42,amount:315,startDate:'2026-06-01',endDate:'2026-06-01',position:'Crew Member',kind:'leave',ote:true}]));
+  assert.strictEqual(mixed.filter(r=>r.description==='Annual Leave').length,2,'Annual Leave at a different rate must remain a separate payslip row');
 })();
 
 (function testV1117ReimbursementAmountAndNoLeaveAccrual(){
@@ -931,7 +963,8 @@ console.log('PASS: Commencement tax fields, read-only balances, tab order and DO
 
 console.log('PASS: Absence Calendar defaults to current year and can navigate up to one year ahead');
 console.log('PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated');
-console.log('PASS: v1.1.17 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
-console.log('PASS: v1.1.17 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.');
+console.log('PASS: v1.1.18 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.');
+console.log('PASS: v1.1.18 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.');
 
 console.log('PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.');
+console.log('PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald\'s California Franchise Statement of Service changes are verified.');

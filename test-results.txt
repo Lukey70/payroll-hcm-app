@@ -1,23 +1,23 @@
-Payroll/HCM App v1.1.17 — Test Results
+Payroll/HCM App v1.1.18 — Test Results
 Date: 18 July 2026
-Baseline: Payroll/HCM App v1.1.16
+Baseline: Payroll/HCM App v1.1.17
 
 RESULT
-PASS — all completed syntax, calculation, migration, report-generation and package checks passed.
+PASS — all completed syntax, calculation, migration, report-generation, payslip-display and package checks passed.
 
 STATIC AND PACKAGE CHECKS
 PASS — app.js JavaScript syntax
 PASS — payroll-engine.js JavaScript syntax
 PASS — data-store.js JavaScript syntax
 PASS — test-cases.js JavaScript syntax
-PASS — version labels and asset query strings use v1.1.17
-PASS — Reports is positioned under Certification Report and above Audit
+PASS — version labels and asset query strings use v1.1.18
 PASS — all local files referenced by index.html are present
 PASS — no duplicate static HTML IDs
-PASS — no unexpected control characters in JavaScript source
+PASS — no unexpected control characters in application source files
+PASS — index.html and all core local assets returned HTTP 200 from a local web-server smoke test
 
 AUTOMATED REGRESSION SUITE
-PASS — 72 Node.js regression test blocks completed without an assertion failure.
+PASS — 73 Node.js regression test blocks completed without an assertion failure.
 
 Existing behaviour rechecked included:
 - fixed PPE 04/06/2026 pay-cycle dates and the 03/05/2026 prior-processing cut-off
@@ -28,25 +28,25 @@ Existing behaviour rechecked included:
 - finalised leave payout and rehire calculation boundaries
 - Certification Report saving, locking, alerts and overdue reports
 - effective-dated addresses, payslip snapshots and confidential leave handling
-- Job Data unsaved-change prompts and deduction end-dating
+- Job Data unsaved-change prompts, deduction end-dating, Reports and Statement of Service
+- Reimbursement and automatic/historical Annual Leave Loading processing
 
-V1.1.17 TARGETED CHECKS
-PASS — Reports tab exists in the requested sidebar position.
-PASS — Statement of Service generator produces a professional Department of Education-style report.
-PASS — Statement of Service includes the employee address, commencement wording, Service History, Job/Date/Position/Location/FTE/Action columns, Leave Without Pay, as-at statement, contact wording and signatory details.
-PASS — Statement of Service uses effective-dated personal details and stored Job Data history.
-PASS — Statement of Service supports preview, Print / Save PDF and a self-contained styled HTML download.
-PASS — an as-at date before commencement is rejected.
-PASS — Reimbursement is available as an amount-only Additional Earnings type.
-PASS — Reimbursement creates no units, ordinary/service hours or Annual Leave/Personal Leave accrual.
-PASS — booked Annual Leave automatically creates a separate Annual Leave Loading line at 17.5%.
-PASS — Annual Leave Loading does not add ordinary/service hours or additional leave accrual.
-PASS — a prior finalised Annual Leave payment with missing loading creates Annual Leave Loading Retro in the current open pay.
-PASS — the historical correction is difference-only and does not alter the original finalised payslip.
-PASS — once Annual Leave Loading Retro is included in a finalised pay, it is not generated again.
+V1.1.18 TARGETED CHECKS
+PASS — five same-rate Annual Leave days display as one Annual Leave line on the payslip.
+PASS — the matching five Annual Leave Loading entries display as one Annual Leave Loading line.
+PASS — combined units, amounts and begin/end dates are correct.
+PASS — Annual Leave at a different rate remains a separate payslip line.
+PASS — consolidation is display-only; underlying payroll rows and calculations remain unchanged.
+PASS — Statement of Service displays McDonald's California Franchise as the company name.
+PASS — commencement wording refers to service with McDonald's California Franchise.
+PASS — job-number wording refers to different roles within the company.
+PASS — contact wording refers to the Human Resources Department at HR@mcdonaldscf.com.
+PASS — Government of Western Australia, Department of Education and 151 Royal Street are absent from the generated Statement of Service.
+PASS — the footer displays McDonald's California Franchise instead of a company address.
+PASS — preview, Print / Save PDF, HTML download, service history, Leave Without Pay and effective-dated employee address features remain available.
 
 PACKAGE RE-TEST
-The completed v1.1.17 ZIP was extracted into a clean directory and the JavaScript syntax and 72-test regression suite were run again successfully.
+The completed v1.1.18 ZIP was extracted into a clean directory. JavaScript syntax, static package checks and the 73-test regression suite were run again successfully.
 
 LIMITATIONS
-This remains a browser-based demonstration application using client-side storage. Automated testing verifies the implemented rules and common workflows but does not certify the app for production payroll use. Production deployment requires secure server-side storage, role-based permissions, maintained tax/public-holiday/industrial-instrument data, privacy controls, and independent payroll, employment-law and information-security validation. The Statement of Service is generated from data held in this demo; its accuracy depends on complete Job Data, schedule, location and leave history.
+This remains a browser-based demonstration application using client-side storage. Automated testing verifies the implemented rules and common workflows but does not certify the app for production payroll use. Production deployment requires secure server-side storage, role-based permissions, maintained tax/public-holiday/industrial-instrument data, privacy controls, and independent payroll, employment-law and information-security validation. Generated Statements of Service must be reviewed before issue and depend on complete employee and employment-history data.

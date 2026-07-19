@@ -1,48 +1,23 @@
-Payroll/HCM App v1.1.17 — Code Review Notes
-Date: 18 July 2026
-Baseline: v1.1.16
+Payroll/HCM App v1.1.18 — Code Review Notes
 
-SUMMARY
-Version 1.1.17 adds the first Reports function, a Statement of Service report, an amount-only Reimbursement earning, and automatic/historical Annual Leave Loading processing.
+BASELINE
+Built from v1.1.17 without resetting or replacing stored payroll data.
 
-REPORTS / STATEMENT OF SERVICE
-- Added Reports to the left navigation under Certification Report and above Audit.
-- Added a Statement of Service generator modelled on the supplied Department of Education example.
-- Uses effective-dated employee address information at the selected as-at date.
-- Builds Service History from saved Job Data rows in effective-date/effective-sequence order.
-- Assigns stable report job numbers to different position/job identifiers.
-- Calculates FTE from the effective work schedule against the app's 37.5-hour standard week.
-- Includes Leave Without Pay bookings up to the as-at date.
-- Supports reference number, signatory name, signatory position and contact number.
-- Supports on-screen preview, browser Print / Save PDF, and a self-contained styled HTML download.
-- Validates that the as-at date is not before the employee's commencement.
-- Long tables use repeating print table headers and avoid breaking individual rows where possible.
+PAYSLIP CONSOLIDATION
+- Added a display-only consolidation function for Annual Leave and Annual Leave Loading.
+- Rows are combined only when description, rate, position, row kind and OTE treatment match.
+- Units and amounts are summed and the displayed begin/end dates span the combined entries.
+- Different rates, positions, current earnings and retro earnings remain separate.
+- Underlying payroll rows remain unchanged, preserving calculations, leave balances, audit data and retro comparisons.
 
-REIMBURSEMENT
-- Added Reimbursement to Additional Earnings.
-- Reimbursement is entered as a fixed amount.
-- Hours are locked to zero.
-- It does not generate ordinary/service hours or leave accrual.
-- It is not treated as ordinary time earnings by the current demo rule.
-- Tax treatment remains part of gross under the existing engine because no separate taxable/non-taxable configuration was requested.
-
-ANNUAL LEAVE LOADING
-- Added a constant 17.5% Annual Leave Loading rate.
-- A separate Annual Leave Loading earnings row is created for paid Annual Leave hours only.
-- Public holidays and non-working days remain excluded because they do not create Annual Leave units.
-- Loading does not create ordinary/service hours or additional leave accrual.
-- Existing retro comparison logic now identifies finalised Annual Leave that was paid without loading and creates only the missing Annual Leave Loading Retro amount in the open pay.
-- Finalised retro loading is recognised as already paid so it is not duplicated in later pay periods.
-- Original finalised payslips remain unchanged.
-
-EFFICIENCY / MAINTAINABILITY
-- Reused the existing effective-dated data, report table and retro comparison structures rather than introducing a second calculation path.
-- Annual Leave Loading rows are merged for contiguous dates with the same rate and position.
-- Report generation reads saved Job Data once, sorts once, and derives display rows without mutating payroll records.
-- Downloaded Statement of Service HTML contains its own stylesheet and does not depend on app files after download.
+STATEMENT OF SERVICE
+- Removed Government of Western Australia and Department of Education branding from the generated report.
+- Removed the company address from the header and footer.
+- Changed the company name and commencement wording to McDonald's California Franchise.
+- Changed the job-number explanation to refer to roles within the company.
+- Changed the contact wording to the Human Resources Department at HR@mcdonaldscf.com.
+- Footer now displays McDonald's California Franchise.
+- Preview, print/Save PDF, HTML download, service history, LWOP history, effective-dated address and signatory features remain in place.
 
 VALIDATION
-- JavaScript syntax checks passed for all source/test files.
-- 72 automated regression test blocks passed.
-- Static asset, duplicate ID and control-character checks passed.
-- The final ZIP was extracted and tested again.
+See test-results.txt for syntax, regression, package and browser smoke-test results.

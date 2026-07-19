@@ -1,15 +1,12 @@
-Payroll/HCM App v1.1.17
+Payroll/HCM App v1.1.18
 
-Open index.html to run the client-side demonstration app. The demonstration login password remains 1234.
+DEPLOYMENT
+Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.18 migrates existing v1.1.17 data without deleting employees, pay history, leave, deductions, reports or certifications.
 
-Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.17 migrates existing v1.1.16 data without deleting employees, pay history, leave, deductions or certifications.
+CHANGES
+- Annual Leave and Annual Leave Loading are consolidated on the payslip by earnings type, rate and position instead of appearing once per day.
+- Statement of Service branding now uses McDonald's California Franchise.
+- Government of Western Australia and Department of Education branding and company addresses were removed from the report.
+- Statement wording and contact details now refer to McDonald's California Franchise and HR@mcdonaldscf.com.
 
-New in this release:
-- Reports tab and Statement of Service report
-- Reimbursement Additional Earnings type
-- automatic 17.5% Annual Leave Loading
-- historical Annual Leave Loading Retro audit/correction
-
-The Statement of Service relies on complete Personal Details, Job Data, schedules, locations/departments and Leave Without Pay history. Review generated statements before issuing them.
-
-This is a demonstration application and is not certified production payroll software.
+Review generated Statements of Service before issuing them. The report relies on complete Personal Details, Job Data, schedules, locations/departments and Leave Without Pay history.
