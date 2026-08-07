@@ -1,23 +1,25 @@
-Payroll/HCM App v1.1.18 — Code Review Notes
+Payroll/HCM App v1.1.19 — Code Review Notes
 
 BASELINE
-Built from v1.1.17 without resetting or replacing stored payroll data.
+Built directly from Payroll/HCM App v1.1.18 without resetting or replacing stored payroll data.
 
-PAYSLIP CONSOLIDATION
-- Added a display-only consolidation function for Annual Leave and Annual Leave Loading.
-- Rows are combined only when description, rate, position, row kind and OTE treatment match.
-- Units and amounts are summed and the displayed begin/end dates span the combined entries.
-- Different rates, positions, current earnings and retro earnings remain separate.
-- Underlying payroll rows remain unchanged, preserving calculations, leave balances, audit data and retro comparisons.
+TERMINATED EMPLOYEE ADDITIONAL EARNINGS
+- Removed the calculation short-circuit that excluded an employee entirely when they were no longer employed during the selected pay cycle.
+- Ordinary pay, leave and public-holiday generation still requires the employee to be employed on the relevant date.
+- Saved Additional Earnings can still be processed for a terminated employee when entered for the selected pay period.
+- This does not recreate Regular Pay after termination.
+- Existing payout/correction and retro rules remain intact.
 
-STATEMENT OF SERVICE
-- Removed Government of Western Australia and Department of Education branding from the generated report.
-- Removed the company address from the header and footer.
-- Changed the company name and commencement wording to McDonald's California Franchise.
-- Changed the job-number explanation to refer to roles within the company.
-- Changed the contact wording to the Human Resources Department at HR@mcdonaldscf.com.
-- Footer now displays McDonald's California Franchise.
-- Preview, print/Save PDF, HTML download, service history, LWOP history, effective-dated address and signatory features remain in place.
+ANNUAL LEAVE LOADING PAYSLIP GROUPING
+- Annual Leave Loading now uses the underlying/base pay rate for payslip grouping.
+- This keeps current Annual Leave Loading on the same payslip as Annual Leave and Regular Pay for the same position/base rate.
+- The loading remains its own earnings line and retains its own 17.5% calculated rate/amount.
+- Different positions or genuine base-rate differences still generate separate payslips where appropriate.
+- Existing display consolidation of multi-day Annual Leave and Annual Leave Loading remains unchanged.
+
+UNCHANGED BY REQUEST
+- Casual payments have not been added to Additional Earnings.
+- Concurrent/multiple-position employment has not been redesigned.
 
 VALIDATION
-See test-results.txt for syntax, regression, package and browser smoke-test results.
+See test-results.txt for syntax, regression, static package and browser smoke-test results.

@@ -464,8 +464,10 @@
     const includeAdditional = options.includeAdditional !== false;
     const includePayouts = options.includePayouts !== false;
     const rows = [];
-    if(!isEmployedInCycle(e,c)) return rows;
-    daysBetween(c.start,c.end).forEach(d=>{
+    const employedInCycle = isEmployedInCycle(e,c);
+    // Ordinary/leave/public-holiday earnings require active employment in the cycle,
+    // but legitimate Additional Earnings and corrections can still be payable after termination.
+    if(employedInCycle) daysBetween(c.start,c.end).forEach(d=>{
       if(!isEmployedOn(e,d)) return;
       const sched = activeSchedule(state,e.id,d);
       const hours = Number((sched && sched.hoursByDay && sched.hoursByDay[parseDate(d).getDay()]) || 0);
@@ -793,7 +795,10 @@
     const retro=rows.filter(r=>r.kind==='retro');
     const groups=[];
     mainRows.forEach(r=>{
-      const groupingRate=r.kind==='additional'?(r.baseRate||r.rate||0):(r.rate||0);
+      // Additional earnings and Annual Leave Loading belong to the same payslip as
+      // the employee's underlying/base-rate earnings. Their own calculated rate must
+      // not create a second payslip for the same position and pay period.
+      const groupingRate=['additional','leaveLoading'].includes(r.kind)?(r.baseRate||r.rate||0):(r.rate||0);
       const key=`${r.position||e.position}|${groupingRate}`;
       let group=groups.find(x=>x.key===key);
       if(!group){ group={key,position:r.position||e.position,rate:groupingRate,rows:[]}; groups.push(group); }

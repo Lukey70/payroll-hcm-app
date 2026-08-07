@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.18'), 'sidebar/version label must show v1.1.18');
-  assert(data.includes("APP_VERSION = '1.1.18'"), 'data-store version must be 1.1.18');
+  assert(html.includes('v1.1.19'), 'sidebar/version label must show v1.1.19');
+  assert(data.includes("APP_VERSION = '1.1.19'"), 'data-store version must be 1.1.19');
 })();
 
 (function testAnchorPayCycle(){
@@ -868,6 +868,34 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(!output.includes('Government of Western Australia')&&!output.includes('Department of Education')&&!output.includes('151 Royal Street'),'Government, Department of Education and company-address branding must be absent from the generated report');
 })();
 
+(function testV1119TerminatedEmployeeCanReceiveAdditionalEarnings(){
+  const state=baseState();
+  const e=addEmployee(state,{terminationDate:'2026-06-04',terminationReason:'Resignation',status:'Terminated'});
+  addSchedule(state,e.id); addRate(state,e.id);
+  const prior=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.payslips=prior; state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.currentCycleId=2;
+  state.additionalEarnings.push({id:'term_add_1',empId:e.id,cycleId:2,earningType:'Reimbursement',startDate:'2026-06-10',endDate:'2026-06-10',hours:0,amount:125.50,saved:true});
+  state.additionalEarnings.push({id:'term_add_2',empId:e.id,cycleId:2,earningType:'Additional Day',startDate:'2026-06-10',endDate:'2026-06-10',hours:2,amount:80,saved:true});
+  const payslips=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(payslips.length,1,'A terminated employee with valid Additional Earnings must receive a current-pay payslip');
+  assert.strictEqual(totalAmountByDesc(payslips,'Reimbursement'),125.50,'The terminated employee Reimbursement must be paid');
+  assert.strictEqual(totalAmountByDesc(payslips,'Additional Day'),80,'Hours-based Additional Earnings must also be payable after termination');
+  assert.strictEqual(totalAmountByDesc(payslips,'Regular Pay'),0,'No Regular Pay may be recreated after termination');
+  assert.strictEqual(totalAmountByDesc(payslips,'Regular Pay Retro'),0,'Finalised pre-termination Regular Pay must not be recreated as retro');
+  assert.strictEqual(totalAmountByDesc(payslips,'Annual Leave Payout'),0,'A prior finalised termination payout must not be repeated in the later Additional Earnings pay');
+})();
+
+(function testV1119CurrentAnnualLeaveLoadingStaysOnSamePayslip(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'al_same_slip',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-29',hours:37.5,status:'Approved'});
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(payslips.length,1,'Current Annual Leave Loading must not create a separate payslip when the job/base rate is the same');
+  assert(totalAmountByDesc(payslips,'Annual Leave')>0,'Annual Leave must be present on the payslip');
+  assert(totalAmountByDesc(payslips,'Annual Leave Loading')>0,'Annual Leave Loading must be present on the same payslip');
+  const descriptions=payslips[0].rows.map(r=>r.description);
+  assert(descriptions.includes('Annual Leave')&&descriptions.includes('Annual Leave Loading'),'Annual Leave and Annual Leave Loading must be rows on the same payslip');
+})();
+
 (function testV1118PayslipAnnualLeaveRowsAreConsolidated(){
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
@@ -968,3 +996,4 @@ console.log('PASS: v1.1.18 leave payout, rehire, structured address, evidence, O
 
 console.log('PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.');
 console.log('PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald\'s California Franchise Statement of Service changes are verified.');
+console.log('PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.');

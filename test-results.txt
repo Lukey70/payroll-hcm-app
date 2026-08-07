@@ -1,52 +1,49 @@
-Payroll/HCM App v1.1.18 — Test Results
-Date: 18 July 2026
-Baseline: Payroll/HCM App v1.1.17
+Payroll/HCM App v1.1.19 — Test Results
+Date: 7 August 2026
+Baseline: Payroll/HCM App v1.1.18
 
 RESULT
-PASS — all completed syntax, calculation, migration, report-generation, payslip-display and package checks passed.
+PASS — all completed syntax, calculation, regression, targeted payroll and static package checks passed.
 
 STATIC AND PACKAGE CHECKS
 PASS — app.js JavaScript syntax
 PASS — payroll-engine.js JavaScript syntax
 PASS — data-store.js JavaScript syntax
 PASS — test-cases.js JavaScript syntax
-PASS — version labels and asset query strings use v1.1.18
+PASS — version labels and local asset query strings use v1.1.19
 PASS — all local files referenced by index.html are present
 PASS — no duplicate static HTML IDs
-PASS — no unexpected control characters in application source files
-PASS — index.html and all core local assets returned HTTP 200 from a local web-server smoke test
+PASS — no unexpected control characters in core source files
+PASS — index.html, app.js, payroll-engine.js, data-store.js, styles.css and latest-version.json returned HTTP 200 from a local static server
 
 AUTOMATED REGRESSION SUITE
-PASS — 73 Node.js regression test blocks completed without an assertion failure.
+PASS — 75 Node.js regression test blocks completed without an assertion failure.
 
-Existing behaviour rechecked included:
-- fixed PPE 04/06/2026 pay-cycle dates and the 03/05/2026 prior-processing cut-off
+Existing behaviour rechecked includes:
+- fixed PPE 04/06/2026 anchor cycle and 03/05/2026 prior-processing cut-off
 - ordinary pay, public holidays, leave, partial-day leave and zero-pay suppression
-- Annual Leave and Personal Leave accruals, balances and finalisation
-- tax, STSL, superannuation, deductions and multiple-position calculations
-- difference-only retro, retro tax, duplicate-retro suppression and rate/unit presentation
-- finalised leave payout and rehire calculation boundaries
+- Annual Leave and Personal Leave accruals and finalisation
+- tax, STSL, superannuation and deduction calculations
+- difference-only retro, retro tax, duplicate-retro suppression and rehire boundaries
+- finalised leave payout protection
 - Certification Report saving, locking, alerts and overdue reports
-- effective-dated addresses, payslip snapshots and confidential leave handling
-- Job Data unsaved-change prompts, deduction end-dating, Reports and Statement of Service
-- Reimbursement and automatic/historical Annual Leave Loading processing
+- effective-dated addresses and finalised payslip snapshots
+- Personal Leave evidence validation, Bereavement Leave and confidential FDV Leave
+- Reimbursement and Overpayment Adjustment non-leave-accruing treatment
+- automatic and historical Annual Leave Loading
+- Reports and Statement of Service
+- payslip Annual Leave/Annual Leave Loading display consolidation
 
-V1.1.18 TARGETED CHECKS
-PASS — five same-rate Annual Leave days display as one Annual Leave line on the payslip.
-PASS — the matching five Annual Leave Loading entries display as one Annual Leave Loading line.
-PASS — combined units, amounts and begin/end dates are correct.
-PASS — Annual Leave at a different rate remains a separate payslip line.
-PASS — consolidation is display-only; underlying payroll rows and calculations remain unchanged.
-PASS — Statement of Service displays McDonald's California Franchise as the company name.
-PASS — commencement wording refers to service with McDonald's California Franchise.
-PASS — job-number wording refers to different roles within the company.
-PASS — contact wording refers to the Human Resources Department at HR@mcdonaldscf.com.
-PASS — Government of Western Australia, Department of Education and 151 Royal Street are absent from the generated Statement of Service.
-PASS — the footer displays McDonald's California Franchise instead of a company address.
-PASS — preview, Print / Save PDF, HTML download, service history, Leave Without Pay and effective-dated employee address features remain available.
+V1.1.19 TARGETED CHECKS
+PASS — a previously terminated employee with a finalised prior termination pay can receive saved Additional Earnings in a later open pay period.
+PASS — both amount-based Reimbursement and hours-based Additional Day earnings are payable to the terminated employee.
+PASS — no Regular Pay is recreated after termination.
+PASS — no finalised pre-termination Regular Pay is recreated as Regular Pay Retro.
+PASS — a prior finalised Annual Leave Payout is not repeated in the later Additional Earnings pay.
+PASS — current Annual Leave and Annual Leave Loading for the same position/base rate produce one payslip, not separate payslips.
+PASS — Annual Leave remains a separate earnings row from Annual Leave Loading within that one payslip.
+PASS — existing multi-day payslip display consolidation for Annual Leave and Annual Leave Loading remains intact.
+PASS — genuine different positions/base rates remain eligible for separate payslips.
 
-PACKAGE RE-TEST
-The completed v1.1.18 ZIP was extracted into a clean directory. JavaScript syntax, static package checks and the 73-test regression suite were run again successfully.
-
-LIMITATIONS
-This remains a browser-based demonstration application using client-side storage. Automated testing verifies the implemented rules and common workflows but does not certify the app for production payroll use. Production deployment requires secure server-side storage, role-based permissions, maintained tax/public-holiday/industrial-instrument data, privacy controls, and independent payroll, employment-law and information-security validation. Generated Statements of Service must be reviewed before issue and depend on complete employee and employment-history data.
+SCOPE / LIMITATIONS
+The automated suite validates the implemented payroll engine, data migration, report generation and key application-source behaviours. A full interactive browser automation suite is not bundled with this demonstration. This remains a browser-based client-side demonstration and is not certified for production payroll use. Production deployment requires secure server-side storage, role-based access, maintained tax/industrial-instrument data, privacy controls and independent payroll/legal/security validation.
