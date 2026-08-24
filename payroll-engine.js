@@ -152,6 +152,54 @@
     };
   }
   function weeklyHoursFromSchedule(s){ return Object.values((s&&s.hoursByDay)||{}).reduce((sum,h)=>sum+Number(h||0),0); }
+  function reconcileEmploymentFromJobData(state,e){
+    if(!state || !e || !Array.isArray(state.jobDataRows)) return e;
+    const rows=state.jobDataRows.filter(r=>r && r.empId===e.id && r.saved!==false && r.effectiveDate)
+      .slice().sort((a,b)=>compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
+    if(!rows.length) return e;
+    const commencementRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire|Rehire)\b/.test(String(r.reason||'')));
+    const terminationRows=rows.filter(r=>r.action==='Termination');
+    if(!commencementRows.length && !terminationRows.length) return e;
+
+    const latestCommencement=commencementRows.length ? commencementRows[commencementRows.length-1] : null;
+    const currentStart=(latestCommencement&&latestCommencement.effectiveDate) || e.startDate || e.originalStartDate || '';
+    if(!currentStart) return e;
+
+    const explicitTermination=terminationRows.filter(r=>compare(r.effectiveDate,currentStart)>=0).slice(-1)[0] || null;
+    let terminationDate=explicitTermination ? explicitTermination.effectiveDate : '';
+    let terminationReason=explicitTermination ? String(explicitTermination.reason||'') : '';
+
+    // If there is no explicit Job Data termination, retain the legitimate automatic
+    // fixed-term boundary. This prevents reconciliation from undoing contract expiry.
+    if(!explicitTermination && e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,currentStart)>=0){
+      terminationDate=e.contractEndDate;
+      terminationReason='Expiry of Fixed Term';
+    }
+
+    const existing=Array.isArray(e.employmentSegments) ? e.employmentSegments : [];
+    const preserved=existing.filter(seg=>seg && seg.startDate && seg.endDate && seg.startDate!==currentStart && compare(seg.endDate,currentStart)<=0);
+    const sameStart=existing.find(seg=>seg && seg.startDate===currentStart);
+    const currentSegment={
+      id:(sameStart&&sameStart.id)||`segment_${e.id}_${preserved.length+1}`,
+      startDate:currentStart,
+      endDate:terminationDate,
+      inclusiveEnd:terminationReason==='Expiry of Fixed Term',
+      terminationReason,
+      source:'jobData-reconciled'
+    };
+    const combined=preserved.concat([currentSegment]).sort((a,b)=>compare(a.startDate,b.startDate));
+    const seen=new Set();
+    e.employmentSegments=combined.filter(seg=>{ const key=`${seg.startDate}|${seg.endDate}|${seg.terminationReason||''}`; if(seen.has(key)) return false; seen.add(key); return true; });
+    e.startDate=currentStart;
+    e.terminationDate=terminationDate;
+    e.terminationReason=terminationReason;
+    e.status=terminationDate && isTerminatedOn(e,iso(new Date())) ? 'Terminated' : 'Active';
+    return e;
+  }
+  function reconcileAllEmploymentFromJobData(state){
+    (state&&state.employees||[]).forEach(e=>reconcileEmploymentFromJobData(state,e));
+    return state;
+  }
   function employmentSegments(e){
     if(e && Array.isArray(e.employmentSegments) && e.employmentSegments.length){
       return e.employmentSegments.filter(seg=>seg&&seg.startDate).slice().sort((a,b)=>compare(a.startDate,b.startDate));
@@ -847,18 +895,21 @@
   function calculateEmployee(state, empId, cycleId, finalised=false){
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e) return [];
+    reconcileEmploymentFromJobData(state,e);
     const c = cycleById(cycleId || state.currentCycleId || 1);
     const rows = [...earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true}), ...retroRows(state,e,c)];
     return splitIntoPayslips(state,e,c,rows,finalised || isFinalised(state,c));
   }
   function calculateAll(state, cycleId, finalised=false){
     const c = cycleById(cycleId || state.currentCycleId || 1);
+    reconcileAllEmploymentFromJobData(state);
     autoProcessContractExpiries(state,c.end);
     return (state.employees||[]).flatMap(e=>calculateEmployee(state,e.id,c.id,finalised)).filter(p=>Math.abs(p.gross)>0.004 || (p.rows||[]).some(r=>r.kind==='retro' && (Math.abs(Number(r.units||0))>0.0001 || Math.abs(Number(r.amount||0))>0.004)));
   }
   function autoProcessContractExpiries(state, upToDate){
     (state.employees||[]).forEach(e=>{
-      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && e.terminationReason !== 'Expiry of Fixed Term'){
+      const explicitTermination=(state.jobDataRows||[]).some(r=>r && r.empId===e.id && r.saved!==false && r.action==='Termination' && r.effectiveDate && (!e.startDate || compare(r.effectiveDate,e.startDate)>=0));
+      if(e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,upToDate)<=0 && !explicitTermination && e.terminationReason !== 'Expiry of Fixed Term'){
         e.terminationDate = e.contractEndDate;
         e.terminationReason = 'Expiry of Fixed Term';
         if(Array.isArray(e.employmentSegments)){
@@ -938,7 +989,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, bookingWorkingDayFractions, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, bookingWorkingDayFractions, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1389,6 +1389,11 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.21',notes:[
+      'Fixed Job Data termination recalculation so a saved resignation becomes the authoritative current employment end date.',
+      'Reconciled stale or duplicate current employment segments after Job Data edits so Regular Pay stops at the resignation boundary instead of paying the full fortnight.',
+      'Added regression protection for deleting Expiry of Fixed Term and replacing it with an earlier Voluntary Resignation.'
+    ]},
     {version:'v1.1.20',notes:[
       'Fixed retro settlement so finalised positive retro and matching recoveries are counted once across history and cannot oscillate into later pays.',
       'Added regression protection for the reported +8.29 / -8.29 / +8.29 Regular Pay Retro loop.'

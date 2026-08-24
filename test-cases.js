@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.20'), 'sidebar/version label must show v1.1.20');
-  assert(data.includes("APP_VERSION = '1.1.20'"), 'data-store version must be 1.1.20');
+  assert(html.includes('v1.1.21'), 'sidebar/version label must show v1.1.21');
+  assert(data.includes("APP_VERSION = '1.1.21'"), 'data-store version must be 1.1.21');
 })();
 
 (function testAnchorPayCycle(){
@@ -981,6 +981,44 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(totalAmountByDesc(current,'Regular Pay Retro'),0,'Current pay must not re-pay the already-settled 8.29 Regular Pay Retro');
 })();
 
+(function testV1121ResignationReplacesDeletedFixedTermExpiryAndStopsRegularPay(){
+  const state=baseState();
+  const e=addEmployee(state,{
+    type:'Fixed Term',
+    startDate:'2026-05-22',
+    originalStartDate:'2026-05-22',
+    contractEndDate:'2026-06-04',
+    autoTerminate:true,
+    terminationDate:'2026-06-04',
+    terminationReason:'Expiry of Fixed Term',
+    status:'Active',
+    employmentSegments:[
+      {id:'stale_expiry',startDate:'2026-05-22',endDate:'2026-06-04',inclusiveEnd:true,terminationReason:'Expiry of Fixed Term'},
+      {id:'stale_open',startDate:'2026-05-22',endDate:'',inclusiveEnd:false,terminationReason:''}
+    ]
+  });
+  state.schedules.push({id:'s_job',empId:e.id,effectiveDate:'2026-05-22',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},jobDataId:'jd_start'});
+  state.payRates.push({id:'r_job',empId:e.id,effectiveDate:'2026-05-22',position:'Officer',hourlyRate:40,changeType:'Permanent',jobDataId:'jd_start'});
+  // The old Expiry of Fixed Term row has been deleted. The saved Job Data now
+  // contains the original commencement and an earlier resignation only.
+  state.jobDataRows.push(
+    {id:'jd_start',empId:e.id,action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-05-22',effectiveSequence:0,saved:true},
+    {id:'jd_resign',empId:e.id,action:'Termination',reason:'Voluntary Resignation',effectiveDate:'2026-05-25',effectiveSequence:0,saved:true}
+  );
+  const payslips=E.calculateAll(state,1,false);
+  assert.strictEqual(totalUnitsByDesc(payslips,'Regular Pay'),7.5,'Replacing a deleted fixed-term expiry with a 25/05 resignation must pay only the 7.5 scheduled hours before the resignation effective date');
+  assert.strictEqual(e.terminationDate,'2026-05-25','Saved resignation must replace the stale fixed-term expiry as the authoritative termination date');
+  assert.strictEqual(e.terminationReason,'Voluntary Resignation','Saved resignation reason must replace the stale expiry reason');
+  const currentSegments=E.employmentSegments(e).filter(seg=>seg.startDate==='2026-05-22');
+  assert.strictEqual(currentSegments.length,1,'Stale duplicate/open current employment segments must be collapsed during Job Data reconciliation');
+  assert.strictEqual(currentSegments[0].endDate,'2026-05-25','The reconciled employment segment must stop at the resignation effective date');
+  assert.strictEqual(currentSegments[0].inclusiveEnd,false,'Voluntary resignation is an exclusive termination boundary');
+  assert.strictEqual(E.isEmployedOn(e,'2026-05-22'),true);
+  assert.strictEqual(E.isEmployedOn(e,'2026-05-25'),false,'No Regular Pay may be generated on or after the resignation effective date');
+  assert(!(state.jobEvents||[]).some(j=>j.description==='Expiry of Fixed Term'),'Automatic fixed-term processing must not recreate an expiry event when an explicit resignation exists');
+})();
+
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -1021,3 +1059,4 @@ console.log('PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annu
 console.log('PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald\'s California Franchise Statement of Service changes are verified.');
 console.log('PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.');
 console.log('PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.');
+console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.');

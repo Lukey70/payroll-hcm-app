@@ -1,10 +1,10 @@
-Payroll/HCM App v1.1.20 — Test Results
+Payroll/HCM App v1.1.21 — Test Results
 
 RESULT: PASS
 
 BASELINE
-- Built directly from v1.1.19.
-- Existing localStorage key remains payrollAppData so prior saved data is migrated in place.
+- Built directly from v1.1.20.
+- Existing localStorage key remains payrollAppData so saved data is migrated in place.
 
 SYNTAX
 - data-store.js: PASS
@@ -13,22 +13,24 @@ SYNTAX
 - test-cases.js: PASS
 
 REGRESSION SUITE
-- 76 automated test blocks executed successfully.
+- 77 automated test blocks executed successfully.
+- 300 assertion checks are present across the suite.
 - Existing payroll, leave, tax/STSL, super, deductions, retro, rehire, certification, alerts, reports, Statement of Service, Reimbursement, Annual Leave Loading, terminated-employee Additional Earnings and payslip-grouping tests remain passing.
 
-TARGETED RETRO OSCILLATION TEST
-- PASS: A finalised +8.29 Regular Pay Retro followed by a finalised -8.29 recovery is treated as fully settled.
-- PASS: The current pay does not generate the +8.29 Regular Pay Retro again.
-- PASS: The test deliberately uses different historical date ranges for the positive and negative retro rows, reproducing the overlap condition that could cause v1.1.19 to count one settlement more than once.
+TARGETED RESIGNATION TEST
+- PASS: Deleted/stale Expiry of Fixed Term state is replaced by the saved Voluntary Resignation.
+- PASS: The current cycle pays only 7.5 hours of Regular Pay where only one scheduled day falls before the resignation effective date.
+- PASS: The stale duplicate/open current employment segment is removed.
+- PASS: No Regular Pay is generated on or after the resignation effective date.
+- PASS: Automatic fixed-term processing does not recreate an Expiry of Fixed Term event when the explicit resignation exists.
 
 PACKAGE CHECKS
 - index.html local CSS/JS references all resolve: PASS
-- Version label / APP_VERSION / latest-version.json all report v1.1.20: PASS
-- ZIP created, extracted to a clean folder, JavaScript syntax rechecked and the full 76-test regression suite rerun: PASS
-- Clean-extraction test output matched the source-folder test output exactly: PASS
-
-RETRO ENGINE CHANGE
-Historical retro is now settled cumulatively across eligible finalised pay periods within the current employment segment. Finalised retro earnings and recoveries are counted once in the settlement total, preventing overlapping historical date ranges from creating +A / -A / +A oscillation in later pays.
+- Version label / APP_VERSION / latest-version.json all report v1.1.21: PASS
+- ZIP created and extracted to a clean folder: PASS
+- JavaScript syntax rechecked from the clean extraction: PASS
+- Full 77-test regression suite rerun from the clean extraction: PASS
+- Clean-extraction regression output matched the source-folder output exactly: PASS
 
 RAW REGRESSION OUTPUT
 PASS: Login button/password strings and app version are present
@@ -68,6 +70,7 @@ PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Load
 PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California Franchise Statement of Service changes are verified.
 PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
 PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
+PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.
 
 LIMITATION
-This is still a browser-based payroll demonstration, not certified production payroll software. The automated suite verifies the implemented rules and reported regression scenario but does not replace independent payroll/legal validation or production security testing.
+This is a browser-based payroll demonstration, not certified production payroll software. The automated suite verifies the implemented rules and the reported regression scenario but does not replace independent payroll/legal validation or production security testing.

@@ -1,7 +1,7 @@
-Payroll/HCM App v1.1.20
+Payroll/HCM App v1.1.21
 
 DEPLOYMENT
-Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.20 migrates existing v1.1.19 data without deleting employees, pay history, leave, deductions, reports or certifications.
+Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.21 migrates existing v1.1.20 data without deleting employees, pay history, leave, deductions, reports or certifications.
 
 CHANGES
 - Fixed retro settlement across historical pay periods. Finalised retro earnings and recoveries are now counted once against the cumulative historical entitlement rather than repeatedly by overlapping source-date ranges.
