@@ -677,18 +677,39 @@
       const desc=String((row&&row.description)||'').replace(/ Retro$/,'');
       return row && (row.kind==='payout' || row.kind==='payoutCorrection' || /(?:Payout|Cash Out|Cash Out Recovery)$/.test(desc));
     }
-    PAY_CYCLES.filter(x=>x.id < c.id && isFinalised(state,x) && compare(x.end,RETRO_PROCESSING_START)>=0 && (!segmentStart || compare(x.end,segmentStart)>=0)).forEach(prev=>{
-      const retroPrev = Object.assign({}, prev, { start: compare(prev.start, RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : prev.start });
-      const expectedRows = expectedGross(state,e,retroPrev).rows.filter(r=>!historicalPayout(r));
-      const originalPaidRows = (state.payslips||[]).filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised).flatMap(p=>p.rows||[])
-        .filter(r=>r.kind !== 'retro' && !historicalPayout(r))
-        .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0);
-      const alreadyPaidRetroRows = (state.payslips||[]).filter(p=>p.empId===e.id && p.finalised && Number(p.cycleId)<Number(c.id)).flatMap(p=>p.rows||[])
+
+    // Settle retro cumulatively across all finalised cycles in the current employment
+    // segment. Older builds compared each historical cycle independently and then used
+    // date overlap to decide which already-paid retro rows belonged to that cycle. A
+    // positive correction and a later recovery could therefore be attributed to
+    // different source periods and alternate forever (+A, -A, +A ...). Comparing the
+    // entire settled history once means every finalised retro payment/recovery is counted
+    // exactly once. Future pay runs only create the remaining net difference.
+    const eligibleCycles = PAY_CYCLES.filter(x=>x.id < c.id && isFinalised(state,x) && compare(x.end,RETRO_PROCESSING_START)>=0 && (!segmentStart || compare(x.end,segmentStart)>=0));
+    if(eligibleCycles.length){
+      const expectedRows = [];
+      const originalPaidRows = [];
+      let settlementStart = '';
+      let settlementEnd = '';
+      eligibleCycles.forEach(prev=>{
+        const retroPrev = Object.assign({}, prev, { start: compare(prev.start, RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : prev.start });
+        if(!settlementStart || compare(retroPrev.start,settlementStart)<0) settlementStart=retroPrev.start;
+        if(!settlementEnd || compare(retroPrev.end,settlementEnd)>0) settlementEnd=retroPrev.end;
+        expectedRows.push(...expectedGross(state,e,retroPrev).rows.filter(r=>!historicalPayout(r)));
+        originalPaidRows.push(...(state.payslips||[])
+          .filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised)
+          .flatMap(p=>p.rows||[])
+          .filter(r=>r.kind !== 'retro' && !historicalPayout(r))
+          .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0));
+      });
+      const settledRetroRows = (state.payslips||[])
+        .filter(p=>p.empId===e.id && p.finalised && Number(p.cycleId)<Number(c.id))
+        .flatMap(p=>p.rows||[])
         .filter(r=>r.kind === 'retro' && !historicalPayout(r))
-        .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0);
-      rows.push(...retroRowsFromComparison(expectedRows, originalPaidRows.concat(alreadyPaidRetroRows)));
-    });
-    const anyPriorFinalised = PAY_CYCLES.some(x=>x.id < c.id && isFinalised(state,x) && (!segmentStart || compare(x.end,segmentStart)>=0));
+        .filter(r=>compare(r.endDate||settlementEnd, settlementStart)>=0 && compare(r.startDate||settlementStart, settlementEnd)<=0);
+      rows.push(...retroRowsFromComparison(expectedRows, originalPaidRows.concat(settledRetroRows)));
+    }
+    const anyPriorFinalised = eligibleCycles.length > 0;
     const commencementStart=segmentStart||e.startDate;
     if(commencementStart && compare(commencementStart,c.start)<0 && !anyPriorFinalised){
       const priorEnd = addDays(c.start,-1);

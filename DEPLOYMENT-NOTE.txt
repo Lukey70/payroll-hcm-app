@@ -1,12 +1,12 @@
-Payroll/HCM App v1.1.19
+Payroll/HCM App v1.1.20
 
 DEPLOYMENT
-Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.19 migrates existing v1.1.18 data without deleting employees, pay history, leave, deductions, reports or certifications.
+Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.20 migrates existing v1.1.19 data without deleting employees, pay history, leave, deductions, reports or certifications.
 
 CHANGES
-- Terminated employees can now receive valid Additional Earnings in the selected/current pay period without receiving Regular Pay after termination.
-- Current Annual Leave Loading now stays on the same payslip as the employee's Annual Leave/Regular Pay where the position and base rate match.
-- Annual Leave and Annual Leave Loading remain consolidated for payslip display where the applicable rate and position match.
-- No casual-payment workflow or concurrent-position workflow has been added; those remain unchanged as requested.
+- Fixed retro settlement across historical pay periods. Finalised retro earnings and recoveries are now counted once against the cumulative historical entitlement rather than repeatedly by overlapping source-date ranges.
+- A retro payment that has already been fully offset by a finalised recovery will remain settled and will not reappear in a later pay.
+- Added a targeted regression test for the reported +8.29 Regular Pay Retro, -8.29 recovery, +8.29 repeat pattern.
+- All v1.1.19 functionality remains in place, including terminated-employee Additional Earnings and same-payslip Annual Leave Loading.
 
 Review payroll results before finalisation. This remains a browser-based demonstration and is not production payroll software.

@@ -1,49 +1,73 @@
-Payroll/HCM App v1.1.19 — Test Results
-Date: 7 August 2026
-Baseline: Payroll/HCM App v1.1.18
+Payroll/HCM App v1.1.20 — Test Results
 
-RESULT
-PASS — all completed syntax, calculation, regression, targeted payroll and static package checks passed.
+RESULT: PASS
 
-STATIC AND PACKAGE CHECKS
-PASS — app.js JavaScript syntax
-PASS — payroll-engine.js JavaScript syntax
-PASS — data-store.js JavaScript syntax
-PASS — test-cases.js JavaScript syntax
-PASS — version labels and local asset query strings use v1.1.19
-PASS — all local files referenced by index.html are present
-PASS — no duplicate static HTML IDs
-PASS — no unexpected control characters in core source files
-PASS — index.html, app.js, payroll-engine.js, data-store.js, styles.css and latest-version.json returned HTTP 200 from a local static server
+BASELINE
+- Built directly from v1.1.19.
+- Existing localStorage key remains payrollAppData so prior saved data is migrated in place.
 
-AUTOMATED REGRESSION SUITE
-PASS — 75 Node.js regression test blocks completed without an assertion failure.
+SYNTAX
+- data-store.js: PASS
+- payroll-engine.js: PASS
+- app.js: PASS
+- test-cases.js: PASS
 
-Existing behaviour rechecked includes:
-- fixed PPE 04/06/2026 anchor cycle and 03/05/2026 prior-processing cut-off
-- ordinary pay, public holidays, leave, partial-day leave and zero-pay suppression
-- Annual Leave and Personal Leave accruals and finalisation
-- tax, STSL, superannuation and deduction calculations
-- difference-only retro, retro tax, duplicate-retro suppression and rehire boundaries
-- finalised leave payout protection
-- Certification Report saving, locking, alerts and overdue reports
-- effective-dated addresses and finalised payslip snapshots
-- Personal Leave evidence validation, Bereavement Leave and confidential FDV Leave
-- Reimbursement and Overpayment Adjustment non-leave-accruing treatment
-- automatic and historical Annual Leave Loading
-- Reports and Statement of Service
-- payslip Annual Leave/Annual Leave Loading display consolidation
+REGRESSION SUITE
+- 76 automated test blocks executed successfully.
+- Existing payroll, leave, tax/STSL, super, deductions, retro, rehire, certification, alerts, reports, Statement of Service, Reimbursement, Annual Leave Loading, terminated-employee Additional Earnings and payslip-grouping tests remain passing.
 
-V1.1.19 TARGETED CHECKS
-PASS — a previously terminated employee with a finalised prior termination pay can receive saved Additional Earnings in a later open pay period.
-PASS — both amount-based Reimbursement and hours-based Additional Day earnings are payable to the terminated employee.
-PASS — no Regular Pay is recreated after termination.
-PASS — no finalised pre-termination Regular Pay is recreated as Regular Pay Retro.
-PASS — a prior finalised Annual Leave Payout is not repeated in the later Additional Earnings pay.
-PASS — current Annual Leave and Annual Leave Loading for the same position/base rate produce one payslip, not separate payslips.
-PASS — Annual Leave remains a separate earnings row from Annual Leave Loading within that one payslip.
-PASS — existing multi-day payslip display consolidation for Annual Leave and Annual Leave Loading remains intact.
-PASS — genuine different positions/base rates remain eligible for separate payslips.
+TARGETED RETRO OSCILLATION TEST
+- PASS: A finalised +8.29 Regular Pay Retro followed by a finalised -8.29 recovery is treated as fully settled.
+- PASS: The current pay does not generate the +8.29 Regular Pay Retro again.
+- PASS: The test deliberately uses different historical date ranges for the positive and negative retro rows, reproducing the overlap condition that could cause v1.1.19 to count one settlement more than once.
 
-SCOPE / LIMITATIONS
-The automated suite validates the implemented payroll engine, data migration, report generation and key application-source behaviours. A full interactive browser automation suite is not bundled with this demonstration. This remains a browser-based client-side demonstration and is not certified for production payroll use. Production deployment requires secure server-side storage, role-based access, maintained tax/industrial-instrument data, privacy controls and independent payroll/legal/security validation.
+PACKAGE CHECKS
+- index.html local CSS/JS references all resolve: PASS
+- Version label / APP_VERSION / latest-version.json all report v1.1.20: PASS
+- ZIP created, extracted to a clean folder, JavaScript syntax rechecked and the full 76-test regression suite rerun: PASS
+- Clean-extraction test output matched the source-folder test output exactly: PASS
+
+RETRO ENGINE CHANGE
+Historical retro is now settled cumulatively across eligible finalised pay periods within the current employment segment. Finalised retro earnings and recoveries are counted once in the settlement total, preventing overlapping historical date ranges from creating +A / -A / +A oscillation in later pays.
+
+RAW REGRESSION OUTPUT
+PASS: Login button/password strings and app version are present
+PASS: Current pay is PPE4/6/26
+PASS: Period is 22/5/26 - 4/6/26
+PASS: Payment date is 4/6/26
+PASS: Pay close is 29/5/26
+PASS: Monday-Friday 7.5 hours pays 37.5 hours
+PASS: Commencement date is included in pay
+PASS: Leave over non-working days only deducts scheduled work days
+PASS: Leave over public holiday does not deduct credits and pays Public Holiday
+PASS: No zero-gross payslips are generated
+PASS: Position changes create separate payslips
+PASS: Backdated commencement retro includes all scheduled days
+PASS: Additional earnings only pay once saved and use effective rates
+PASS: Retro prior-processing cut-off prevents payments before 03/05/2026
+PASS: Tax Details, Marginal Tax and STSL calculations are present
+PASS: Payslip removes LSL pro-rata and Certification Report removes Super
+PASS: Partial-day leave deducts only entered hours and pays the remaining day as Regular Pay
+PASS: Overlapping leave bookings are prevented
+PASS: Current-pay additional earnings stay on the same payslip
+PASS: SG rate is 12% of ordinary time earnings and excludes overtime
+PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows
+PASS: Prior-pay additional earnings use the original earnings type plus Retro
+PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present
+PASS: No Tax Details fallback tax and payslip No TFN label are present
+PASS: Uploaded tax tables, tax-free-threshold Yes/No and STSL Yes affect pay calculations
+PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip
+PASS: Zero-net prior-period leave retro replacement remains visible
+PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly
+PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
+PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
+PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
+PASS: v1.1.18 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.
+PASS: v1.1.18 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.
+PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.
+PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California Franchise Statement of Service changes are verified.
+PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
+PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
+
+LIMITATION
+This is still a browser-based payroll demonstration, not certified production payroll software. The automated suite verifies the implemented rules and reported regression scenario but does not replace independent payroll/legal validation or production security testing.

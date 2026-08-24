@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.19'), 'sidebar/version label must show v1.1.19');
-  assert(data.includes("APP_VERSION = '1.1.19'"), 'data-store version must be 1.1.19');
+  assert(html.includes('v1.1.20'), 'sidebar/version label must show v1.1.20');
+  assert(data.includes("APP_VERSION = '1.1.20'"), 'data-store version must be 1.1.20');
 })();
 
 (function testAnchorPayCycle(){
@@ -958,6 +958,29 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(totalAmountByDesc(third,'Annual Leave Loading Retro'),0,'Finalised Annual Leave Loading Retro must not be paid again');
 })();
 
+
+(function testV1120RetroSettlementCannotOscillateAcrossPays(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  // Store three correctly paid/finalised base pays. Two later retro rows cancel each
+  // other, but deliberately carry different historical date ranges. v1.1.19 could
+  // count the wide positive row against more than one historical pay and regenerate
+  // the same 8.29-hour adjustment again.
+  for(let id=1; id<=3; id++){
+    const c=E.cycleById(id);
+    const rows=E.expectedGross(state,e,c).rows.map(r=>Object.assign({},r));
+    if(id===2) rows.push({description:'Regular Pay Retro',kind:'retro',units:8.29,rate:40,baseRate:40,amount:331.60,startDate:E.cycleById(1).start,endDate:E.cycleById(2).end,position:'Officer',ote:true,accrualUnits:0,balanceUnits:0});
+    if(id===3) rows.push({description:'Regular Pay Retro',kind:'retro',units:-8.29,rate:40,baseRate:40,amount:-331.60,startDate:E.cycleById(1).start,endDate:E.cycleById(1).end,position:'Officer',ote:true,accrualUnits:0,balanceUnits:0});
+    state.payslips.push({id:`settled_${id}`,empId:e.id,cycleId:id,finalised:true,rows});
+    state.finalisedCycles[String(id)]={id,finalisedAt:c.paymentDate};
+  }
+  state.currentCycleId=4;
+  const retro=E.retroRows(state,e,E.cycleById(4));
+  const regularRetro=retro.filter(r=>r.description==='Regular Pay Retro' && Math.abs(Number(r.amount||0))>=0.01);
+  assert.strictEqual(regularRetro.length,0,'A finalised +8.29 retro and matching -8.29 recovery must settle to zero and must not be generated again in a later pay');
+  const current=E.calculateEmployee(state,e.id,4,false);
+  assert.strictEqual(totalAmountByDesc(current,'Regular Pay Retro'),0,'Current pay must not re-pay the already-settled 8.29 Regular Pay Retro');
+})();
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -997,3 +1020,4 @@ console.log('PASS: v1.1.18 leave payout, rehire, structured address, evidence, O
 console.log('PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.');
 console.log('PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald\'s California Franchise Statement of Service changes are verified.');
 console.log('PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.');
+console.log('PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.');

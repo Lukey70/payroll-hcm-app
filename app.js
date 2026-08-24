@@ -1389,6 +1389,10 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.20',notes:[
+      'Fixed retro settlement so finalised positive retro and matching recoveries are counted once across history and cannot oscillate into later pays.',
+      'Added regression protection for the reported +8.29 / -8.29 / +8.29 Regular Pay Retro loop.'
+    ]},
     {version:'v1.1.19',notes:[
       'Allowed valid Additional Earnings to be paid to terminated employees without recreating Regular Pay after termination.',
       'Kept current Annual Leave Loading on the same payslip as the employee\'s Annual Leave and Regular Pay when the position and base rate match.'

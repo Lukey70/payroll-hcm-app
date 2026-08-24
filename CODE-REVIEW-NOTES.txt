@@ -1,25 +1,27 @@
-Payroll/HCM App v1.1.19 — Code Review Notes
+Payroll/HCM App v1.1.20 — Code Review Notes
 
 BASELINE
-Built directly from Payroll/HCM App v1.1.18 without resetting or replacing stored payroll data.
+Built directly from Payroll/HCM App v1.1.19 without resetting or replacing stored payroll data.
 
-TERMINATED EMPLOYEE ADDITIONAL EARNINGS
-- Removed the calculation short-circuit that excluded an employee entirely when they were no longer employed during the selected pay cycle.
-- Ordinary pay, leave and public-holiday generation still requires the employee to be employed on the relevant date.
-- Saved Additional Earnings can still be processed for a terminated employee when entered for the selected pay period.
-- This does not recreate Regular Pay after termination.
-- Existing payout/correction and retro rules remain intact.
+RETRO SETTLEMENT / OSCILLATION FIX
+- Reworked the historical retro comparison to settle all eligible finalised cycles cumulatively within the employee's current employment segment.
+- Prior finalised retro payments and retro recoveries are now included once in the cumulative settlement total instead of being re-applied separately to every historical cycle whose date range they overlap.
+- This prevents a consolidated or broadly dated retro row from being double-counted across multiple prior cycles.
+- Once a positive retro and matching recovery have both finalised, the remaining retro balance is zero and later Calculate Pay runs do not recreate the adjustment unless the underlying historical entitlement changes again.
+- Payout/cash-out rows remain excluded from the general retro comparison, preserving the separate leave-payout safeguards introduced previously.
+- Rehire/current-employment-segment boundaries remain in force, so prior employment history is not pulled into a new employment segment.
 
-ANNUAL LEAVE LOADING PAYSLIP GROUPING
-- Annual Leave Loading now uses the underlying/base pay rate for payslip grouping.
-- This keeps current Annual Leave Loading on the same payslip as Annual Leave and Regular Pay for the same position/base rate.
-- The loading remains its own earnings line and retains its own 17.5% calculated rate/amount.
-- Different positions or genuine base-rate differences still generate separate payslips where appropriate.
-- Existing display consolidation of multi-day Annual Leave and Annual Leave Loading remains unchanged.
+TARGETED REPORTED SCENARIO
+A regression test now stores:
+1. a finalised +8.29 Regular Pay Retro row with a broad historical date range;
+2. a finalised -8.29 Regular Pay Retro recovery with a narrower historical date range; and
+3. a later open pay.
+The later pay must produce no Regular Pay Retro because the two finalised adjustments settle to zero.
 
-UNCHANGED BY REQUEST
-- Casual payments have not been added to Additional Earnings.
-- Concurrent/multiple-position employment has not been redesigned.
+UNCHANGED
+- Terminated employees can still receive valid Additional Earnings without Regular Pay after termination.
+- Current Annual Leave Loading remains on the same payslip as Annual Leave/Regular Pay for the same position/base rate.
+- Casual-payment and concurrent-position workflows remain unchanged as requested.
 
 VALIDATION
-See test-results.txt for syntax, regression, static package and browser smoke-test results.
+See test-results.txt for syntax, regression, static package and Chromium smoke-test results.
