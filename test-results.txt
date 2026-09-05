@@ -1,38 +1,30 @@
-Payroll/HCM App v1.1.21 — Test Results
+Payroll/HCM App v1.1.22 — Test Results
 
-RESULT: PASS
-
-BASELINE
-- Built directly from v1.1.20.
-- Existing localStorage key remains payrollAppData so saved data is migrated in place.
+OVERALL RESULT: PASS
 
 SYNTAX
-- data-store.js: PASS
-- payroll-engine.js: PASS
-- app.js: PASS
-- test-cases.js: PASS
+PASS — data-store.js
+PASS — payroll-engine.js
+PASS — app.js
+PASS — test-cases.js
 
 REGRESSION SUITE
-- 77 automated test blocks executed successfully.
-- 300 assertion checks are present across the suite.
-- Existing payroll, leave, tax/STSL, super, deductions, retro, rehire, certification, alerts, reports, Statement of Service, Reimbursement, Annual Leave Loading, terminated-employee Additional Earnings and payslip-grouping tests remain passing.
+PASS — 82 automated regression test blocks completed without assertion failures.
 
-TARGETED RESIGNATION TEST
-- PASS: Deleted/stale Expiry of Fixed Term state is replaced by the saved Voluntary Resignation.
-- PASS: The current cycle pays only 7.5 hours of Regular Pay where only one scheduled day falls before the resignation effective date.
-- PASS: The stale duplicate/open current employment segment is removed.
-- PASS: No Regular Pay is generated on or after the resignation effective date.
-- PASS: Automatic fixed-term processing does not recreate an Expiry of Fixed Term event when the explicit resignation exists.
+TARGETED v1.1.22 TESTS
+PASS — A retro Personal Leave day produces exactly 7.5 balanceUnits for a 7.5-hour day; the consolidation layer no longer doubles it to 15.
+PASS — The projected Personal Leave balance deducts the retro leave once and continues the normal current-pay accrual.
+PASS — The one-time balance repair corrects a previously finalised doubled Personal Leave retro deduction and is idempotent.
+PASS — Leave Without Pay Retro appears as a visible zero-dollar payslip row with the retro units while the related Regular Pay Retro carries the financial recovery/correction.
+PASS — Paid Parental Leave validates 18 weeks at Full Pay and blocks a longer Full Pay booking.
+PASS — Paid Parental Leave validates up to 36 weeks at Half Pay using an 18-week full-pay-equivalent entitlement.
+PASS — A 36-week Half Pay parental leave arrangement reduces the standard unpaid maximum to 16 weeks.
+PASS — Half Pay parental leave pays scheduled hours at 50% of the normal rate.
+PASS — Parental Leave - Unpaid Extension rejects a duration beyond 2 years.
+PASS — The Leave booking UI contains all three parental leave types plus Full Pay / Half Pay selection.
+PASS — App startup/import invokes the one-time Personal Leave repair hook.
 
-PACKAGE CHECKS
-- index.html local CSS/JS references all resolve: PASS
-- Version label / APP_VERSION / latest-version.json all report v1.1.21: PASS
-- ZIP created and extracted to a clean folder: PASS
-- JavaScript syntax rechecked from the clean extraction: PASS
-- Full 77-test regression suite rerun from the clean extraction: PASS
-- Clean-extraction regression output matched the source-folder output exactly: PASS
-
-RAW REGRESSION OUTPUT
+FULL TEST OUTPUT
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -71,6 +63,10 @@ PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California F
 PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
 PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
 PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.
+PASS: v1.1.22 retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules are verified.
 
-LIMITATION
-This is a browser-based payroll demonstration, not certified production payroll software. The automated suite verifies the implemented rules and the reported regression scenario but does not replace independent payroll/legal validation or production security testing.
+PACKAGE/CLEAN-EXTRACTION
+PASS — Final ZIP was extracted into a clean directory.
+PASS — JavaScript syntax checks passed again from the extracted package.
+PASS — All 82 automated regression test blocks passed again from the extracted package.
+PASS — Expected package files and local references are present.

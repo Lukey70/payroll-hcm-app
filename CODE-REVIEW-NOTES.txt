@@ -1,30 +1,38 @@
-Payroll/HCM App v1.1.21 — Code Review Notes
+Payroll/HCM App v1.1.22 — Code Review Notes
 
 BASELINE
-Built directly from Payroll/HCM App v1.1.20. Existing stored payroll data remains under the same localStorage key and is migrated in place.
+Built directly from Payroll/HCM App v1.1.21. Existing payroll data remains under the same localStorage key and is migrated in place.
 
-RESIGNATION / FIXED-TERM JOB DATA FIX
-- Added reconciliation between saved Job Data rows and the employee's current employment segment before payroll calculation.
-- A saved current-employment Termination row is now authoritative for the employment end date and termination reason.
-- If an old Expiry of Fixed Term row has been deleted and replaced by an earlier Voluntary Resignation, stale or duplicate current employment segments are collapsed and the resignation boundary is used.
-- Regular Pay is generated only for scheduled working days before a normal/manual termination effective date. A Voluntary Resignation remains an exclusive boundary, consistent with the existing app rule that the termination effective date is the first non-employed day.
-- Automatic fixed-term expiry processing now checks for an explicit saved Job Data termination and will not recreate an Expiry of Fixed Term event over a resignation.
-- The reconciliation runs for both whole-pay calculation and employee-selected Calculate Pay, so cached/stale employment segment data cannot continue paying a full fortnight after a saved resignation.
+RETRO PERSONAL LEAVE BALANCE FIX
+- Root cause identified in consolidatePayslipRetroRows(): the first retro row copied its existing balanceUnits/accrualUnits and then added those values again, doubling the leave-credit movement.
+- The consolidation accumulator now starts balanceUnits and accrualUnits at zero before adding each row.
+- A one-day retro Personal Leave booking now carries exactly one day of balanceUnits, so Personal Leave is deducted once only.
+- Current-period leave accrual remains based on ordinary hours and is not duplicated by the retro replacement pair.
 
-TARGETED REPORTED SCENARIO
-Regression coverage recreates a fixed-term employee with stale expiry/open employment-segment data, removes the expiry from saved Job Data, and stores a Voluntary Resignation effective 25/05/2026. For the PPE 04/06/2026 cycle, only Friday 22/05/2026 is payable at 7.5 hours. The test verifies:
-- Regular Pay = 7.5 hours, not 75 hours;
-- termination date = 25/05/2026;
-- termination reason = Voluntary Resignation;
-- duplicate/open current segments are removed;
-- no pay is generated on or after 25/05/2026; and
-- automatic fixed-term processing does not recreate an expiry event.
+ONE-TIME PERSONAL LEAVE BALANCE REPAIR
+- v1.1.22 scans finalised payslips for the prior doubled Personal Leave Retro signature.
+- Where a reliable previous finalised balance snapshot exists and there has not been a later manual Absence Balance adjustment/recalculation, the employee's stored Personal Leave balance is rebuilt across the affected finalised cycles.
+- The rebuild uses the finalised cycle's Personal Leave accrual, current Personal Leave taken, and the correct displayed retro Personal Leave units rather than the previously doubled balanceUnits.
+- The repair runs once, is recorded under state.repairs, and writes a Job Summary/audit record when it changes a balance.
+- Employees with a later manual balance adjustment/recalculation are deliberately not overwritten automatically.
 
-UNCHANGED
-- The v1.1.20 cumulative retro settlement fix remains in place.
-- Terminated employees can still receive legitimate Additional Earnings without recreating post-termination Regular Pay.
-- Annual Leave Loading and payslip grouping behaviour are unchanged.
-- Casual-payment and concurrent-position workflows remain unchanged as requested.
+LEAVE WITHOUT PAY RETRO PAYSLIP
+- Zero-dollar Leave Without Pay changes can now create an informational "Leave Without Pay Retro" row with units and the applicable rate.
+- The related Regular Pay Retro recovery/correction remains the financial line; the LWOP Retro line does not add to gross, super or leave accrual.
+- The line is retained by payslip consolidation even though its amount is zero.
+
+PARENTAL LEAVE
+- Added Parental Leave - Paid, Parental Leave - Unpaid, and Parental Leave - Unpaid Extension.
+- Paid Parental Leave supports Full Pay and Half Pay.
+- Paid entitlement is tracked as 18 full-pay-equivalent weeks: Full Pay consumes one entitlement day per calendar day; Half Pay consumes one-half day, allowing up to 36 calendar weeks at half pay.
+- Standard unpaid parental leave is capped at 34 weeks and reduces as the paid calendar period exceeds 18 weeks; a full 36-week half-pay booking leaves a maximum 16 weeks unpaid.
+- Unpaid Extension is capped at 730 calendar days (2 years).
+- Maximums are cumulative across bookings.
+- Paid parental leave pays scheduled working hours at 100% or 50% of the normal rate. Unpaid types generate no earnings and do not accrue leave.
+- Public holidays inside a parental-leave booking do not create a separate public-holiday payment.
+- All parental leave types use the existing dark-green Other Leave category on the Absence Calendar.
 
 VALIDATION
-See test-results.txt for JavaScript syntax checks, full regression results, package checks and clean-extraction verification.
+- JavaScript syntax checks pass for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- 82 automated regression test blocks pass.
+- Targeted tests cover the Personal Leave retro double-deduction, one-time repair, visible LWOP Retro line, and parental leave duration/pay rules.

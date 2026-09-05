@@ -44,6 +44,11 @@
 
   function init(){
     state = DataStore.migrate(state);
+    const personalLeaveRepair=E.repairPersonalLeaveBalances(state);
+    if(personalLeaveRepair && personalLeaveRepair.repaired && personalLeaveRepair.repaired.length){
+      state.auditLog=state.auditLog||[];
+      state.auditLog.unshift(`v1.1.22 automatically corrected Personal Leave balances for ${personalLeaveRepair.repaired.length} employee(s) affected by the retro leave balance issue.`);
+    }
     DataStore.save(state);
     attachGlobalEvents();
     hydrateLogin();
@@ -879,12 +884,12 @@
     const base=new Date(E.parseDate(currentCycle().start).getFullYear(),E.parseDate(currentCycle().start).getMonth()+leaveMonthOffset,1); const monthStart=E.iso(new Date(base.getFullYear(),base.getMonth(),1)); const monthEnd=E.iso(new Date(base.getFullYear(),base.getMonth()+1,0));
     const list=state.leaveBookings.filter(l=>(!leaveFilterEmp||l.empId===leaveFilterEmp)&&E.compare(l.startDate,monthEnd)<=0&&E.compare(l.endDate,monthStart)>=0).sort((a,b)=>E.compare(a.startDate,b.startDate));
     h('leave', `<h2>Leave</h2><div class="leave-action-row"><div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="purple">Absence Calendar</button><button id="cashOutLeaveBtn" class="success">Cash Out Leave</button></div><div class="controls right-controls"><button id="filterLeaveBtn" class="teal">Filter</button></div></div><br><br><div class="controls"><button id="prevMonth" class="secondary">Previous Month</button><strong>${base.toLocaleDateString('en-AU',{month:'long',year:'numeric'})}</strong><button id="nextMonth" class="secondary">Next Month</button>${leaveFilterEmp?`<span class="badge badge-info">Filtered: ${esc(E.employeeName(emp(leaveFilterEmp)))}</span>`:''}</div><div id="leaveList"></div>`);
-    h('leaveList', table(['Employee','Type','Start','End','Hours','Status','Action'], list.map(l=>[esc(E.employeeName(emp(l.empId)||{})),esc(l.type==='LWOP'?'Leave Without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),badge(l.status||'Approved'),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`])));
+    h('leaveList', table(['Employee','Type','Start','End','Hours','Status','Action'], list.map(l=>[esc(E.employeeName(emp(l.empId)||{})),esc(l.type==='LWOP'?'Leave Without Pay':(l.type==='Parental Leave - Paid'&&l.payOption?`${l.type} (${l.payOption})`:l.type)),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),badge(l.status||'Approved'),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`])));
     $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
-    ['leaveEmp','leaveType','leaveStart','leaveEnd'].forEach(id=>$(id).addEventListener('change',updateLeaveDuration));
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    ['leaveEmp','leaveType','leaveStart','leaveEnd','parentalPayOption'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('change',updateLeaveDuration); });
     $('leaveDuration').addEventListener('input',()=>updateLeaveDuration(false));
     $('leaveStart').addEventListener('change',()=>{ setv('leaveEnd',v('leaveStart')); updateLeaveDuration(); });
     bindShowTerminated('leaveBookShowTerminated','leave',openLeaveModal); $('saveLeave').addEventListener('click',saveLeave);
@@ -893,7 +898,7 @@
   function updateLeaveDuration(resetValue=true){
     if(!$('leaveDuration')) return;
     const evidence=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
-    const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence});
+    const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence,payOption:v('parentalPayOption')||'Full Pay'});
     const duration=$('leaveDuration');
     const single=v('leaveStart') && v('leaveStart')===v('leaveEnd');
     const editable=single && ['Annual Leave','Personal Leave','LWOP','Family and Domestic Violence Leave'].includes(v('leaveType')) && basic.partialAllowed;
@@ -903,6 +908,7 @@
     if(resetValue) setv('leaveDuration', basic.hours ? Number(basic.hours).toFixed(2) : '0.00');
     if($('personalEvidenceRow')) $('personalEvidenceRow').style.display=v('leaveType')==='Personal Leave'?'block':'none';
     if($('fdvPrivacyNote')) $('fdvPrivacyNote').style.display=v('leaveType')==='Family and Domestic Violence Leave'?'block':'none';
+    if($('parentalPayOptionRow')) $('parentalPayOptionRow').style.display=v('leaveType')==='Parental Leave - Paid'?'block':'none';
     if($('leaveBalanceNote')){
       const le=emp(v('leaveEmp')); const lt=v('leaveType');
       if(le && ['Annual Leave','Personal Leave','Long Service Leave'].includes(lt)){
@@ -912,19 +918,31 @@
         h('leaveBalanceNote', `${label}: ${Number(val||0).toFixed(2)}`);
       }else if(le && lt==='Family and Domestic Violence Leave'){
         h('leaveBalanceNote', `Available balance remaining: ${Number(E.fdvRemainingDays(state,le,v('leaveStart')||currentCycle().start)||0).toFixed(2)} days`);
+      }else if(le && E.isParentalLeaveType(lt)){
+        const usage=E.parentalLeaveUsage(state,le);
+        if(lt==='Parental Leave - Paid'){
+          const remainingEquivalent=Math.max(0,usage.paidEntitlementDays-usage.paidFullPayEquivalentDays);
+          h('leaveBalanceNote', `Paid parental leave remaining: ${(remainingEquivalent/7).toFixed(2)} full-pay-equivalent weeks. Full Pay may be taken for up to 18 weeks; Half Pay may extend the paid period to up to 36 weeks.`);
+        }else if(lt==='Parental Leave - Unpaid'){
+          h('leaveBalanceNote', `Parental Leave - Unpaid available maximum remaining: ${Math.max(0,(usage.unpaidMaxDays-usage.unpaidDays)/7).toFixed(2)} weeks. The maximum reduces when Paid Parental Leave is taken beyond 18 calendar weeks, including Half Pay arrangements.`);
+        }else{
+          h('leaveBalanceNote', `Parental Leave - Unpaid Extension remaining: ${Math.max(0,(usage.extensionMaxDays-usage.extensionDays)/365).toFixed(2)} years (maximum 2 years).`);
+        }
       }else h('leaveBalanceNote','');
     }
     if($('leaveDurationNote')){
       if(editable) h('leaveDurationNote', `Partial-day leave is available. Maximum for this date is ${Number(basic.maxHours||0).toFixed(2)} hours.`);
+      else if(E.isParentalLeaveType(v('leaveType'))) h('leaveDurationNote', 'Absence Duration shows scheduled working hours only. Parental leave maximums are validated using the full calendar leave period, including weekends and non-working days.');
       else h('leaveDurationNote', 'Absence Duration is automatically calculated. It is greyed out for Long Service Leave or date ranges longer than one day.');
     }
   }
   function saveLeave(){
     const requested = $('leaveDuration') && !$('leaveDuration').readOnly ? Number(v('leaveDuration')||0) : undefined;
     const evidenceProvided=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
-    const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided});
+    const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
+    const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided,payOption});
     if(!result.ok) return alert(result.message);
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, confidential:v('leaveType')==='Family and Domestic Violence Leave', status:'Approved' });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', status:'Approved' });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
@@ -950,8 +968,8 @@
         const leave=employed?state.leaveBookings.find(l=>l.empId===e.id&&E.between(d,l.startDate,l.endDate)):null;
         const isPH=E.isPublicHoliday(d);
         let cls=hrs<=0?'nonrostered':''; let title=hrs<=0?'Non Rostered Day':'';
-        if(leave && hrs>0 && !isPH){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave'; title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave'); }
-        if(isPH){ cls='publicholiday'; title=E.publicHolidayName(d)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); }
+        if(leave && hrs>0 && (!isPH || E.isParentalLeaveType(leave.type))){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave'; title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave'); }
+        if(isPH && !(leave && E.isParentalLeaveType(leave.type))){ cls='publicholiday'; title=E.publicHolidayName(d)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); }
         body+=`<div class="cal-day ${cls}" title="${esc(title)}"><strong>${day}</strong></div>`;
       }
       body+='</div></div>';
@@ -1380,7 +1398,7 @@
     results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
       const e=emp(l.empId); if(!e) return;
-      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided});
+      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay'});
       if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
     });
     const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
@@ -1389,6 +1407,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.22',notes:[
+      'Fixed retro Personal Leave balance handling so retro leave units are deducted once rather than being doubled during payslip consolidation.',
+      'Added a one-time Personal Leave balance audit/repair for employees whose finalised retro Personal Leave was affected by the previous doubling issue.',
+      'Added Leave Without Pay Retro as a visible informational payslip line alongside any related Regular Pay recovery or correction.',
+      'Added Paid, Unpaid and Unpaid Extension parental leave types with 18-week full-pay / 36-week half-pay rules, dependent unpaid limits and a 2-year extension maximum.'
+    ]},
     {version:'v1.1.21',notes:[
       'Fixed Job Data termination recalculation so a saved resignation becomes the authoritative current employment end date.',
       'Reconciled stale or duplicate current employment segments after Job Data edits so Regular Pay stops at the resignation boundary instead of paying the full fortnight.',
@@ -1568,7 +1592,7 @@
   function importData(event){
     const file=event.target.files[0]; if(!file) return;
     const reader=new FileReader();
-    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
+    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; E.repairPersonalLeaveBalances(state); save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
     reader.readAsText(file); event.target.value='';
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }

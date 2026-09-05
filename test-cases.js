@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.21'), 'sidebar/version label must show v1.1.21');
-  assert(data.includes("APP_VERSION = '1.1.21'"), 'data-store version must be 1.1.21');
+  assert(html.includes('v1.1.22'), 'sidebar/version label must show v1.1.22');
+  assert(data.includes("APP_VERSION = '1.1.22'"), 'data-store version must be 1.1.22');
 })();
 
 (function testAnchorPayCycle(){
@@ -1019,6 +1019,98 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 })();
 
 
+(function testV1122RetroPersonalLeaveBalanceDeductsOnce(){
+  const state=baseState(); const e=addEmployee(state,{personalLeaveBalance:34}); addSchedule(state,e.id); addRate(state,e.id);
+  for(let id=1; id<=2; id++){
+    const c=E.cycleById(id);
+    const pays=E.calculateEmployee(state,e.id,id,true).map(p=>Object.assign({},p,{finalised:true}));
+    state.payslips.push(...pays);
+    state.finalisedCycles[String(id)]={id,finalisedAt:c.paymentDate};
+  }
+  state.currentCycleId=3;
+  state.leaveBookings.push({id:'retro_pl',empId:e.id,type:'Personal Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const pays=E.calculateEmployee(state,e.id,3,false);
+  const retroRows=pays.flatMap(p=>p.rows||[]).filter(r=>r.description==='Personal Leave Retro');
+  assert.strictEqual(retroRows.length,1,'Retro Personal Leave should consolidate to one row');
+  assert.strictEqual(Number(retroRows[0].balanceUnits),7.5,'Retro Personal Leave balance units must be deducted once, not doubled');
+  const expected=E.round4(34 + E.leaveAccrualForOrdinaryHours(e,75).personal - 7.5);
+  assert.strictEqual(E.round4(pays[0].balances.personal),expected,'Projected Personal Leave balance must only deduct the actual retro leave hours once');
+})();
+
+(function testV1122PersonalLeaveRepairCorrectsPreviouslyFinalisedDoubleDeduction(){
+  const state=baseState(); const e=addEmployee(state,{personalLeaveBalance:23.3269}); addSchedule(state,e.id); addRate(state,e.id);
+  const cycle2=E.cycleById(2), cycle3=E.cycleById(3);
+  state.currentCycleId=4;
+  state.finalisedCycles['2']={id:2,finalisedAt:cycle2.paymentDate};
+  state.finalisedCycles['3']={id:3,finalisedAt:cycle3.paymentDate};
+  state.payslips.push({
+    id:'good2',empId:e.id,cycleId:2,cycle:cycle2,finalised:true,personalAccrual:E.leaveAccrualForOrdinaryHours(e,75).personal,
+    balances:{personal:34},rows:[{description:'Regular Pay',kind:'regular',units:75,amount:3000,rate:40,startDate:cycle2.start,endDate:cycle2.end,ote:true}]
+  });
+  state.payslips.push({
+    id:'bad3',empId:e.id,cycleId:3,cycle:cycle3,finalised:true,personalAccrual:E.leaveAccrualForOrdinaryHours(e,75).personal,
+    balances:{personal:23.3269},rows:[
+      {description:'Regular Pay',kind:'regular',units:75,amount:3000,rate:40,startDate:cycle3.start,endDate:cycle3.end,ote:true},
+      {description:'Personal Leave Retro',kind:'retro',units:7.5,amount:300,rate:40,startDate:'2026-05-25',endDate:'2026-05-25',ote:true,balanceUnits:15,accrualUnits:15}
+    ]
+  });
+  const result=E.repairPersonalLeaveBalances(state);
+  const expected=E.round4(34 + E.leaveAccrualForOrdinaryHours(e,75).personal - 7.5);
+  assert.strictEqual(E.round4(e.personalLeaveBalance),expected,'One-time repair must restore Personal Leave to the correct balance after a doubled retro deduction');
+  assert.strictEqual(result.repaired.length,1,'Affected employee should be recorded as repaired');
+  const second=E.repairPersonalLeaveBalances(state);
+  assert.strictEqual(second.completedAt,result.completedAt,'Personal Leave repair must be idempotent');
+})();
+
+(function testV1122LeaveWithoutPayRetroVisible(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  const c1=E.cycleById(1);
+  const paid=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
+  state.payslips.push(...paid); state.finalisedCycles['1']={id:1,finalisedAt:c1.paymentDate}; state.currentCycleId=2;
+  state.leaveBookings.push({id:'lwop_retro',empId:e.id,type:'LWOP',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const current=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(totalAmountByDesc(current,'Regular Pay Retro'),-300,'Retro LWOP should recover the previously paid Regular Pay');
+  assert.strictEqual(totalUnitsByDesc(current,'Leave Without Pay Retro'),7.5,'Payslip rows must include Leave Without Pay Retro units');
+  assert.strictEqual(totalAmountByDesc(current,'Leave Without Pay Retro'),0,'Leave Without Pay Retro is informational and must have zero earnings');
+})();
+
+
+(function testV1122ParentalLeaveUiAndRepairHook(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('<option>Parental Leave - Paid</option>')&&app.includes('<option>Parental Leave - Unpaid</option>')&&app.includes('<option>Parental Leave - Unpaid Extension</option>'),'Leave booking UI must expose all three parental leave types');
+  assert(app.includes('id="parentalPayOption"')&&app.includes('<option>Full Pay</option><option>Half Pay</option>'),'Paid Parental Leave must provide Full Pay and Half Pay options');
+  assert(app.includes('E.repairPersonalLeaveBalances(state)'),'App startup/import must invoke the one-time Personal Leave balance repair');
+})();
+
+(function testV1122ParentalLeaveRulesAndHalfPay(){
+  const state=baseState(); const e=addEmployee(state,{personalLeaveBalance:100}); addSchedule(state,e.id); addRate(state,e.id);
+  let full=E.validateLeaveBooking(state,e.id,E.PARENTAL_PAID_LEAVE_TYPE,'2026-06-05','2026-10-08',undefined,undefined,{payOption:'Full Pay'});
+  assert.strictEqual(full.ok,true,'18 weeks Paid Parental Leave at full pay should be valid');
+  let tooLong=E.validateLeaveBooking(state,e.id,E.PARENTAL_PAID_LEAVE_TYPE,'2026-06-05','2026-10-09',undefined,undefined,{payOption:'Full Pay'});
+  assert.strictEqual(tooLong.ok,false,'Paid Parental Leave over 18 weeks at full pay must be blocked');
+
+  const halfState=baseState(); const h=addEmployee(halfState,{id:'H1'}); addSchedule(halfState,h.id); addRate(halfState,h.id);
+  let half=E.validateLeaveBooking(halfState,h.id,E.PARENTAL_PAID_LEAVE_TYPE,'2026-06-05','2027-02-11',undefined,undefined,{payOption:'Half Pay'});
+  assert.strictEqual(half.ok,true,'36 weeks Paid Parental Leave at half pay should be valid');
+  halfState.leaveBookings.push({id:'half',empId:h.id,type:E.PARENTAL_PAID_LEAVE_TYPE,startDate:'2026-06-05',endDate:'2027-02-11',hours:0,payOption:'Half Pay',status:'Approved'});
+  const usage=E.parentalLeaveUsage(halfState,h);
+  assert.strictEqual(usage.unpaidMaxDays,16*7,'36 weeks at half pay must reduce standard unpaid parental leave maximum to 16 weeks');
+  const unpaidTooLong=E.validateLeaveBooking(halfState,h.id,E.PARENTAL_UNPAID_LEAVE_TYPE,'2027-02-12','2027-06-04',undefined,undefined,{});
+  assert.strictEqual(unpaidTooLong.ok,false,'Unpaid parental leave over the remaining 16-week maximum must be blocked');
+
+  const payState=baseState(); const pEmp=addEmployee(payState,{id:'P1'}); addSchedule(payState,pEmp.id); addRate(payState,pEmp.id);
+  payState.leaveBookings.push({id:'hp',empId:pEmp.id,type:E.PARENTAL_PAID_LEAVE_TYPE,startDate:'2026-05-22',endDate:'2026-06-04',hours:75,payOption:'Half Pay',status:'Approved'});
+  const pay=E.calculateEmployee(payState,pEmp.id,1,false);
+  assert.strictEqual(totalUnitsByDesc(pay,E.PARENTAL_PAID_LEAVE_TYPE),67.5,'Half-pay parental leave should retain scheduled working hours while a public holiday inside the parental leave period is not paid separately');
+  assert.strictEqual(totalAmountByDesc(pay,E.PARENTAL_PAID_LEAVE_TYPE),1350,'Half-pay parental leave should pay 50% of normal earnings for scheduled working hours in the period');
+
+  const extensionState=baseState(); const ex=addEmployee(extensionState,{id:'EX1'}); addSchedule(extensionState,ex.id); addRate(extensionState,ex.id);
+  const extensionTooLong=E.validateLeaveBooking(extensionState,ex.id,E.PARENTAL_UNPAID_EXTENSION_TYPE,'2026-06-05','2028-06-05',undefined,undefined,{});
+  assert.strictEqual(extensionTooLong.ok,false,'Unpaid parental leave extension must not exceed 2 years in total');
+})();
+
+
+
 console.log('PASS: Login button/password strings and app version are present');
 console.log('PASS: Current pay is PPE4/6/26');
 console.log('PASS: Period is 22/5/26 - 4/6/26');
@@ -1060,3 +1152,5 @@ console.log('PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald\'
 console.log('PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.');
 console.log('PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.');
 console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.');
+
+console.log('PASS: v1.1.22 retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules are verified.');

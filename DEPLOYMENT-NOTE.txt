@@ -1,12 +1,16 @@
-Payroll/HCM App v1.1.21
+Payroll/HCM App v1.1.22
 
 DEPLOYMENT
-Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.21 migrates existing v1.1.20 data without deleting employees, pay history, leave, deductions, reports or certifications.
+Upload all files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. Version 1.1.22 migrates existing v1.1.21 data in place.
 
 CHANGES
-- Fixed retro settlement across historical pay periods. Finalised retro earnings and recoveries are now counted once against the cumulative historical entitlement rather than repeatedly by overlapping source-date ranges.
-- A retro payment that has already been fully offset by a finalised recovery will remain settled and will not reappear in a later pay.
-- Added a targeted regression test for the reported +8.29 Regular Pay Retro, -8.29 recovery, +8.29 repeat pattern.
-- All v1.1.19 functionality remains in place, including terminated-employee Additional Earnings and same-payslip Annual Leave Loading.
+- Fixed retro Personal Leave balance calculations so consolidated retro rows no longer double their balance/accrual units.
+- Added a one-time audit/repair for employees whose finalised Personal Leave balance was affected by the prior retro double-deduction issue. The repair is idempotent and records an audit/job-history entry when a balance is corrected.
+- Added a visible Leave Without Pay Retro informational earnings line on the current payslip when a retro LWOP booking changes a historical pay.
+- Added Parental Leave - Paid, Parental Leave - Unpaid and Parental Leave - Unpaid Extension.
+- Paid Parental Leave supports Full Pay (maximum 18 weeks) and Half Pay (maximum 36 weeks). Half-pay days consume half of the 18-week full-pay-equivalent entitlement.
+- Standard unpaid parental leave is capped at 34 weeks and reduces as paid parental leave extends beyond 18 calendar weeks, reaching 16 weeks where 36 weeks are taken at half pay.
+- Unpaid parental leave extension is capped at 2 years.
+- Public holidays inside a parental-leave period do not create a separate Public Holiday payment.
 
-Review payroll results before finalisation. This remains a browser-based demonstration and is not production payroll software.
+Review payroll and leave results before finalisation. This remains a browser-based demonstration and is not production payroll software.
