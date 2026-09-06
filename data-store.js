@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.24';
+  const APP_VERSION = '1.1.25';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){

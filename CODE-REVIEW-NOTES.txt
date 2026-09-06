@@ -1,15 +1,14 @@
-v1.1.24
+v1.1.25
 
 Reviewed changes:
-- Union Fees fixed-amount post-tax deduction and persistence.
-- Job Data effective-date semantics, including saved Expiry of Fixed Term migration boundary and preserved inclusive automatic contractEndDate expiry.
-- Annual/Personal Leave one-scheduled-workday negative allowance, including persistence through finalisation and balance recalculation.
-- Payslip date-range filter with default recent-10 behaviour and range expansion/narrowing.
+- Blank End Date support for continuous Union Fees deductions.
+- Multiple concurrent deductions, including overlapping records of the same deduction type.
+- Payslip Annual/Personal Leave closing balances include current-pay leave usage, remain stable on recalculation and are preserved on finalisation.
 
 Validation:
-- Full Node regression suite passed (93 self-invoking test blocks; 386 assertion invocations; 45 PASS summary lines).
+- Full Node regression suite passed (96 self-invoking test blocks; 410 assertion invocations; 46 PASS summary lines).
 - JavaScript syntax checks passed for all four JS files.
 - Simulated/non-browser interface coverage passed where included in the suite.
-- Chromium 144 real-browser smoke attempt did not complete in the execution environment; no real-browser pass is claimed.
+- Chromium 144 real-browser smoke attempt reached the local app with HTTP 200 but did not return a rendered DOM before timeout; no real-browser pass is claimed.
 
-Known limitations are recorded in RELEASE-NOTES-v1.1.24.txt.
+Known limitations are recorded in RELEASE-NOTES-v1.1.25.txt.

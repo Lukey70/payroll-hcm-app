@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.24'), 'sidebar/version label must show v1.1.24');
-  assert(data.includes("APP_VERSION = '1.1.24'"), 'data-store version must be 1.1.24');
+  assert(html.includes('v1.1.25'), 'sidebar/version label must show v1.1.25');
+  assert(data.includes("APP_VERSION = '1.1.25'"), 'data-store version must be 1.1.25');
 })();
 
 (function testAnchorPayCycle(){
@@ -331,6 +331,40 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(d.deductionType,'Union Fees','Union Fees deduction type should be preserved through export/import');
   assert.strictEqual(d.amount,22.75,'Union Fees amount should be preserved through export/import');
   assert.strictEqual(d.percentage,'','Union Fees migration/import must clear any percentage value so the deduction remains amount-only');
+})();
+
+
+(function testUnionFeesMayHaveBlankEndDateAndContinueIndefinitely(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.deductions.push({id:'unionOpen',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Union Fees',amount:18.5,percentage:'',saved:true,deleted:false});
+  const first=E.calculateEmployee(state,e.id,1,false);
+  const second=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(first.reduce((s,p)=>s+Number(p.postTaxDeductionTotal||0),0),18.5,'Blank-end-date Union Fees should apply in the starting pay period');
+  assert.strictEqual(second.reduce((s,p)=>s+Number(p.postTaxDeductionTotal||0),0),18.5,'Blank End Date must keep Union Fees active in later pay periods');
+  assert(E.activeDeductions(state,e,E.cycleById(2),'Union Fees').some(d=>d.id==='unionOpen'),'Blank-end-date Union Fees should remain active until explicitly end-dated or removed');
+})();
+
+(function testMultipleDeductionsMayBeActiveAtTheSameTime(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  const baseline=E.calculateEmployee(state,e.id,1,false);
+  const baselineNet=E.round2(baseline.reduce((s,p)=>s+Number(p.net||0),0));
+  state.deductions.push(
+    {id:'unionA',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Union Fees',amount:12.5,percentage:'',saved:true,deleted:false},
+    {id:'unionB',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Union Fees',amount:7.5,percentage:'',saved:true,deleted:false},
+    {id:'postA',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Post-Tax Super Deduction',amount:10,percentage:'',saved:true,deleted:false}
+  );
+  const payslips=E.calculateEmployee(state,e.id,1,false);
+  const postTotal=E.round2(payslips.reduce((s,p)=>s+Number(p.postTaxDeductionTotal||0),0));
+  const net=E.round2(payslips.reduce((s,p)=>s+Number(p.net||0),0));
+  assert.strictEqual(postTotal,30,'All concurrently active post-tax deductions, including multiple Union Fees records, must be added together');
+  assert.strictEqual(net,E.round2(baselineNet-30),'Concurrent fixed post-tax deductions must reduce net by their combined amount');
+  const unionLines=payslips.flatMap(p=>p.postTaxDeductions||[]).filter(d=>d.description==='Union Fees');
+  assert.strictEqual(unionLines.length,2,'Multiple active Union Fees deductions should remain distinct deduction lines');
+  assert.deepStrictEqual(unionLines.map(d=>d.amount).sort((a,b)=>a-b),[7.5,12.5]);
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(!app.includes('Overlapping ${a.deductionType} records are not allowed'),'Deductions UI must not reject overlapping records of the same deduction type');
+  assert(app.includes('Multiple deductions may be active at the same time.'),'Deductions UI should explain concurrent deductions are supported');
+  assert(app.includes('A blank End Date means the deduction continues until it is end-dated or removed.'),'Deductions UI should explain blank End Date behaviour');
 })();
 
 (function testDeductionsUiAndWarningsExist(){
@@ -681,7 +715,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.deepStrictEqual(active.map(d=>d.id),['newDed'],'A deduction end-dated in the most recent closed pay must not continue into the current open pay');
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes("kind==='end' ? Math.max(0,curIdx-1) : curIdx"),'Deduction end-date options should include the most recent closed pay period');
-  assert(app.includes('Overlapping ${a.deductionType} records are not allowed'),'Replacement deductions should be protected from overlapping records');
+  assert(!app.includes('Overlapping ${a.deductionType} records are not allowed'),'Employees must be able to have multiple deductions of the same type active at the same time');
 })();
 
 (function testV1115RetroDisplayUsesChangedNormalRateForPartialPeriodRateChange(){
@@ -1302,6 +1336,39 @@ console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term e
   assert(appSource.includes('id="payslipDateFrom"')&&appSource.includes('id="payslipDateTo"')&&appSource.includes('Most Recent 10'),'Payslip UI must include From/To date fields and a Most Recent 10 reset');
 })();
 
+
+(function testV1125PayslipLeaveBalancesReflectCurrentPayUsage(){
+  const state=baseState();
+  const e=addEmployee(state,{annualLeaveBalance:100,personalLeaveBalance:50});
+  addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'v1125_al',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,requestedHours:7.5,status:'Approved'});
+  state.leaveBookings.push({id:'v1125_pl',empId:e.id,type:'Personal Leave',startDate:'2026-05-26',endDate:'2026-05-26',hours:7.5,requestedHours:7.5,evidenceProvided:true,status:'Approved'});
+  const open=E.calculateEmployee(state,e.id,1,false);
+  assert(open.length>0,'Current/open pay must produce a payslip for the leave-balance regression');
+  const p=open[0];
+  const expectedAnnual=E.round4(100+Number(p.annualAccrual||0)-7.5);
+  const expectedPersonal=E.round4(50+Number(p.personalAccrual||0)-7.5);
+  assert.strictEqual(E.round4(p.balances.annual),expectedAnnual,'Payslip Annual Leave balance must include the current pay accrual and deduct the 7.5 hours of Annual Leave taken in this pay');
+  assert.strictEqual(E.round4(p.balances.personal),expectedPersonal,'Payslip Personal Leave balance must include the current pay accrual and deduct the 7.5 hours of Personal Leave taken in this pay');
+  const recalculated=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(E.round4(recalculated.balances.annual),expectedAnnual,'Recalculating current pay must not reset or repeat the Annual Leave deduction shown on the payslip');
+  assert.strictEqual(E.round4(recalculated.balances.personal),expectedPersonal,'Recalculating current pay must not reset or repeat the Personal Leave deduction shown on the payslip');
+  assert.strictEqual(e.annualLeaveBalance,100,'Open-pay calculation must not prematurely commit Annual Leave to the employee master balance');
+  assert.strictEqual(e.personalLeaveBalance,50,'Open-pay calculation must not prematurely commit Personal Leave to the employee master balance');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const payslipSection=appSource.slice(appSource.indexOf('function payslipHtml'),appSource.indexOf('function renderCertification'));
+  assert(payslipSection.includes("Number((p.balances&&p.balances.annual)||0).toFixed(4)"),'Payslip rendering must display the calculated current-pay Annual Leave balance snapshot');
+  assert(payslipSection.includes("Number((p.balances&&p.balances.personal)||0).toFixed(4)"),'Payslip rendering must display the calculated current-pay Personal Leave balance snapshot');
+  const finalised=E.finaliseCurrentPay(state).payslips.find(x=>x.empId===e.id);
+  assert(finalised,'Finalisation must retain the employee payslip');
+  assert.strictEqual(E.round4(finalised.balances.annual),expectedAnnual,'Finalised payslip must preserve the Annual Leave balance as at that pay, including current-pay usage');
+  assert.strictEqual(E.round4(finalised.balances.personal),expectedPersonal,'Finalised payslip must preserve the Personal Leave balance as at that pay, including current-pay usage');
+  assert.strictEqual(E.round4(e.annualLeaveBalance),expectedAnnual,'Finalisation must commit the same Annual Leave balance shown on the payslip');
+  assert.strictEqual(E.round4(e.personalLeaveBalance),expectedPersonal,'Finalisation must commit the same Personal Leave balance shown on the payslip');
+})();
+
+console.log('PASS: v1.1.25 payslip Annual and Personal Leave balances include current-pay leave usage and remain stable on recalculation/finalisation.');
+
 console.log('PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.');
 
 (function testParentalEndDates(){
@@ -1336,7 +1403,7 @@ console.log('PASS: Retro Personal Leave balance repair, Leave Without Pay Retro 
   els.leaveType.value='Annual Leave';els.leaveStart.handlers.change();assert.equal(els.leaveEnd.value,'2026-09-07');
   console.log('PASS: Booking form events auto-fill parental dates, update half pay and preserve manually shortened dates');
 })();
-console.log('PASS: Union Fees are fixed-amount post-tax deductions and persist through export/import.');
+console.log('PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and multiple deductions may be active concurrently.');
 console.log('PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.');
-console.log('PASS: v1.1.24 Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.');
-console.log('PASS: v1.1.24 Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.');
+console.log('PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.');
+console.log('PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.');

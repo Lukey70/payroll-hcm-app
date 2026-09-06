@@ -1,7 +1,7 @@
-Payroll/HCM App v1.1.24
+Payroll/HCM App v1.1.25
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.24 migrates existing saved data in place and preserves the existing payrollAppData/localStorage structure.
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.25 migrates existing saved data in place and preserves the existing payrollAppData/localStorage structure.
 
 IMPORTANT
 - The configured open pay cycle remains authoritative; the app does not choose a new cycle from today's date.
@@ -9,12 +9,11 @@ IMPORTANT
 - Finalised historical payslips remain stored separately and must be preserved.
 
 CHANGES
-- Added fixed-amount post-tax Union Fees.
-- Corrected saved Job Data termination/movement effective-date boundaries.
-- Allowed Annual and Personal Leave to go negative by up to one scheduled workday and preserved those negative balances through finalisation/recalculation.
-- Added Payslip From/To date filtering defaulting to the 10 most recent payslips.
+- Union Fees may be left without an End Date and continues until end-dated or removed.
+- Multiple deductions may be active concurrently, including multiple records of the same type.
+- Payslip Annual Leave and Personal Leave balances include current-pay leave usage and current-pay accruals, and are preserved on finalisation.
 
 TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.24.txt for actual automated/simulated/browser results and known limitations.
+See test-results.txt and RELEASE-NOTES-v1.1.25.txt for actual automated/simulated/browser results and known limitations.
 
 This remains a client-side payroll demonstration and is not production payroll software.

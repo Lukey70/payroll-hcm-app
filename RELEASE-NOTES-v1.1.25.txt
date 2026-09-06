@@ -1,0 +1,65 @@
+Payroll/HCM App v1.1.25
+Release date: 6 September 2026
+Starting version: v1.1.24
+
+RELEASE SUMMARY
+v1.1.25 packages the accumulated requests made after v1.1.24. Existing configured pay-cycle selection, manual finalisation, historical payslips, retro rules and import/export structures are preserved.
+
+CHANGES
+
+1. Open-ended Union Fees
+- Union Fees remains an amount-only post-tax deduction.
+- End Date may be left blank.
+- A blank End Date means the deduction remains active in later pay periods until it is end-dated or removed.
+- Migration/import continues to clear any stale Union Fees percentage so the deduction remains fixed-amount only.
+
+2. Multiple simultaneous deductions
+- Employees may have multiple deductions active at the same time.
+- This includes multiple records of the same deduction type, including multiple Union Fees deductions.
+- Each active deduction is calculated separately and all applicable amounts are accumulated.
+- Concurrent deduction lines remain distinct on the payslip deduction data.
+
+3. Payslip Annual Leave and Personal Leave balances
+- Payslip Annual Leave and Personal Leave balances are explicitly regression-protected as balances as at that pay.
+- Leave taken in the current pay is deducted in that payslip's balance immediately.
+- Example: if 7.5 hours Annual Leave is taken in the current pay, the payslip balance includes a 7.5-hour deduction for that leave.
+- Current-pay accruals are also included, so the displayed closing balance is opening/committed balance + current accrual - current-pay leave usage (plus any applicable retro/cash-out/payout effects).
+- Re-running Calculate Pay does not reset the balance or repeat the leave deduction.
+- Finalisation preserves the same balance snapshot on the finalised payslip and commits that balance once.
+
+PRESERVED v1.1.24 BEHAVIOUR
+- Job Data Effective Date remains the first day the new action/status applies; saved terminations are exclusive and automatic fixed-term contractEndDate remains inclusive.
+- Annual Leave and Personal Leave may go negative by up to one scheduled workday.
+- Payslip date-range filtering still defaults to the 10 most recent payslips and can be widened.
+- Union Fees remains post-tax, fixed-amount only and import/export compatible.
+
+TESTING
+- node test-cases.js: PASS, exit code 0.
+- 96 self-invoking test blocks.
+- 410 assertion invocations (241 assert.* method calls + 169 bare assert(...) calls).
+- 46 runtime PASS summary lines.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- New regression coverage verifies current-pay Annual/Personal Leave usage in payslip balances, stable recalculation, finalised balance snapshots and committed balances.
+- Existing regressions for open-ended Union Fees and concurrent deductions remain passing.
+
+INTERFACE TESTING
+- Simulated/non-browser: existing VM/source/form-event checks pass through the Node suite.
+- Real browser: attempted with Chromium 144 through a local HTTP server. The server returned HTTP 200, but Chromium did not return a rendered DOM before a 15-second external timeout. No successful real-browser result is claimed.
+
+DATA / UPGRADE COMPATIBILITY
+- State remains stored in localStorage under payrollAppData.
+- No employee-data schema replacement was introduced.
+- Existing deduction records remain compatible; open-ended deductions use the existing blank endDate representation.
+- Existing pay/payslip and leave balance fields are retained.
+- Export Data before replacing an existing deployment remains strongly recommended.
+
+KNOWN LIMITATIONS
+- The historical Personal Leave repair remains limited to the detectable prior double-deduction pattern and does not prove every historical balance has been repaired.
+- Parental Leave - Unpaid Extension remains implemented as a fixed 730-day maximum; this can differ from two calendar years across a leap day.
+- No successful full real-browser workflow/visual regression was completed in this execution environment.
+- Import/export compatibility is regression-tested for selected legacy scenarios, not every historical release export.
+
+DEFERRED / NOT INCLUDED
+- Casual payments through Additional Earnings.
+- Rosters and timesheets.
+- Multiple concurrent positions per employee.

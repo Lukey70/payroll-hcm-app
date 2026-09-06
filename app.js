@@ -730,7 +730,7 @@
     }).join('');
   }
   function renderDeductions(){
-    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="saveDeductionsBtn">Save</button></div>`);
+    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="saveDeductionsBtn">Save</button></div>`);
     bindShowTerminated('dedShowTerminated','deductions',renderDeductions);
     if(selectedDeductionEmp && employeeList(showTerminatedByTab.deductions).some(e=>e.id===selectedDeductionEmp)) setv('dedEmp',selectedDeductionEmp);
     $('dedEmp').addEventListener('change',()=>{ selectedDeductionEmp=v('dedEmp'); loadDeductionDraft(); });
@@ -786,8 +786,8 @@
     return !E.isFinalised(state,currentCycle()) && !!startCycle && Number(startCycle.id)===Number(currentCycle().id);
   }
   function renderDeductionsTable(){
-    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.'); return; }
-    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.');
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.'); return; }
+    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for pre-tax and post-tax deductions, including super deductions and Union Fees. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.');
     const rows=(deductionDraftRows||[]).filter(d=>d.empId===empId && d.deleted!==true).sort((a,b)=>E.compare(a.startDate,b.startDate)).map(d=>{
       const endCell=deductionCanEditEnd(d)?`<select data-ded-end="${esc(d.id)}"><option value="" ${!d.endDate?'selected':''}></option>${deductionCycleOptions('end',d.endDate||'')}</select>`:E.fmtPay(d.endDate);
       const amountCell=d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>';
@@ -820,15 +820,6 @@
       if(d.deductionType==='Union Fees' && d.percentage!=='' && d.percentage!=null) return alert('Union Fees cannot be entered as a Percentage.');
       if((d.amount===''||d.amount==null) && (d.percentage===''||d.percentage==null)) return alert('Each deduction must have either an Amount or Percentage.');
       if(String(d.amount)!=='' && d.amount!=null && String(d.percentage)!=='' && d.percentage!=null) return alert('Each deduction can have Amount OR Percentage, not both.');
-    }
-    const activeRows=deductionDraftRows.filter(d=>d.empId===empId&&d.deleted!==true);
-    for(let i=0;i<activeRows.length;i++){
-      for(let j=i+1;j<activeRows.length;j++){
-        const a=activeRows[i], b=activeRows[j];
-        if(a.deductionType!==b.deductionType) continue;
-        const aEnd=a.endDate||'9999-12-31', bEnd=b.endDate||'9999-12-31';
-        if(E.compare(a.startDate,bEnd)<=0&&E.compare(b.startDate,aEnd)<=0) return alert(`Overlapping ${a.deductionType} records are not allowed. End-date the existing deduction before starting the replacement deduction.`);
-      }
     }
     loadingModal('Saving Deductions','Save Successful',()=>{
       const before=(state.deductions||[]).filter(d=>d.empId===empId).map(d=>DataStore.clone(d));
@@ -1455,6 +1446,11 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.25',notes:[
+      'Allowed Union Fees deductions to remain open-ended when End Date is blank; the deduction continues until it is end-dated or removed.',
+      'Allowed multiple deductions to be active at the same time, including multiple records of the same deduction type such as Union Fees.',
+      'Confirmed and regression-protected payslip Annual Leave and Personal Leave balances so current-pay leave usage is reflected immediately in the displayed balance.'
+    ]},
     {version:'v1.1.24',notes:[
       'Added Union Fees as a fixed-amount post-tax deduction that reduces net pay only and appears under Post-Tax Deductions.',
       'Corrected Job Data effective-date boundaries so terminations and movements take effect on the effective date, with the previous status ending the day before; automatic fixed-term contract end dates remain inclusive.',

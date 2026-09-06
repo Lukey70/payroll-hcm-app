@@ -1,13 +1,13 @@
-Payroll/HCM App v1.1.24 — Test Results
+Payroll/HCM App v1.1.25 — Test Results
 Date: 6 September 2026
 Runtime: Node v22.16.0
 
 AUTOMATED REGRESSION SUITE
 Command: node test-cases.js
 Exit code: 0
-Self-invoking test blocks: 93
-Assertion invocations: 386 (225 assert.* method calls + 161 bare assert(...) calls)
-Runtime PASS summary lines: 45
+Self-invoking test blocks: 96
+Assertion invocations: 410 (241 assert.* method calls + 169 bare assert(...) calls)
+Runtime PASS summary lines: 46
 
 JAVASCRIPT SYNTAX CHECKS
 node --check data-store.js: PASS
@@ -18,14 +18,24 @@ node --check test-cases.js: PASS
 SIMULATED / NON-BROWSER INTERFACE COVERAGE
 - The Node suite loads app.js in a VM for generated Statement of Service and payslip display/helper verification.
 - Parental-leave booking form event bindings are exercised with simulated form elements.
-- v1.1.24 Payslip date-range helper logic is exercised from the loaded app code, including default 10, fewer than 10, widened and narrowed ranges, and newest-first order; UI control presence is source-checked.
-- Union Fees amount-only UI validation, import normalisation and Job Data effective-date guidance are covered/source-checked in the regression suite.
+- Payslip date-range helper logic is exercised from loaded app code.
+- Union Fees amount-only validation/import normalisation and Job Data effective-date guidance are source/logic checked.
+- v1.1.25 source checks confirm payslip rendering uses each calculated payslip's Annual/Personal Leave balance snapshot.
 - This is not equivalent to a real browser interaction test.
 
 REAL BROWSER ATTEMPT
 - Chromium 144.0.7559.96 was available.
 - A local HTTP server successfully returned index.html with HTTP 200.
-- Headless Chromium did not return a rendered DOM before a 12-second external timeout in this execution environment; no successful real-browser UI result is claimed.
+- Headless Chromium did not return a rendered DOM before a 15-second external timeout; no successful real-browser UI result is claimed.
+
+NEW v1.1.25 REGRESSION COVERAGE
+- Current-pay 7.5-hour Annual Leave is deducted from the payslip Annual Leave closing balance.
+- Current-pay 7.5-hour Personal Leave is deducted from the payslip Personal Leave closing balance.
+- Current-pay leave accrual remains included in the closing balance.
+- Re-running Calculate Pay does not repeat/reset either leave deduction.
+- Open calculation does not prematurely commit employee master balances.
+- Finalisation preserves the same payslip balance snapshots and commits them once.
+- Existing open-ended Union Fees and multiple concurrent deduction tests remain passing.
 
 FULL REGRESSION OUTPUT
 PASS: Login button/password strings and app version are present
@@ -66,12 +76,13 @@ PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California F
 PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
 PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
 PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.
+PASS: v1.1.25 payslip Annual and Personal Leave balances include current-pay leave usage and remain stable on recalculation/finalisation.
 PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.
 PASS: Parental automatic end dates cover full/half pay, unpaid limits, extension, prior usage and exhausted entitlement
 PASS: Booking form events auto-fill parental dates, update half pay and preserve manually shortened dates
-PASS: Union Fees are fixed-amount post-tax deductions and persist through export/import.
+PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and multiple deductions may be active concurrently.
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
-PASS: v1.1.24 Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
-PASS: v1.1.24 Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
+PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
 
 Final suite exit code: 0
