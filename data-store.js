@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.22';
+  const APP_VERSION = '1.1.24';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -123,7 +123,7 @@
         }else if(r.action==='Termination'){
           let last=[...segments].reverse().find(seg=>!seg.endDate);
           if(!last && e.startDate) { last={ id:`segment_${e.id}_${segments.length+1}`, startDate:e.originalStartDate||e.startDate, endDate:'', inclusiveEnd:false, terminationReason:'', source:'legacy' }; segments.push(last); }
-          if(last){ last.endDate=r.effectiveDate||''; last.terminationReason=r.reason||''; last.inclusiveEnd=(r.reason==='Expiry of Fixed Term'); }
+          if(last){ last.endDate=r.effectiveDate||''; last.terminationReason=r.reason||''; last.inclusiveEnd=false; }
         }
       });
       if(!segments.length && e.startDate){
@@ -140,7 +140,7 @@
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
     state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; if(l.evidenceProvided===undefined) l.evidenceProvided=false; if(l.confidential===undefined) l.confidential=(l.type==='Family and Domestic Violence Leave'); if(l.type==='Parental Leave - Paid' && !l.payOption) l.payOption='Full Pay'; });
     state.additionalEarnings.forEach(a=>{ if(!a.id) a.id = uid('add'); if(!a.earningType) a.earningType = 'Additional Day'; if(a.saved === undefined) a.saved = true; if(a.amount === undefined) a.amount = 0; if(['Overpayment Adjustment','Reimbursement'].includes(a.earningType)){ a.hours = 0; } });
-    state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; });
+    state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; if(d.deductionType==='Union Fees') d.percentage=''; });
     state.positions.forEach(pos=>{ if(!pos.id) pos.id = uid('pos'); if(!pos.positionNumber) pos.positionNumber = String(Math.floor(1000 + Math.random()*9000)); if(pos.active === undefined) pos.active = true; if(pos.hourlyRate === undefined) pos.hourlyRate = 0; });
     state.jobDataRows.forEach(j=>{ if(!j.id) j.id = uid('jobdata'); if(j.effectiveSequence === undefined) j.effectiveSequence = 0; if(!j.action) j.action = 'Commencement'; if(!j.reason) j.reason = ''; if(!j.hoursByDay) j.hoursByDay = {}; });
     state.cashOutRequests.forEach(c=>{ if(!c.id) c.id = uid('cash'); if(c.saved === undefined) c.saved = true; if(c.deleted === undefined) c.deleted = false; c.hours = Number(c.hours||0); });

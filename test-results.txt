@@ -1,30 +1,33 @@
-Payroll/HCM App v1.1.22 — Test Results
+Payroll/HCM App v1.1.24 — Test Results
+Date: 6 September 2026
+Runtime: Node v22.16.0
 
-OVERALL RESULT: PASS
+AUTOMATED REGRESSION SUITE
+Command: node test-cases.js
+Exit code: 0
+Self-invoking test blocks: 93
+Assertion invocations: 386 (225 assert.* method calls + 161 bare assert(...) calls)
+Runtime PASS summary lines: 45
 
-SYNTAX
-PASS — data-store.js
-PASS — payroll-engine.js
-PASS — app.js
-PASS — test-cases.js
+JAVASCRIPT SYNTAX CHECKS
+node --check data-store.js: PASS
+node --check payroll-engine.js: PASS
+node --check app.js: PASS
+node --check test-cases.js: PASS
 
-REGRESSION SUITE
-PASS — 82 automated regression test blocks completed without assertion failures.
+SIMULATED / NON-BROWSER INTERFACE COVERAGE
+- The Node suite loads app.js in a VM for generated Statement of Service and payslip display/helper verification.
+- Parental-leave booking form event bindings are exercised with simulated form elements.
+- v1.1.24 Payslip date-range helper logic is exercised from the loaded app code, including default 10, fewer than 10, widened and narrowed ranges, and newest-first order; UI control presence is source-checked.
+- Union Fees amount-only UI validation, import normalisation and Job Data effective-date guidance are covered/source-checked in the regression suite.
+- This is not equivalent to a real browser interaction test.
 
-TARGETED v1.1.22 TESTS
-PASS — A retro Personal Leave day produces exactly 7.5 balanceUnits for a 7.5-hour day; the consolidation layer no longer doubles it to 15.
-PASS — The projected Personal Leave balance deducts the retro leave once and continues the normal current-pay accrual.
-PASS — The one-time balance repair corrects a previously finalised doubled Personal Leave retro deduction and is idempotent.
-PASS — Leave Without Pay Retro appears as a visible zero-dollar payslip row with the retro units while the related Regular Pay Retro carries the financial recovery/correction.
-PASS — Paid Parental Leave validates 18 weeks at Full Pay and blocks a longer Full Pay booking.
-PASS — Paid Parental Leave validates up to 36 weeks at Half Pay using an 18-week full-pay-equivalent entitlement.
-PASS — A 36-week Half Pay parental leave arrangement reduces the standard unpaid maximum to 16 weeks.
-PASS — Half Pay parental leave pays scheduled hours at 50% of the normal rate.
-PASS — Parental Leave - Unpaid Extension rejects a duration beyond 2 years.
-PASS — The Leave booking UI contains all three parental leave types plus Full Pay / Half Pay selection.
-PASS — App startup/import invokes the one-time Personal Leave repair hook.
+REAL BROWSER ATTEMPT
+- Chromium 144.0.7559.96 was available.
+- A local HTTP server successfully returned index.html with HTTP 200.
+- Headless Chromium did not return a rendered DOM before a 12-second external timeout in this execution environment; no successful real-browser UI result is claimed.
 
-FULL TEST OUTPUT
+FULL REGRESSION OUTPUT
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -63,10 +66,12 @@ PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California F
 PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
 PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
 PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.
-PASS: v1.1.22 retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules are verified.
+PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.
+PASS: Parental automatic end dates cover full/half pay, unpaid limits, extension, prior usage and exhausted entitlement
+PASS: Booking form events auto-fill parental dates, update half pay and preserve manually shortened dates
+PASS: Union Fees are fixed-amount post-tax deductions and persist through export/import.
+PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
+PASS: v1.1.24 Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
+PASS: v1.1.24 Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
 
-PACKAGE/CLEAN-EXTRACTION
-PASS — Final ZIP was extracted into a clean directory.
-PASS — JavaScript syntax checks passed again from the extracted package.
-PASS — All 82 automated regression test blocks passed again from the extracted package.
-PASS — Expected package files and local references are present.
+Final suite exit code: 0

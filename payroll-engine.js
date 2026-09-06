@@ -191,7 +191,11 @@
       id:(sameStart&&sameStart.id)||`segment_${e.id}_${preserved.length+1}`,
       startDate:currentStart,
       endDate:terminationDate,
-      inclusiveEnd:terminationReason==='Expiry of Fixed Term',
+      // A saved Job Data Termination date is the first day the termination applies,
+      // so the last working/payable day is the previous calendar day. Automatic
+      // fixed-term contract expiry is different: contractEndDate itself is the
+      // employee's inclusive final contract day.
+      inclusiveEnd:!explicitTermination && terminationReason==='Expiry of Fixed Term',
       terminationReason,
       source:'jobData-reconciled'
     };
@@ -340,6 +344,17 @@
     };
   }
 
+  function parentalLeaveEndDate(state,e,type,startDate,payOption='Full Pay'){
+    if(!e || !startDate || !parseDate(startDate) || !isParentalLeaveType(type)) return '';
+    const usage=parentalLeaveUsage(state,e);
+    let remaining=0;
+    if(type===PARENTAL_PAID_LEAVE_TYPE) remaining=(usage.paidEntitlementDays-usage.paidFullPayEquivalentDays)/(payOption==='Half Pay'?0.5:1);
+    else if(type===PARENTAL_UNPAID_LEAVE_TYPE) remaining=usage.unpaidMaxDays-usage.unpaidDays;
+    else remaining=usage.extensionMaxDays-usage.extensionDays;
+    const days=Math.max(0,Math.floor(remaining+0.0001));
+    return days>0?addDays(startDate,days-1):'';
+  }
+
   function activeTaxDetails(state, empId, onDate){
     const rows = (state.taxDetails||[]).filter(t=>t.empId===empId && compare(t.effectiveDate,onDate)<=0)
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate));
@@ -473,17 +488,26 @@
     return (state.deductions||[]).filter(d=>d.empId===e.id && d.saved !== false && d.deleted !== true && (!kind || d.deductionType===kind) && d.startDate && compare(d.startDate,c.end)<=0 && (!d.endDate || compare(d.endDate,c.start)>=0));
   }
   function deductionLineAmount(d, base){
+    if(d.deductionType==='Union Fees') return round2(Number(d.amount||0));
     if(d.amount !== undefined && d.amount !== null && String(d.amount) !== '') return round2(Number(d.amount||0));
     if(d.percentage !== undefined && d.percentage !== null && String(d.percentage) !== '') return round2(Number(base||0) * Number(d.percentage||0) / 100);
     return 0;
   }
   function calculateDeductions(state,e,c,gross,netAfterPreTax){
-    const preTaxDeductions = activeDeductions(state,e,c,'Pre-tax Super Deduction').map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
+    const active=activeDeductions(state,e,c);
+    const preTaxDeductions = active.filter(d=>d.deductionType==='Pre-tax Super Deduction').map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
     const preTaxTotal = round2(preTaxDeductions.reduce((s,d)=>s+d.amount,0));
     const postBase = netAfterPreTax === undefined || netAfterPreTax === null ? Math.max(0, Number(gross||0)-preTaxTotal) : netAfterPreTax;
-    const postTaxDeductions = activeDeductions(state,e,c,'Post-Tax Super Deduction').map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
+    const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
     const postTaxTotal = round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
     return { preTaxDeductions, postTaxDeductions, preTaxTotal, postTaxTotal };
+  }
+
+  function leaveNegativeLimitHours(state,e,onDate){
+    if(!e || !onDate) return 0;
+    const sched=activeSchedule(state,e.id,onDate);
+    const daily=Object.values((sched&&sched.hoursByDay)||{}).map(Number).filter(h=>h>0);
+    return round4(daily.length?Math.max(...daily):0);
   }
 
   function validateLeaveBooking(state, empId, leaveType, startDate, endDate, requestedHours, excludeLeaveId, bookingOptions={}){
@@ -549,6 +573,12 @@
       const cycle = currentCycle(state);
       const balances = projectedBalances(state, e, cycle);
       const available = leaveType === 'Annual Leave' ? balances.annual : leaveType === 'Personal Leave' ? balances.personal : leaveType === 'Long Service Leave' ? balances.lslAccrued : 999999;
+      if(['Annual Leave','Personal Leave'].includes(leaveType)){
+        const negativeLimit=Math.max(0,...detail.filter(d=>Number(d.countedHours||0)>0).map(d=>leaveNegativeLimitHours(state,e,d.date)));
+        const balanceAfter=round4(available-hours);
+        if(balanceAfter < -negativeLimit-0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(available), balanceAfter, negativeLimitHours:negativeLimit, message:`Insufficient Credits. ${leaveType} may only go negative by up to one scheduled workday (${negativeLimit.toFixed(2)} hours).` };
+        return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(available), balanceAfter, negativeLimitHours:negativeLimit, message:'OK' };
+      }
       if(available + 0.0001 < hours) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, message:'Insufficient Credits' };
     }
     return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, message:'OK' };
@@ -696,7 +726,7 @@
       annual -= rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+r.units,0);
       lslAccrued -= rows.filter(r=>r.description==='Accrued LSL Payout' || r.description==='Long Service Leave Cash Out').reduce((s,r)=>s+r.units,0);
     }
-    return { annual:round4(Math.max(0,annual)), personal:round4(Math.max(0,personal)), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(lslInfo.proRata), lslEntitlementDate:lslInfo.entitlementDate };
+    return { annual:round4(annual), personal:round4(personal), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(lslInfo.proRata), lslEntitlementDate:lslInfo.entitlementDate };
   }
   function expectedGross(state,e,c){
     const rows = earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true});
@@ -1013,8 +1043,8 @@
       }
       const annualUsed = rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       const personalUsed = rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
-      e.annualLeaveBalance = round4(Math.max(0, Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+Number(r.units||0),0)));
-      e.personalLeaveBalance = round4(Math.max(0, Number(e.personalLeaveBalance||0) - personalUsed));
+      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+Number(r.units||0),0));
+      e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) - personalUsed);
       const entitlementDate=lslEntitlementDate(e);
       if(entitlementDate && compare(entitlementDate,c.end)<=0 && !e.lslEntitlementConvertedAt){
         const entitlementBalance=lslBalances(state,e,c.end);
@@ -1058,7 +1088,7 @@
     let lslAccrued = Number(lslInfo.accrued||0);
     (state.leaveBookings||[]).filter(l=>l.empId===e.id && l.type==='Long Service Leave' && compare(l.startDate,asOf)<=0).forEach(l=>{ lslAccrued -= Number(l.hours||0); });
     (state.cashOutRequests||[]).filter(c=>c.empId===e.id && c.leaveType==='Long Service Leave' && c.deleted!==true && compare(c.effectiveDate,asOf)<=0).forEach(c=>{ lslAccrued -= Number(c.hours||0); });
-    return { annual:round4(Math.max(0,annual)), personal:round4(Math.max(0,personal)), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(lslInfo.proRata), lslEntitlementDate:lslInfo.entitlementDate };
+    return { annual:round4(annual), personal:round4(personal), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(lslInfo.proRata), lslEntitlementDate:lslInfo.entitlementDate };
   }
 
   function repairPersonalLeaveBalances(state){
@@ -1112,7 +1142,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, isParentalLeaveType, bookingWorkingDayFractions, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, lslEntitlementDate, lslProRataHours, lslBalances, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

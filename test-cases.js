@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.22'), 'sidebar/version label must show v1.1.22');
-  assert(data.includes("APP_VERSION = '1.1.22'"), 'data-store version must be 1.1.22');
+  assert(html.includes('v1.1.24'), 'sidebar/version label must show v1.1.24');
+  assert(data.includes("APP_VERSION = '1.1.24'"), 'data-store version must be 1.1.24');
 })();
 
 (function testAnchorPayCycle(){
@@ -79,6 +79,49 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const payslips=E.calculateEmployee(state,e.id,1,false);
   assert.strictEqual(totalUnitsByDesc(payslips,'Public Holiday'), 7.5, 'Rostered public holiday must appear as Public Holiday earnings');
   assert.strictEqual(totalUnitsByDesc(payslips,'Annual Leave'), 7.5, 'Only non-public-holiday scheduled leave day should be annual leave');
+})();
+
+(function testAnnualAndPersonalLeaveMayGoNegativeByOneScheduledWorkday(){
+  function zeroProjected(state,e,field){
+    const c=E.currentCycle(state); const b=E.projectedBalances(state,e,c);
+    if(field==='annual') e.annualLeaveBalance=E.round4(Number(e.annualLeaveBalance||0)-Number(b.annual||0));
+    else e.personalLeaveBalance=E.round4(Number(e.personalLeaveBalance||0)-Number(b.personal||0));
+  }
+  for(const leaveType of ['Annual Leave','Personal Leave']){
+    const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+    zeroProjected(state,e,leaveType==='Annual Leave'?'annual':'personal');
+    const exact=E.validateLeaveBooking(state,e.id,leaveType,'2026-05-25','2026-05-25',7.5,undefined,{evidenceProvided:true});
+    assert.strictEqual(exact.ok,true,`${leaveType} should allow the balance to reach exactly one scheduled workday negative`);
+    assert.strictEqual(exact.negativeLimitHours,7.5);
+    assert.strictEqual(E.round4(exact.balanceAfter),-7.5);
+    const tooFar=E.validateLeaveBooking(state,e.id,leaveType,'2026-05-25','2026-05-26',undefined,undefined,{evidenceProvided:true});
+    assert.strictEqual(tooFar.ok,false,`${leaveType} must reject a booking that would exceed one scheduled workday negative`);
+    assert(tooFar.message.includes('one scheduled workday'));
+  }
+})();
+
+(function testNegativeLeaveLimitUsesEmployeeScheduledDayLength(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id,'2026-05-22',{1:6,2:6,3:6,4:6,5:6,6:0,0:0}); addRate(state,e.id);
+  const projected=E.projectedBalances(state,e,E.currentCycle(state)); e.annualLeaveBalance=E.round4(e.annualLeaveBalance-projected.annual);
+  const oneDay=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-05-25','2026-05-25',6);
+  assert.strictEqual(oneDay.ok,true,'A six-hour scheduled employee may reach -6 hours Annual Leave');
+  assert.strictEqual(oneDay.negativeLimitHours,6,'Negative limit must come from the employee schedule, not a fixed 7.5/8-hour assumption');
+  const twoDays=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-05-25','2026-05-26');
+  assert.strictEqual(twoDays.ok,false,'A six-hour scheduled employee may not reach -12 hours Annual Leave');
+})();
+
+(function testNegativeLeaveBalancePersistsThroughFinalisationAndRecalculation(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:0,personalLeaveBalance:0});
+  addSchedule(state,e.id,'2026-05-22',{1:0,2:0,3:0,4:0,5:7.5,6:0,0:0}); addRate(state,e.id);
+  const booking=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-05-29','2026-05-29',7.5);
+  assert.strictEqual(booking.ok,true);
+  state.leaveBookings.push({id:'neg_al',empId:e.id,type:'Annual Leave',startDate:'2026-05-29',endDate:'2026-05-29',hours:7.5,requestedHours:7.5,status:'Approved'});
+  const open=E.projectedBalances(state,e,E.currentCycle(state));
+  assert(open.annual<0 && open.annual>=-7.5,'Projected balance should retain the permitted negative amount');
+  E.finaliseCurrentPay(state);
+  assert(e.annualLeaveBalance<0 && e.annualLeaveBalance>=-7.5,'Finalisation must preserve a legitimate negative Annual Leave balance instead of clamping it to zero');
+  const recalculated=E.recalculateBalances(state,e,'2026-06-04');
+  assert(recalculated.annual<0,'Balance recalculation must preserve a legitimate negative Annual Leave result');
 })();
 
 (function testNoPayslipForNoEarnings(){
@@ -256,6 +299,38 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(p.tax < noDed.tax, 'Pre-tax deduction should reduce taxable income and tax');
   assert(p.gross === noDed.gross, 'Gross pay should remain unchanged when deductions apply');
   assert(p.net < noDed.net, 'Net pay should reduce by deductions');
+})();
+
+(function testUnionFeesAreFixedAmountPostTaxDeduction(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.taxDetails.push({id:'taxUnion',empId:e.id,effectiveDate:e.startDate,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  const noDed=E.calculateEmployee(state,e.id,1,false)[0];
+  state.deductions.push({id:'union1',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Union Fees',amount:37.5,percentage:'',saved:true,deleted:false});
+  const p=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(p.preTaxDeductionTotal,0,'Union Fees must not be treated as a pre-tax deduction');
+  assert.strictEqual(p.postTaxDeductionTotal,37.5,'Union Fees should deduct the entered fixed amount after tax');
+  assert.strictEqual(p.tax,noDed.tax,'Union Fees must not reduce taxable income or PAYG withholding');
+  assert.strictEqual(p.gross,noDed.gross,'Union Fees must not change gross pay');
+  assert.strictEqual(p.net,E.round2(noDed.net-37.5),'Union Fees should reduce net pay by the entered amount');
+  assert(p.postTaxDeductions.some(d=>d.description==='Union Fees' && d.amount===37.5 && d.basis==='amount'),'Union Fees should appear in Post-Tax Deductions as an amount-based line');
+})();
+
+(function testUnionFeesUiIsAmountOnly(){
+  const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('<option>Union Fees</option>'),'Deduction Type should offer Union Fees');
+  assert(app.includes("deductionType==='Union Fees' && String(amount).trim()===''"),'Union Fees UI should require an Amount');
+  assert(app.includes('Union Fees cannot be entered as a Percentage.'),'Union Fees UI should reject percentage entry');
+})();
+
+(function testUnionFeesPersistThroughExportImport(){
+  const state=baseState(); const e=addEmployee(state);
+  state.deductions.push({id:'unionPersist',empId:e.id,startDate:'2026-05-22',endDate:'',deductionType:'Union Fees',amount:22.75,percentage:9.5,saved:true,deleted:false});
+  const imported=DataStore.importJson(DataStore.exportJson(state));
+  const d=imported.deductions.find(x=>x.id==='unionPersist');
+  assert(d,'Union Fees should survive export/import');
+  assert.strictEqual(d.deductionType,'Union Fees','Union Fees deduction type should be preserved through export/import');
+  assert.strictEqual(d.amount,22.75,'Union Fees amount should be preserved through export/import');
+  assert.strictEqual(d.percentage,'','Union Fees migration/import must clear any percentage value so the deduction remains amount-only');
 })();
 
 (function testDeductionsUiAndWarningsExist(){
@@ -692,6 +767,38 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(E.isTerminatedOn(manual,'2026-06-01'),true,'Manual termination status should take effect on the termination effective date');
 })();;
 
+(function testJobDataEffectiveDateBoundarySemantics(){
+  const terminationState=baseState();
+  const terminated=addEmployee(terminationState,{id:'BOUND1',type:'Fixed Term',startDate:'2026-09-01',originalStartDate:'2026-09-01',contractEndDate:'2026-09-30',autoTerminate:true});
+  terminationState.jobDataRows.push(
+    {id:'jd_bound_start',empId:terminated.id,action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-09-01',effectiveSequence:0,saved:true},
+    {id:'jd_bound_term',empId:terminated.id,action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2026-09-07',effectiveSequence:0,saved:true}
+  );
+  E.reconcileEmploymentFromJobData(terminationState,terminated);
+  const current=E.employmentSegments(terminated).find(seg=>seg.startDate==='2026-09-01');
+  assert(current,'Saved Job Data termination must create/reconcile the current employment segment');
+  assert.strictEqual(current.endDate,'2026-09-07','Termination effective date should be stored as the exclusive employment boundary');
+  assert.strictEqual(current.inclusiveEnd,false,'Every saved Job Data termination effective date is exclusive, including an Expiry of Fixed Term reason');
+  assert.strictEqual(E.isEmployedOn(terminated,'2026-09-06'),true,'A 07/09/2026 termination effective date must keep 06/09/2026 as the last employed/payable day');
+  assert.strictEqual(E.isEmployedOn(terminated,'2026-09-07'),false,'The employee must no longer be employed/payable on the termination effective date');
+
+  const movementState=baseState();
+  const moved=addEmployee(movementState,{id:'BOUND2',startDate:'2026-08-31',originalStartDate:'2026-08-31'});
+  movementState.jobDataRows.push(
+    {id:'jd_acting',empId:moved.id,action:'Movement',reason:'Acting Higher Level',effectiveDate:'2026-08-31',effectiveSequence:0,saved:true},
+    {id:'jd_return',empId:moved.id,action:'Movement',reason:'Return from Temp Assignment',effectiveDate:'2026-09-07',effectiveSequence:0,saved:true}
+  );
+  movementState.payRates.push(
+    {id:'r_acting',empId:moved.id,effectiveDate:'2026-08-31',position:'Acting Manager',hourlyRate:50,changeType:'Permanent',jobDataId:'jd_acting'},
+    {id:'r_return',empId:moved.id,effectiveDate:'2026-09-07',position:'Officer',hourlyRate:40,changeType:'Permanent',jobDataId:'jd_return'}
+  );
+  assert.strictEqual(E.activePayRate(movementState,moved.id,'2026-09-06').position,'Acting Manager','The temporary/previous position must remain active through 06/09/2026');
+  assert.strictEqual(E.activePayRate(movementState,moved.id,'2026-09-07').position,'Officer','A Return from Temp Assignment effective 07/09/2026 must take effect on 07/09/2026');
+
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.'),'Job Data should explain effective-date boundary semantics in the UI');
+})();
+
 
 (function testV1116FinalisedLeavePayoutIsNotRecoveredNextPay(){
   const state=baseState();
@@ -826,6 +933,22 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert.strictEqual(e.employmentSegments[1].endDate,'');
 })();
 
+
+(function testMigrationKeepsSavedJobDataTerminationEffectiveDateExclusive(){
+  const legacy=DataStore.emptyState();
+  legacy.version='1.1.23';
+  legacy.employees.push({id:'migterm',firstName:'Fixed',lastName:'Term',name:'Fixed Term',type:'Fixed Term',startDate:'2026-09-01',originalStartDate:'2026-09-01',contractEndDate:'2026-09-30',autoTerminate:true,status:'Active'});
+  legacy.jobDataRows.push(
+    {id:'migstart',empId:'migterm',action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-09-01',effectiveSequence:0,saved:true},
+    {id:'migend',empId:'migterm',action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2026-09-07',effectiveSequence:0,saved:true}
+  );
+  const migrated=DataStore.migrate(legacy); const e=migrated.employees[0]; const seg=e.employmentSegments.find(x=>x.startDate==='2026-09-01');
+  assert(seg,'Migration must reconstruct the saved employment segment');
+  assert.strictEqual(seg.endDate,'2026-09-07');
+  assert.strictEqual(seg.inclusiveEnd,false,'A saved Job Data Expiry of Fixed Term effective date must remain exclusive during migration');
+  assert.strictEqual(E.isEmployedOn(e,'2026-09-06'),true);
+  assert.strictEqual(E.isEmployedOn(e,'2026-09-07'),false);
+})();
 
 (function testV1118ReportsTabAndStatementOfService(){
   const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
@@ -1153,4 +1276,67 @@ console.log('PASS: v1.1.19 terminated-employee Additional Earnings and same-pays
 console.log('PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.');
 console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.');
 
-console.log('PASS: v1.1.22 retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules are verified.');
+(function testPayslipDateRangeDefaultsToTenMostRecentAndCanExpand(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp;
+  assert(app&&typeof app.defaultPayslipDateRange==='function'&&typeof app.filterPayslipsByDateRange==='function','Payslip date-range helpers must be exposed for regression testing');
+  const list=[];
+  for(let i=0;i<12;i++){ const d=E.addDays('2026-09-04',-14*i); list.push({key:`p${i}`,cycle:{end:d},segmentIndex:1}); }
+  const range=app.defaultPayslipDateRange(list,10);
+  assert.strictEqual(range.to,'2026-09-04');
+  assert.strictEqual(range.from,list[9].cycle.end,'Default From Date must be the 10th most recent payslip date');
+  const defaultList=app.filterPayslipsByDateRange(list,range.from,range.to,true,10);
+  assert.strictEqual(defaultList.length,10,'Default payslip view must show exactly the 10 most recent payslips');
+  assert.strictEqual(defaultList[0].key,'p0'); assert.strictEqual(defaultList[9].key,'p9');
+  const expanded=app.filterPayslipsByDateRange(list,list[11].cycle.end,range.to,false,10);
+  assert.strictEqual(expanded.length,12,'Widening the From Date must make older payslips available');
+  const narrowed=app.filterPayslipsByDateRange(list,list[2].cycle.end,range.to,false,10);
+  assert.deepStrictEqual(Array.from(narrowed,x=>x.key),['p0','p1','p2'],'Narrowed date range must exclude out-of-range payslips and preserve newest-first order');
+  const short=app.defaultPayslipDateRange(list.slice(0,5),10);
+  assert.strictEqual(app.filterPayslipsByDateRange(list.slice(0,5),short.from,short.to,true,10).length,5,'Employees with fewer than 10 payslips should show all available payslips');
+  assert(appSource.includes('id="payslipDateFrom"')&&appSource.includes('id="payslipDateTo"')&&appSource.includes('Most Recent 10'),'Payslip UI must include From/To date fields and a Most Recent 10 reset');
+})();
+
+console.log('PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.');
+
+(function testParentalEndDates(){
+  const state=baseState(),e=addEmployee(state),start='2026-09-07';
+  const end=(type,pay='Full Pay')=>E.parentalLeaveEndDate(state,e,type,start,pay);
+  assert.equal(end(E.PARENTAL_PAID_LEAVE_TYPE),'2027-01-10');
+  assert.equal(end(E.PARENTAL_PAID_LEAVE_TYPE,'Half Pay'),'2027-05-16');
+  assert.equal(end(E.PARENTAL_UNPAID_LEAVE_TYPE),E.addDays(start,34*7-1));
+  assert.equal(end(E.PARENTAL_UNPAID_EXTENSION_TYPE),E.addDays(start,E.parentalLeaveUsage(state,e).extensionMaxDays-1));
+  state.leaveBookings.push({id:'prior',empId:e.id,type:E.PARENTAL_PAID_LEAVE_TYPE,startDate:'2025-01-01',endDate:E.addDays('2025-01-01',36*7-1),payOption:'Half Pay'});
+  assert.equal(end(E.PARENTAL_UNPAID_LEAVE_TYPE),E.addDays(start,16*7-1));
+  assert.equal(end(E.PARENTAL_PAID_LEAVE_TYPE),'');
+  state.leaveBookings[0].endDate=E.addDays('2025-01-01',7*7-1);
+  state.leaveBookings[0].payOption='Full Pay';
+  assert.equal(end(E.PARENTAL_PAID_LEAVE_TYPE),E.addDays(start,11*7-1));
+  assert.equal(end(E.PARENTAL_PAID_LEAVE_TYPE,'Half Pay'),E.addDays(start,22*7-1));
+  assert.equal(E.parentalLeaveEndDate(state,e,E.PARENTAL_PAID_LEAVE_TYPE,''),'');
+  assert.equal(E.parentalLeaveEndDate(state,undefined,E.PARENTAL_PAID_LEAVE_TYPE,start),'');
+  assert.equal(end('Annual Leave'),'');
+  console.log('PASS: Parental automatic end dates cover full/half pay, unpaid limits, extension, prior usage and exhausted entitlement');
+})();
+(function testParentalFormEvents(){
+  const state=baseState(),e=addEmployee(state),els={};
+  for(const id of ['leaveEmp','leaveType','leaveStart','leaveEnd','parentalPayOption','leaveDuration','saveLeave']) els[id]={value:'',handlers:{},addEventListener(event,fn){this.handlers[event]=fn;}};
+  els.leaveEmp.value=e.id;els.leaveType.value=E.PARENTAL_PAID_LEAVE_TYPE;els.parentalPayOption.value='Full Pay';
+  const source=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const binding=source.slice(source.indexOf("    ['leaveEmp','leaveType','leaveStart','parentalPayOption'].forEach"),source.indexOf("    bindShowTerminated('leaveBookShowTerminated'"));
+  vm.runInNewContext(binding,{E,state,$:id=>els[id],v:id=>els[id].value,setv:(id,val)=>els[id].value=val,emp:id=>state.employees.find(x=>x.id===id),updateLeaveDuration:()=>{}});
+  els.leaveStart.value='2026-09-07';els.leaveStart.handlers.change();assert.equal(els.leaveEnd.value,'2027-01-10');
+  els.parentalPayOption.value='Half Pay';els.parentalPayOption.handlers.change();assert.equal(els.leaveEnd.value,'2027-05-16');
+  els.leaveEnd.value='2026-09-20';els.leaveEnd.handlers.change();assert.equal(els.leaveEnd.value,'2026-09-20');
+  els.leaveType.value='Annual Leave';els.leaveStart.handlers.change();assert.equal(els.leaveEnd.value,'2026-09-07');
+  console.log('PASS: Booking form events auto-fill parental dates, update half pay and preserve manually shortened dates');
+})();
+console.log('PASS: Union Fees are fixed-amount post-tax deductions and persist through export/import.');
+console.log('PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.');
+console.log('PASS: v1.1.24 Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.');
+console.log('PASS: v1.1.24 Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.');

@@ -1,0 +1,71 @@
+Payroll/HCM App v1.1.24
+Release date: 6 September 2026
+Starting version: v1.1.23
+
+RELEASE SUMMARY
+v1.1.24 packages all changes requested after the v1.1.23 workspace baseline. Existing payroll history, manual finalisation, configured pay-cycle selection, retro cut-off and import/export structures are preserved.
+
+CHANGES
+
+1. Union Fees deduction
+- Added Union Fees to Deductions.
+- Union Fees is post-tax and fixed-dollar amount only.
+- Percentage entry is disabled/rejected.
+- Gross pay and PAYG withholding are unchanged; net pay is reduced by the entered amount.
+- The deduction appears under Post-Tax Deductions on the payslip.
+- Existing start/end-date, staging/save and import/export structures are reused.
+
+2. Job Data effective-date boundaries
+- Effective Date is the first day the saved action/status applies.
+- Termination effective 07/09/2026 means 06/09/2026 is the last working/payable day.
+- Saved Job Data Termination rows are exclusive even when the reason is Expiry of Fixed Term.
+- Automatic fixed-term contractEndDate expiry remains different: contractEndDate is the inclusive final contract day.
+- Return from Temp Assignment / other movement effective 07/09/2026 takes effect on 07/09/2026; the previous position/rate remains active through 06/09/2026.
+- Migration reconstruction of saved Job Data termination rows uses the same exclusive rule.
+
+3. Annual Leave and Personal Leave negative balance allowance
+- Annual Leave and Personal Leave may go negative by up to one scheduled workday.
+- The limit is derived from the employee's applicable schedule rather than a hard-coded 7.5/7.6/8-hour day.
+- Bookings that would exceed the permitted negative limit are rejected.
+- Legitimate negative balances are preserved through projected balances, finalisation and balance recalculation rather than being silently clamped to zero.
+- The error checker only treats balances beyond the permitted limit as a leave-balance error.
+
+4. Payslip date-range filter
+- Added From Date and To Date filters to the Payslip tab.
+- Selecting an employee defaults the range/list to the 10 most recent payslips.
+- Most Recent 10 restores the default.
+- Apply Date Range allows older payslips to be shown or the range to be narrowed.
+- Results remain newest first.
+- The default range refreshes when pay history advances while the user is still using the default recent-10 view.
+
+TESTING
+- node test-cases.js: PASS, exit code 0.
+- 93 self-invoking test blocks.
+- 386 assertion invocations (225 assert.* + 161 bare assert calls).
+- 45 runtime PASS summary lines.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- Regression coverage added for one-day negative Annual/Personal Leave, different scheduled day length, negative-balance persistence through finalisation/recalculation, saved Job Data termination migration, and Payslip date-range behaviour.
+- Existing Union Fees and 07/09/2026 Job Data boundary regressions remain passing.
+
+INTERFACE TESTING
+- Simulated/non-browser: app VM/helper and form-event tests passed as described in test-results.txt.
+- Real browser: attempted with Chromium 144 through a local HTTP server. The server returned HTTP 200, but Chromium did not return a rendered DOM within the execution timeout. No successful real-browser result is claimed.
+
+DATA / UPGRADE COMPATIBILITY
+- State remains stored in localStorage under payrollAppData.
+- No employee-data schema replacement was introduced.
+- Existing deduction records remain compatible; Union Fees uses existing deduction fields, and migration clears any stale percentage value so Union Fees remains fixed-amount only.
+- Existing Annual/Personal Leave numeric fields may now legitimately contain negative values within the permitted limit.
+- DataStore migration continues to preserve prior data and now normalises reconstructed saved Job Data termination boundaries to the exclusive effective-date rule.
+- Export Data before replacing an existing deployment remains strongly recommended.
+
+KNOWN LIMITATIONS
+- The historical Personal Leave repair remains limited to the detectable prior double-deduction pattern and does not prove all historical balances are repaired.
+- Parental Leave - Unpaid Extension remains implemented as a fixed 730-day maximum; this can differ from two calendar years across a leap day.
+- No successful full real-browser workflow/visual regression was completed in this execution environment.
+- Import/export compatibility is regression-tested for selected legacy scenarios, not every historical release export.
+
+DEFERRED / NOT INCLUDED
+- Casual payments through Additional Earnings.
+- Rosters and timesheets.
+- Multiple concurrent positions per employee.
