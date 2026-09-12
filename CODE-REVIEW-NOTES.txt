@@ -1,14 +1,19 @@
-v1.1.25
+v1.1.26
 
 Reviewed changes:
-- Blank End Date support for continuous Union Fees deductions.
-- Multiple concurrent deductions, including overlapping records of the same deduction type.
-- Payslip Annual/Personal Leave closing balances include current-pay leave usage, remain stable on recalculation and are preserved on finalisation.
+- Recurring 7-year / 65-working-day (13-week) Long Service Leave engine.
+- One-time existing-employee LSL reconciliation with per-employee notifications and review-required handling when source history is insufficient.
+- LSL service-break and contributory/non-contributory service rules.
+- Personal Leave >182-day break reset/rebuild rules.
+- Termination leave payouts for Annual Leave, accrued LSL and retirement pro-rata LSL.
+- Additional Day renamed to Additional Hours; new Meal, Travel, Motor Vehicle and Bonus earnings.
+- Open-ended Union Fees validation fix with concurrent deductions.
 
 Validation:
-- Full Node regression suite passed (96 self-invoking test blocks; 410 assertion invocations; 46 PASS summary lines).
-- JavaScript syntax checks passed for all four JS files.
-- Simulated/non-browser interface coverage passed where included in the suite.
-- Chromium 144 real-browser smoke attempt reached the local app with HTTP 200 but did not return a rendered DOM before timeout; no real-browser pass is claimed.
+- Full Node regression suite passed: 111 self-invoking test blocks; 467 assertion invocations; 48 PASS summary lines.
+- JavaScript syntax checks passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- Static/source and simulated-DOM/event coverage passed where included in the suite.
+- Local HTTP server returned HTTP 200.
+- Chromium 144 real-browser smoke attempt timed out before returning a rendered DOM; no real-browser pass is claimed.
 
-Known limitations are recorded in RELEASE-NOTES-v1.1.25.txt.
+See RELEASE-NOTES-v1.1.26.txt and test-results.txt for detail and known limitations.

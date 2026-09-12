@@ -1,0 +1,79 @@
+Payroll/HCM App v1.1.26 — Release Notes
+Release date: 12 September 2026
+Starting source: v1.1.25
+
+SUMMARY
+v1.1.26 introduces the new 7-year/65-working-day Long Service Leave model and a one-time reconciliation for existing saved employees, plus agreed break/non-contributory-service rules, revised termination leave payouts, new Additional Earnings types, the Additional Hours rename, and a fix for open-ended Union Fees validation.
+
+LONG SERVICE LEAVE
+- LSL now runs on recurring 7-year cycles.
+- Each completed 7-year cycle earns 65 working days = 13 weeks of LSL.
+- For a 37.5-hour/week employee, one full entitlement is 487.5 hours.
+- Pro-rata LSL accumulates continuously through each cycle and restarts at zero when the cycle becomes accrued LSL.
+- Legitimate manual pro-rata corrections continue accruing normally and transfer into accrued LSL when their cycle completes; they no longer freeze future accrual.
+- LSL stops accumulating when employment ends.
+- Finalised historical payslips are not rewritten.
+
+ONE-TIME EXISTING-EMPLOYEE LSL RECONCILIATION
+- On first load/import in v1.1.26, every saved employee is checked once using recognised employment segments, finalised LSL usage/payout history, contributory/non-contributory service and recorded balance-adjustment history.
+- The reconciliation corrects accrued LSL, pro-rata LSL and the next entitlement date under the new 7-year/65-day model.
+- A separate notification is generated for every employee checked and describes each correction. If no correction is required, it explicitly says no action was taken.
+- If the saved data does not contain enough recognised service/audit history to reconstruct a legacy LSL value reliably, the existing value is preserved where possible and the employee notification says Review required rather than silently inventing a replacement.
+- The migration is idempotent and is recorded in state.repairs so it does not repeat on later loads.
+
+LSL SERVICE RULES
+- Break in service >182 calendar days: current LSL service cycle resets from the rehire date and pro-rata resets to zero.
+- Break in service <=182 calendar days: pro-rata is preserved and the next entitlement is pushed out by the exact number of calendar days not employed.
+- Ordinary LWOP >14 continuous calendar days: the entire LWOP absence is non-contributory and pushes the entitlement date by the full absence length.
+- LWOP <=14 calendar days remains contributory.
+- Paid leave, Paid Parental Leave and standard Unpaid Parental Leave are contributory.
+- Unpaid Parental Leave Extension is non-contributory and pushes the entitlement date by the extension length.
+- An LSL entitlement notification is generated once per entitlement date using the wording: “[Employee name] has reached their entitlement date for LSL with an accrued balance of [X] hours.”
+
+PERSONAL LEAVE BREAK IN SERVICE
+- Break <=182 calendar days preserves Personal Leave.
+- Break >182 calendar days resets Personal Leave at rehire.
+- v1.1.26 includes a one-time reconstruction for existing saved employees with a recorded >182-day break, rebuilding Personal Leave from zero using post-rehire finalised accrual/use and recorded manual adjustments.
+
+TERMINATION LEAVE PAYOUTS
+- All non-retirement terminations pay accrued Annual Leave and accrued LSL.
+- Retirement also pays pro-rata LSL.
+- Each payout is a separate earnings line: Annual Leave Payout, Long Service Leave Payout and, where applicable, Pro-rata LSL Payout.
+- The payout date uses the employee’s actual last working/payable day.
+- For the app’s modern/post-17-August-1993 normal-termination scenario, unused leave withholding is calculated at marginal rates separately from ordinary PAYG withholding; STSL is not withheld from the termination leave component.
+
+ADDITIONAL EARNINGS
+- Renamed Additional Day to Additional Hours. Legacy saved Additional Day rows migrate to Additional Hours.
+- Added Meal Allowance: $18 per calendar date in the entered date range.
+- Added Travel Allowance: user-entered dollar amount.
+- Added Motor Vehicle Allowance - Single Trip: fixed $25 per entry.
+- Added Motor Vehicle Allowance - Return Trip: fixed $50 per entry.
+- Added Bonus: user-entered dollar amount.
+
+DEDUCTIONS
+- Fixed the v1.1.25 validation issue where a new ongoing Union Fees deduction could be rejected when another ongoing deduction (for example pre-tax super) already existed.
+- Blank Union Fees End Date remains valid and means the deduction is ongoing.
+- Multiple concurrent deductions remain supported.
+
+DATA / COMPATIBILITY
+- Existing payrollAppData/localStorage storage is migrated in place.
+- Existing import/export remains JSON-compatible with new fields defaulted during migration.
+- Finalised historical payslips are preserved.
+- The configured currentCycleId remains authoritative; the app does not select a pay cycle from the current calendar date.
+- Finalisation remains manual.
+
+TESTING
+- Full Node regression suite: PASS (exit code 0).
+- 111 self-invoking regression test blocks.
+- 467 assertion invocations.
+- 48 PASS summary lines.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- Local HTTP server returned HTTP 200 for index.html.
+- Chromium 144 real-browser smoke attempt timed out before returning a rendered DOM, so no successful real-browser interaction pass is claimed.
+
+KNOWN LIMITATIONS
+- This remains client-side demonstration software, not production payroll software.
+- The parental Unpaid Extension still uses the previously documented fixed 730-day implementation, which can differ from two calendar years across a leap day.
+- Termination-leave tax handling is designed around the app’s modern/post-17-August-1993 normal-termination scenario. It does not split unused leave into pre-1978/pre-1993 historical tax components if very old service/accrual periods are introduced.
+- A reliable one-time LSL reconciliation can only use history actually present in the saved app data. Employees whose recognised service or legacy override audit history is missing are flagged for review rather than silently reconstructed from assumptions.
+- Real-browser smoke rendering could not be completed in this execution environment; automated calculation tests and simulated/static interface checks passed.

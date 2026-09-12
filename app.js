@@ -48,11 +48,16 @@
 
   function init(){
     state = DataStore.migrate(state);
+    E.reconcileAllEmploymentFromJobData(state);
+    const lslMigration=E.reconcileLslSevenYearMigration(state,currentCycle().end);
+    const personalLeaveBreakRepair=E.reconcilePersonalLeaveBreakRules(state,currentCycle().end);
     const personalLeaveRepair=E.repairPersonalLeaveBalances(state);
     if(personalLeaveRepair && personalLeaveRepair.repaired && personalLeaveRepair.repaired.length){
       state.auditLog=state.auditLog||[];
       state.auditLog.unshift(`v1.1.22 automatically corrected Personal Leave balances for ${personalLeaveRepair.repaired.length} employee(s) affected by the retro leave balance issue.`);
     }
+    if(lslMigration && lslMigration.employees) state.auditLog.unshift(`v1.1.26 completed the one-time 7-year/65-day LSL reconciliation for ${lslMigration.employees.length} employee(s).`);
+    if(personalLeaveBreakRepair && personalLeaveBreakRepair.corrected && personalLeaveBreakRepair.corrected.length) state.auditLog.unshift(`v1.1.26 corrected Personal Leave for ${personalLeaveBreakRepair.corrected.length} employee(s) with a break in service exceeding 182 calendar days.`);
     DataStore.save(state);
     attachGlobalEvents();
     hydrateLogin();
@@ -166,9 +171,11 @@
     if(bell) bell.setAttribute('aria-expanded','false');
     if(!action || !action.tab) return;
     if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
+    if(action.tab==='absenceBalance' && action.empId) selectedReportEmp=String(action.empId);
     const btn=document.querySelector(`.nav-btn[data-tab="${action.tab}"]`);
     attemptShowTab(action.tab, btn);
     setTimeout(()=>{
+      if(action.tab==='absenceBalance' && action.empId){ const select=$('absenceEmp'); if(select){ select.value=String(action.empId); renderAbsenceOutput(); } }
       if(action.tab==='certification'){
         const select=$('certCycle');
         if(select && action.cycleId){ select.value=String(action.cycleId); renderCertOutput(); }
@@ -627,8 +634,19 @@
       if(!e.employmentSegments.some(seg=>seg.startDate===row.effectiveDate)) e.employmentSegments.push({id:uid('segment'),startDate:row.effectiveDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'});
       e.startDate=row.effectiveDate;
       if(!e.originalStartDate) e.originalStartDate=row.effectiveDate;
-      if(isRehire || !e.lslServiceDate) e.lslServiceDate=row.effectiveDate;
-      if(isRehire){ e.lslEntitlementConvertedAt=''; e.lslEntitlementDateOverride=''; e.lslProRataOverride=''; }
+      if(isRehire){
+        const breakDays=E.breakDaysBeforeRehire(e,row.effectiveDate);
+        if(breakDays>182){
+          e.personalLeaveBalance=0;
+          e.lslServiceDate=row.effectiveDate;
+          e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0; e.lslEntitlementDateAdjustmentCycleStart='';
+          e.lslAccruedBalance=0; e.lslProRataOverride=''; e.lslEntitlementDateOverride=''; e.lslEntitlementConvertedAt='';
+          addJobEvent(e.id,'Break in Service',row.effectiveDate,`Break in service of ${breakDays} calendar days exceeded 182 days. Personal Leave reset to 0; LSL service cycle and pro-rata reset.`,'jobData',row.id);
+        }else{
+          if(!e.lslServiceDate) e.lslServiceDate=e.originalStartDate||row.effectiveDate;
+          addJobEvent(e.id,'Break in Service',row.effectiveDate,`Break in service of ${breakDays} calendar days did not exceed 182 days. Personal Leave and LSL pro-rata preserved; LSL entitlement date is extended by the break.`,'jobData',row.id);
+        }
+      }else if(!e.lslServiceDate) e.lslServiceDate=row.effectiveDate;
       e.status='Active'; e.terminationDate=''; e.terminationReason='';
     }
     e.position=row.positionName; e.department=row.department; e.hourlyRate=Number(row.hourlyRate||0); e.type=row.positionClass==='Fixed-Term'?'Fixed Term':row.positionClass; if(row.positionClass!=='Fixed-Term'){ e.contractEndDate=''; e.autoTerminate=false; }
@@ -667,10 +685,13 @@
   function moveAdditionalPeriod(n){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const nextOffset=additionalPeriodOffset+n; const idx=currentIndex+nextOffset; if(idx<0 || idx>currentIndex+1) return; additionalPeriodOffset=nextOffset; loadAdditionalDraft(); }
   function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); const empId=v('addEmp'); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
   function markAdditionalDirty(){ additionalDirty=true; h('additionalNote','Unsaved changes. Additional earnings will not appear on payslips until saved.'); }
-  function addAdditionalRow(){ if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Day',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
+  function addAdditionalRow(){ if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function additionalDraftAmount(a){
     const c=additionalCycle();
-    if(['Overpayment Adjustment','Reimbursement'].includes(a.earningType||'')) return Number(a.amount||0);
+    if(['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType||'')) return Number(a.amount||0);
+    if(a.earningType==='Meal Allowance') return E.round2(E.calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start)*18);
+    if(a.earningType==='Motor Vehicle Allowance - Single Trip') return 25;
+    if(a.earningType==='Motor Vehicle Allowance - Return Trip') return 50;
     const rate=E.activePayRate(state,v('addEmp')||a.empId,a.startDate||c.start);
     const multiplier=a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1;
     return E.round2(Number(a.hours||0)*Number(rate.hourlyRate||0)*multiplier);
@@ -681,20 +702,23 @@
     const c=additionalCycle();
     const rows=additionalDraftRows.map((a,i)=>{
       const isOver=a.earningType==='Overpayment Adjustment';
-      const isReimbursement=a.earningType==='Reimbursement';
-      const isAmountOnly=isOver||isReimbursement;
+      const userAmount=['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType);
+      const fixedAmount=['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
+      const isAmountOnly=userAmount||fixedAmount;
       const amount=additionalDraftAmount(a);
-      return [`<select data-add-field="${i}|earningType"><option ${a.earningType==='Additional Day'?'selected':''}>Additional Day</option><option ${a.earningType==='Overtime 1.5'?'selected':''}>Overtime 1.5</option><option ${a.earningType==='Overtime 2.0'?'selected':''}>Overtime 2.0</option><option ${a.earningType==='Overpayment Adjustment'?'selected':''}>Overpayment Adjustment</option><option ${a.earningType==='Reimbursement'?'selected':''}>Reimbursement</option></select>`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${isAmountOnly?'':'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
+      const options=['Additional Hours','Overtime 1.5','Overtime 2.0','Meal Allowance','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
+      return [`<select data-add-field="${i}|earningType">${options}</select>`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
     h('addRows', table(['Earnings Type','Start Date','End Date','Hours','Amount','Delete'], rows));
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
       const [i,field]=el.dataset.addField.split('|'); const row=additionalDraftRows[Number(i)];
-      if(field==='earningType' && el.value==='Overpayment Adjustment' && Number(additionalCycle().id)!==Number(currentCycle().id)){ el.value=row.earningType||'Additional Day'; return alert('Overpayment Adjustment can only be entered in the current open pay period.'); }
+      if(field==='earningType' && el.value==='Overpayment Adjustment' && Number(additionalCycle().id)!==Number(currentCycle().id)){ el.value=row.earningType||'Additional Hours'; return alert('Overpayment Adjustment can only be entered in the current open pay period.'); }
       row[field]=(field==='hours'||field==='amount')?Number(el.value||0):el.value;
       if(field==='earningType' && row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=0; }
-      if(field==='earningType' && row.earningType==='Reimbursement'){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; }
+      if(field==='earningType' && ['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; }
+      if(field==='earningType' && ['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=additionalDraftAmount(row); }
       if(field==='startDate' && row.earningType!=='Overpayment Adjustment') row.endDate=el.value;
-      if(!['Overpayment Adjustment','Reimbursement'].includes(row.earningType)) row.amount=additionalDraftAmount(row);
+      if(!['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)) row.amount=additionalDraftAmount(row);
       markAdditionalDirty(); renderAdditionalRows();
     }));
     document.querySelectorAll('[data-del-add]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this entry? This may result in pay recalculations','Yes',()=>{ additionalDraftRows=additionalDraftRows.filter(a=>a.id!==b.dataset.delAdd); markAdditionalDirty(); renderAdditionalRows(); })));
@@ -705,14 +729,16 @@
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
       if((a.earningType||'') !== 'Overpayment Adjustment' && (!a.startDate || !a.endDate || E.compare(a.startDate,c.start)<0 || E.compare(a.endDate,c.end)>0 || E.compare(a.startDate,a.endDate)>0)) return alert('Additional earning dates must fall within the selected pay period.');
-      if((a.earningType||'') === 'Additional Day' && emp(empId)?.startDate && E.compare(a.startDate, emp(empId).startDate) < 0) return alert("This additional day is before the employee's start date and cannot be paid.");
+      if((a.earningType||'') === 'Additional Hours' && emp(empId)?.startDate && E.compare(a.startDate, emp(empId).startDate) < 0) return alert("These additional hours are before the employee's start date and cannot be paid.");
+      if(['Travel Allowance','Bonus'].includes(a.earningType||'') && Number(a.amount||0)<0) return alert(`${a.earningType} amount cannot be negative.`);
     }
     loadingModal('Saving Additional Earnings','Save Successful',()=>{
       state.additionalEarnings=state.additionalEarnings.filter(a=>!(a.empId===empId&&Number(a.cycleId)===Number(c.id)));
       additionalDraftRows.forEach(a=>{
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
         if(row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=Number(row.amount||0); }
-        else if(row.earningType==='Reimbursement'){ row.hours=0; row.amount=Number(row.amount||0); }
+        else if(['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.amount=Number(row.amount||0); }
+        else if(['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.amount=additionalDraftAmount(row); }
         else row.amount=additionalDraftAmount(row);
         state.additionalEarnings.push(row);
       });
@@ -764,7 +790,7 @@
     $('stageDeduction').addEventListener('click',stageDeduction);
   }
   function stageDeduction(){
-    const empId=selectedDeductionEmp || v('dedEmp'); const start=v('dedStart'); const end=v('dedEnd'); const amount=v('dedAmount'); const percentage=v('dedPercentage');
+    const empId=selectedDeductionEmp || v('dedEmp'); const start=v('dedStart'); const end=String(v('dedEnd')||'').trim(); const amount=v('dedAmount'); const percentage=v('dedPercentage');
     if(!empId) return alert('Select an employee first.');
     if(!start) return alert('Select an effective date.');
     const deductionType=v('dedType');
@@ -772,11 +798,9 @@
     if(deductionType==='Union Fees' && String(percentage).trim()!=='') return alert('Union Fees cannot be entered as a Percentage.');
     if(amount && percentage) return alert('Enter an Amount OR Percentage, not both.');
     if(!amount && !percentage) return alert('Enter either an Amount or Percentage.');
-    const selectedStartCycle=E.PAY_CYCLES.find(c=>c.start===start);
-    const selectedEndCycle=end ? E.PAY_CYCLES.find(c=>c.end===end) : null;
-    if(!selectedStartCycle || selectedStartCycle.id < currentCycle().id) return alert('Effective Date must be the first day of the current or a future pay period.');
-    if(end && (!selectedEndCycle || selectedEndCycle.id < currentCycle().id || E.compare(end,start)<0)) return alert('End Date must be the last day of the current or a future pay period and cannot be before the effective date.');
-    deductionDraftRows.push({ id:uid('ded'), empId, startDate:start, endDate:end, deductionType, amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false });
+    const draft={ id:uid('ded'), empId, startDate:start, endDate:end, deductionType, amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false };
+    const dateValidation=E.validateDeductionDates(state,draft,true); if(!dateValidation.ok) return alert(dateValidation.message);
+    deductionDraftRows.push(draft);
     closeModal(); markDeductionDirty(); renderDeductionsTable();
   }
   function deductionCanEditEnd(d){ return !d.endDate || E.compare(d.endDate,currentCycle().start)>=0; }
@@ -812,10 +836,8 @@
   function saveDeductions(afterSave){
     const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
     for(const d of deductionDraftRows.filter(x=>x.empId===empId && x.deleted!==true)){
-      if(!d.startDate) return alert('Every deduction must have a Start Date.');
-      const startCycle=E.PAY_CYCLES.find(c=>c.start===d.startDate);
-      if(!startCycle || startCycle.id < currentCycle().id && d.saved===false) return alert('Effective Date must be the first day of the current or a future pay period.');
-      if(d.endDate){ const endCycle=E.PAY_CYCLES.find(c=>c.end===d.endDate); const minimumId=d.saved===false?currentCycle().id:Math.max(1,currentCycle().id-1); if(!endCycle || endCycle.id<minimumId || E.compare(d.endDate,d.startDate)<0) return alert('End Date must be the last day of the most recent closed, current or a future pay period and cannot be before the effective date.'); }
+      d.endDate=String(d.endDate||'').trim();
+      const dateValidation=E.validateDeductionDates(state,d,d.saved===false); if(!dateValidation.ok) return alert(dateValidation.message);
       if(d.deductionType==='Union Fees' && (d.amount===''||d.amount==null)) return alert('Union Fees must be entered as an Amount.');
       if(d.deductionType==='Union Fees' && d.percentage!=='' && d.percentage!=null) return alert('Union Fees cannot be entered as a Percentage.');
       if((d.amount===''||d.amount==null) && (d.percentage===''||d.percentage==null)) return alert('Each deduction must have either an Amount or Percentage.');
@@ -1082,9 +1104,8 @@
       const recalculated=E.recalculateBalances(state,e,currentCycle().end);
       e.annualLeaveBalance=E.round4(recalculated.annual);
       e.personalLeaveBalance=E.round4(recalculated.personal);
-      e.lslAccruedBalance=E.round4(recalculated.lslAccrued);
-      e.lslProRataOverride=E.round4(recalculated.lslProRata);
-      e.lslEntitlementDateOverride=recalculated.lslEntitlementDate; e.lslEntitlementConvertedAt=(recalculated.lslEntitlementDate&&E.compare(recalculated.lslEntitlementDate,currentCycle().end)<=0)?currentCycle().end:'';
+      e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0; e.lslEntitlementDateAdjustmentCycleStart='';
+      e.lslAccruedBalance=E.round4(recalculated.lslAccrued); e.lslProRataOverride=''; e.lslEntitlementDateOverride=''; e.lslEntitlementConvertedAt='';
       addJobEvent(e.id,'Absence Balance Recalculation',todayIso(),`Balances recalculated. Annual ${before.annual.toFixed(2)} → ${recalculated.annual.toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${recalculated.personal.toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${recalculated.lslAccrued.toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${recalculated.lslProRata.toFixed(2)}.`, 'employee', e.id);
       save(); calculateAllForCurrent(); toast('Balances recalculated'); renderAll();
     });
@@ -1097,7 +1118,17 @@
     modal('Adjustment Comment', '<p>Please enter a comment/explanation for this adjustment.</p><textarea id="absenceComment" rows="4" style="width:100%"></textarea>', '<button id="saveAbsenceComment">Save</button><button data-close-modal class="secondary">Cancel</button>', true);
     $('saveAbsenceComment').addEventListener('click',()=>{
       const comment=v('absenceComment').trim(); if(!comment) return alert('A comment is required.');
-      e.annualLeaveBalance=E.round4(Number(draft.annual||0)); e.personalLeaveBalance=E.round4(Number(draft.personal||0)); e.lslAccruedBalance=E.round4(Number(draft.lslAccrued||0)); e.lslProRataOverride=E.round4(Number(draft.lslProRata||0)); e.lslEntitlementDateOverride=draft.lslEntitlementDate||''; e.lslEntitlementConvertedAt=(draft.lslEntitlementDate&&E.compare(draft.lslEntitlementDate,currentCycle().end)<=0)?currentCycle().end:'';
+      e.annualLeaveBalance=E.round4(Number(draft.annual||0)); e.personalLeaveBalance=E.round4(Number(draft.personal||0));
+      const baseLsl=E.lslBalances(state,e,currentCycle().end,{ignoreManual:true,ignoreDateAdjustment:true});
+      const baseLslProfile=E.lslServiceProfile(state,e,currentCycle().end,{ignoreDateAdjustment:true});
+      // The dated Absence Balance Adjustment Job Summary event below is the canonical
+      // LSL manual adjustment. This lets a pro-rata correction transfer into accrued LSL
+      // at entitlement instead of becoming a frozen absolute override.
+      e.lslAccruedAdjustment=0;
+      e.lslProRataAdjustment=0;
+      e.lslEntitlementDateAdjustmentDays=(draft.lslEntitlementDate&&baseLsl.entitlementDate)?E.dateDiffDays(baseLsl.entitlementDate,draft.lslEntitlementDate):0;
+      e.lslEntitlementDateAdjustmentCycleStart=Number(e.lslEntitlementDateAdjustmentDays||0)?(baseLslProfile.cycleStart||''):'';
+      e.lslAccruedBalance=E.round4(Number(draft.lslAccrued||0)); e.lslProRataOverride=''; e.lslEntitlementDateOverride=''; e.lslEntitlementConvertedAt='';
       const desc=`Balances adjusted. Annual ${before.annual.toFixed(2)} → ${Number(draft.annual||0).toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${Number(draft.personal||0).toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${Number(draft.lslAccrued||0).toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${Number(draft.lslProRata||0).toFixed(2)}, LSL Date ${E.fmtPay(before.lslEntitlementDate)} → ${E.fmtPay(draft.lslEntitlementDate)}. Comment: ${comment}`;
       addJobEvent(e.id,'Absence Balance Adjustment',todayIso(),desc,'employee',e.id); absenceEditing=false; absenceDraft=null; save(); calculateAllForCurrent(); closeModal(); log('Absence balances adjusted.'); renderAll();
     });
@@ -1175,7 +1206,7 @@
       ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(e.department||'')], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
     ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
     const displayRows=consolidatePayslipDisplayRows(p.rows||[]);
-    const rows=displayRows.map(r=>`<tr><td>${esc(r.description || 'Additional Day')}</td><td class="right">${Number(r.units||0).toFixed(2)}</td><td class="right">${r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):''}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`).join('');
+    const rows=displayRows.map(r=>`<tr><td>${esc(r.description || 'Additional Hours')}</td><td class="right">${Number(r.units||0).toFixed(2)}</td><td class="right">${r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):''}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`).join('');
     const preTaxRows=(p.preTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const postTaxRows=(p.postTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const preTaxSection=preTaxRows.length?`<div class="section-title">Pre-Tax Deductions</div>${table(['Description','Amount'],preTaxRows)}`:'';
@@ -1446,6 +1477,13 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.26',notes:[
+      'Changed Long Service Leave to a recurring 7-year cycle with 65 working days (13 weeks) of entitlement and added a one-time reconciliation for existing employees.',
+      'Added LSL contributory-service rules for breaks in service, LWOP over 14 calendar days and unpaid parental leave extension, plus per-employee reconciliation and entitlement notifications.',
+      'Updated termination payouts so non-retirement terminations pay Annual Leave and accrued LSL, while Retirement also pays pro-rata LSL on separate taxed lines.',
+      'Renamed Additional Day to Additional Hours and added Meal Allowance, Travel Allowance, Motor Vehicle Allowance Single/Return Trip and Bonus.',
+      'Hardened open-ended Union Fees validation so a blank End Date remains valid alongside other ongoing deductions.'
+    ]},
     {version:'v1.1.25',notes:[
       'Allowed Union Fees deductions to remain open-ended when End Date is blank; the deduction continues until it is end-dated or removed.',
       'Allowed multiple deductions to be active at the same time, including multiple records of the same deduction type such as Union Fees.',
@@ -1544,7 +1582,7 @@
       'Payslip detail now clears when leaving the Payslip tab so an open payslip cannot remain visible while scrolling elsewhere.',
       'Retro overtime now generates Marginal Tax Retro and STSL Repayment Retro where applicable, while still not accruing annual or personal leave.',
       'Leave Without Pay now appears in the Absence Calendar key after Long Service Leave and before Public Holiday using a burgundy colour.',
-      'Additional Day entries before the employee start date now show a warning when Save is clicked.',
+      'Additional Hours entries before the employee start date now show a warning when Save is clicked.',
       'Matching retro Regular Pay recovery lines are consolidated on the payslip.'
     ]},
     {version:'v1.1.6',notes:[
@@ -1552,7 +1590,7 @@
       'Added Pre-Tax Deductions and Post-Tax Deductions payslip sections; pre-tax deductions reduce taxable income while gross remains unchanged, and post-tax percentage deductions calculate from net after tax/pre-tax deductions.',
       'Added Settings > Check for Errors, including negative net pay warnings, missing TFN/tax details, negative leave balances, fixed-term contract warnings, missing schedules and no-pay payslip warnings.',
       'Added Import Preview before data import replaces current app data, including counts for employees, payslips, leave, additional earnings, deductions, tax details and change records.',
-      'Added Recalculate Balances in Absence Balance and included Additional Day hours in ordinary-hours accrual calculations.'
+      'Added Recalculate Balances in Absence Balance and included Additional Hours hours in ordinary-hours accrual calculations.'
     ]},
     {version:'v1.1.5',notes:[
       'Replaced estimated tax logic with lookups from the uploaded ATO Fortnightly Tax Table and STSL Tax Table PDFs.',
@@ -1583,11 +1621,11 @@
     ]},
     {version:'v1.1.2',notes:[
       'Updated payslip Pay Summary so Current and YTD are rows and Gross, Tax and Net are columns.',
-      'Fixed Additional Day descriptions and kept current-pay additional earnings/overtime on the same payslip instead of creating a separate payslip.',
+      'Fixed Additional Hours descriptions and kept current-pay additional earnings/overtime on the same payslip instead of creating a separate payslip.',
       'Added financial-year YTD logic using payment date, so YTD resets after 30 June and sums payslips in the same Australian financial year.',
       'Updated SG to 12% of ordinary time earnings and added Employer Super Contribution Retro for prior-period super adjustments.',
       'Strengthened STSL handling so STSL calculates when the effective Tax Details record has STSL set to Yes.',
-      'Improved retro line handling for prior-period leave and additional earnings so rows appear as Regular Pay Retro, Annual Leave Retro, Additional Day Retro, Overtime 1.5 Retro or Overtime 2.0 Retro.',
+      'Improved retro line handling for prior-period leave and additional earnings so rows appear as Regular Pay Retro, Annual Leave Retro, Additional Hours Retro, Overtime 1.5 Retro or Overtime 2.0 Retro.',
       'Prevented leave calendar bookings from overwriting Non Rostered Day and Public Holiday calendar markings.',
       'Prevented overlapping leave bookings for the same employee and date range.',
       'Added partial-day leave for single-day Annual Leave, Personal Leave and LWOP, with editable Absence Duration and scheduled-hours validation.',
@@ -1643,7 +1681,7 @@
   function importData(event){
     const file=event.target.files[0]; if(!file) return;
     const reader=new FileReader();
-    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; E.repairPersonalLeaveBalances(state); save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
+    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; E.reconcileAllEmploymentFromJobData(state); E.reconcileLslSevenYearMigration(state,currentCycle().end); E.reconcilePersonalLeaveBreakRules(state,currentCycle().end); E.repairPersonalLeaveBalances(state); save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
     reader.readAsText(file); event.target.value='';
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }

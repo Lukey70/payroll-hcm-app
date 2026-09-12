@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.25'), 'sidebar/version label must show v1.1.25');
-  assert(data.includes("APP_VERSION = '1.1.25'"), 'data-store version must be 1.1.25');
+  assert(html.includes('v1.1.26'), 'sidebar/version label must show v1.1.26');
+  assert(data.includes("APP_VERSION = '1.1.26'"), 'data-store version must be 1.1.26');
 })();
 
 (function testAnchorPayCycle(){
@@ -236,9 +236,9 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const paid=E.calculateEmployee(state,e.id,1,true);
   state.payslips.push(...paid.map(p=>Object.assign({},p,{finalised:true})));
   state.currentCycleId=2;
-  state.additionalEarnings.push({id:'a_retro',empId:e.id,cycleId:1,earningType:'Additional Day',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  state.additionalEarnings.push({id:'a_retro',empId:e.id,cycleId:1,earningType:'Additional Hours',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
   const next=E.calculateEmployee(state,e.id,2,false);
-  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Additional Day Retro' && r.amount > 0), 'Prior-pay additional earnings should appear as Additional Day Retro in the current open pay');
+  assert(next.flatMap(p=>p.rows).some(r=>r.description==='Additional Hours Retro' && r.amount > 0), 'Prior-pay additional earnings should appear as Additional Hours Retro in the current open pay');
 })();
 
 (function testPayslipSummaryAndSuperRetroTextInApp(){
@@ -412,10 +412,10 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 
 (function testAdditionalEarningsAmountAndOverpayment(){
   const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
-  state.additionalEarnings.push({id:'add1',empId:e.id,cycleId:1,earningType:'Additional Day',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
+  state.additionalEarnings.push({id:'add1',empId:e.id,cycleId:1,earningType:'Additional Hours',startDate:'2026-05-26',endDate:'2026-05-26',hours:2,saved:true});
   state.additionalEarnings.push({id:'op1',empId:e.id,cycleId:1,earningType:'Overpayment Adjustment',startDate:'2026-05-22',endDate:'2026-06-04',hours:0,amount:-50,saved:true});
   const p=E.calculateEmployee(state,e.id,1,false)[0];
-  assert(p.rows.some(r=>r.description==='Additional Day' && r.amount===80), 'Additional Earnings amount should calculate from rate x hours');
+  assert(p.rows.some(r=>r.description==='Additional Hours' && r.amount===80), 'Additional Earnings amount should calculate from rate x hours');
   assert(p.rows.some(r=>r.description==='Overpayment Adjustment' && r.units===0 && r.amount===-50 && r.ote===false), 'Overpayment Adjustment should use zero hours and entered amount');
 })();
 
@@ -470,7 +470,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(app.includes('saveDeductionsBtn'), 'Deductions tab should include a bottom-right Save button');
   assert(app.includes('Unsaved changes. Deduction changes will not update Job Summary'), 'Deductions should stage changes until Save is pressed');
   assert(app.includes('data-cert-detail') && app.includes('🔍'), 'Certification Report should include a magnifying glass details button');
-  assert(app.includes("This additional day is before the employee's start date and cannot be paid."), 'Additional Day before start date warning should appear at Save');
+  assert(app.includes("These additional hours are before the employee's start date and cannot be paid."), 'Additional Hours before start date warning should appear at Save');
   assert(app.includes("selectedPayslipKey=''; h('payslipContent','');"), 'Payslip should clear when leaving the Payslip tab');
   assert(app.includes('<span class="lwop">Leave Without Pay</span><span class="otherleave">Other Leave</span><span class="publicholiday">Public Holiday</span>'), 'Other Leave should appear after LWOP and before Public Holiday in the legend');
   assert(styles.includes('--lwop:#7f1d1d') && styles.includes('.cal-day.lwop'), 'LWOP should use a burgundy calendar colour');
@@ -760,17 +760,18 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(result.message.includes('termination effective date'));
 })();
 
-(function testV1115LslEntitlementConversionOccursOnce(){
-  const state=baseState(); const e=addEmployee(state,{startDate:'2026-05-22',lslServiceDate:'2016-06-01',lslEntitlementDateOverride:'2026-06-01',lslProRataOverride:100,lslAccruedBalance:10,lslEntitlementConvertedAt:''});
-  addSchedule(state,e.id); addRate(state,e.id);
-  const before=E.lslBalances(state,e,E.cycleById(1).end);
-  assert.strictEqual(before.lslAccrued,undefined);
-  assert.strictEqual(before.accrued,110,'Pro-rata LSL should move into accrued LSL at entitlement');
-  E.finaliseCurrentPay(state);
-  assert.strictEqual(e.lslAccruedBalance,110,'LSL conversion should be committed at finalisation');
-  assert(e.lslEntitlementConvertedAt,'LSL conversion should be marked as completed');
-  const after=E.lslBalances(state,e,E.cycleById(2).end);
-  assert.strictEqual(after.accrued,110,'Converted pro-rata LSL must not be added again in a later pay period');
+(function testV126LslSevenYearCycleAndRecurringEntitlement(){
+  const state=baseState();
+  const e=addEmployee(state,{startDate:'2019-06-01',originalStartDate:'2019-06-01',lslServiceDate:'2019-06-01',lslAccruedBalance:0,employmentSegments:[{startDate:'2019-06-01',endDate:'',inclusiveEnd:false}]});
+  addSchedule(state,e.id,'2019-06-01'); addRate(state,e.id,'2019-06-01');
+  e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0;
+  const atSeven=E.lslBalances(state,e,'2026-06-01');
+  assert.strictEqual(atSeven.accrued,487.5,'37.5-hour employee must accrue 65 days / 13 weeks = 487.5 hours at 7 years');
+  assert.strictEqual(atSeven.proRata,0,'Pro-rata must restart at zero on the entitlement date');
+  assert.strictEqual(atSeven.entitlementDate,'2033-06-01','Next entitlement must be another 7 years later');
+  const second=E.lslBalances(state,e,'2033-06-01');
+  assert.strictEqual(second.accrued,975,'A second completed 7-year cycle must add another 487.5 accrued hours');
+  assert.strictEqual(second.entitlementDate,'2040-06-01','Recurring LSL cycles must continue every 7 years');
 })();
 
 (function testV1115CertificationAlertCleanupAndSafeDeductionHistoryStrings(){
@@ -1032,11 +1033,11 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const prior=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true}));
   state.payslips=prior; state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'}; state.currentCycleId=2;
   state.additionalEarnings.push({id:'term_add_1',empId:e.id,cycleId:2,earningType:'Reimbursement',startDate:'2026-06-10',endDate:'2026-06-10',hours:0,amount:125.50,saved:true});
-  state.additionalEarnings.push({id:'term_add_2',empId:e.id,cycleId:2,earningType:'Additional Day',startDate:'2026-06-10',endDate:'2026-06-10',hours:2,amount:80,saved:true});
+  state.additionalEarnings.push({id:'term_add_2',empId:e.id,cycleId:2,earningType:'Additional Hours',startDate:'2026-06-10',endDate:'2026-06-10',hours:2,amount:80,saved:true});
   const payslips=E.calculateEmployee(state,e.id,2,false);
   assert.strictEqual(payslips.length,1,'A terminated employee with valid Additional Earnings must receive a current-pay payslip');
   assert.strictEqual(totalAmountByDesc(payslips,'Reimbursement'),125.50,'The terminated employee Reimbursement must be paid');
-  assert.strictEqual(totalAmountByDesc(payslips,'Additional Day'),80,'Hours-based Additional Earnings must also be payable after termination');
+  assert.strictEqual(totalAmountByDesc(payslips,'Additional Hours'),80,'Hours-based Additional Earnings must also be payable after termination');
   assert.strictEqual(totalAmountByDesc(payslips,'Regular Pay'),0,'No Regular Pay may be recreated after termination');
   assert.strictEqual(totalAmountByDesc(payslips,'Regular Pay Retro'),0,'Finalised pre-termination Regular Pay must not be recreated as retro');
   assert.strictEqual(totalAmountByDesc(payslips,'Annual Leave Payout'),0,'A prior finalised termination payout must not be repeated in the later Additional Earnings pay');
@@ -1082,7 +1083,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 
 (function testV1117ReimbursementAmountAndNoLeaveAccrual(){
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
-  assert(appSource.includes("a.earningType==='Reimbursement'")&&appSource.includes('isAmountOnly=isOver||isReimbursement'),'Additional Earnings UI must provide amount-only Reimbursement entry');
+  assert(appSource.includes("'Reimbursement','Travel Allowance','Bonus'")&&appSource.includes('const isAmountOnly=userAmount||fixedAmount'),'Additional Earnings UI must provide amount-only Reimbursement entry');
   const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
   state.additionalEarnings.push({id:'reimb1',empId:e.id,cycleId:1,earningType:'Reimbursement',startDate:'2026-05-26',endDate:'2026-05-26',hours:99,amount:125.50,saved:true});
   const p=E.calculateEmployee(state,e.id,1,false)[0];
@@ -1367,7 +1368,7 @@ console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term e
   assert.strictEqual(E.round4(e.personalLeaveBalance),expectedPersonal,'Finalisation must commit the same Personal Leave balance shown on the payslip');
 })();
 
-console.log('PASS: v1.1.25 payslip Annual and Personal Leave balances include current-pay leave usage and remain stable on recalculation/finalisation.');
+console.log('PASS: v1.1.26 payslip Annual and Personal Leave balances include current-pay leave usage and remain stable on recalculation/finalisation.');
 
 console.log('PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.');
 
@@ -1407,3 +1408,202 @@ console.log('PASS: Union Fees are fixed-amount post-tax deductions, may be open-
 console.log('PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.');
 console.log('PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.');
 console.log('PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.');
+
+
+(function testV126LslBreakInServiceRules(){
+  const state=baseState();
+  const e=addEmployee(state,{startDate:'2020-02-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[
+    {startDate:'2019-01-01',endDate:'2020-01-01',inclusiveEnd:false},
+    {startDate:'2020-02-01',endDate:'',inclusiveEnd:false}
+  ]});
+  addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01');
+  e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0;
+  assert.strictEqual(E.breakDaysBetweenSegments(e.employmentSegments[0],e.employmentSegments[1]),31);
+  assert.strictEqual(E.lslServiceProfile(state,e,'2025-12-31').nextEntitlementDate,'2026-02-01','A break not exceeding 182 days must push the entitlement date by the exact break length');
+  const before=E.lslBalances(state,e,'2019-12-31').proRata;
+  const after=E.lslBalances(state,e,'2020-02-01').proRata;
+  assert(Math.abs(before-after)<0.25,'Short break must preserve pro-rata rather than reset it');
+
+  const longState=baseState();
+  const long=addEmployee(longState,{startDate:'2020-07-02',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[
+    {startDate:'2019-01-01',endDate:'2020-01-01',inclusiveEnd:false},
+    {startDate:'2020-07-02',endDate:'',inclusiveEnd:false}
+  ]});
+  addSchedule(longState,long.id,'2019-01-01'); addRate(longState,long.id,'2019-01-01'); long.lslAccruedAdjustment=0; long.lslProRataAdjustment=0; long.lslEntitlementDateAdjustmentDays=0;
+  assert(E.breakDaysBetweenSegments(long.employmentSegments[0],long.employmentSegments[1])>182);
+  const profile=E.lslServiceProfile(longState,long,'2020-07-02');
+  assert.strictEqual(profile.continuityStart,'2020-07-02','Break over 182 days must reset the LSL service period');
+  assert.strictEqual(profile.nextEntitlementDate,'2027-07-02');
+  assert.strictEqual(E.lslBalances(longState,long,'2020-07-02').proRata,0,'Pro-rata LSL must reset to zero after a break over 182 days');
+})();
+
+(function testV126LslContributoryAndNonContributoryLeave(){
+  function setup(){ const state=baseState(); const e=addEmployee(state,{startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[{startDate:'2019-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01'); e.lslAccruedAdjustment=0;e.lslProRataAdjustment=0;e.lslEntitlementDateAdjustmentDays=0; return {state,e}; }
+  let x=setup(); x.state.leaveBookings.push({id:'lw14',empId:x.e.id,type:'LWOP',startDate:'2020-01-01',endDate:'2020-01-14'});
+  assert.strictEqual(E.lslServiceProfile(x.state,x.e,'2025-12-31').nextEntitlementDate,'2026-01-01','LWOP of 14 days or less must remain contributory');
+  x=setup(); x.state.leaveBookings.push({id:'lw15',empId:x.e.id,type:'LWOP',startDate:'2020-01-01',endDate:'2020-01-15'});
+  assert.strictEqual(E.lslServiceProfile(x.state,x.e,'2025-12-31').nextEntitlementDate,'2026-01-16','LWOP over 14 days must push the date by the entire LWOP period');
+  for(const type of ['Annual Leave','Personal Leave',E.PARENTAL_PAID_LEAVE_TYPE,E.PARENTAL_UNPAID_LEAVE_TYPE]){
+    x=setup(); x.state.leaveBookings.push({id:`c_${type}`,empId:x.e.id,type,startDate:'2020-01-01',endDate:'2020-01-20'});
+    assert.strictEqual(E.lslServiceProfile(x.state,x.e,'2025-12-31').nextEntitlementDate,'2026-01-01',`${type} must be contributory service for LSL`);
+  }
+  x=setup(); x.state.leaveBookings.push({id:'ext',empId:x.e.id,type:E.PARENTAL_UNPAID_EXTENSION_TYPE,startDate:'2020-01-01',endDate:'2020-01-20'});
+  assert.strictEqual(E.lslServiceProfile(x.state,x.e,'2025-12-31').nextEntitlementDate,'2026-01-21','Unpaid parental leave extension must be non-contributory for its full duration');
+})();
+
+(function testV126LslProRataAccumulatesAndManualAdjustmentDoesNotFreeze(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',employmentSegments:[{startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e.id,'2026-01-01'); addRate(state,e.id,'2026-01-01');
+  e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0; e.lslEntitlementDateAdjustmentCycleStart='';
+  state.jobEvents.push({id:'manualpro',empId:e.id,type:'Absence Balance Adjustment',effectiveDate:'2026-03-01',description:'Balances adjusted. LSL Accrued 0.00 → 0.00, LSL Pro-rata 10.00 → 15.00.'});
+  const a=E.lslBalances(state,e,'2026-06-04').proRata;
+  const b=E.lslBalances(state,e,'2026-06-18').proRata;
+  assert(b>a,'LSL pro-rata must continue increasing from pay period to pay period');
+  const noManualState=JSON.parse(JSON.stringify(state)); noManualState.jobEvents=[];
+  const baseA=E.lslBalances(noManualState,noManualState.employees[0],'2026-06-04').proRata;
+  assert(Math.abs((a-baseA)-5)<0.0002,'A legitimate manual pro-rata adjustment must be preserved as an adjustment, not as a frozen absolute balance');
+  const atEntitlement=E.lslBalances(state,e,'2033-01-01');
+  assert(Math.abs(atEntitlement.accrued-492.5)<0.0002,'A pro-rata manual adjustment from a completed cycle must transfer into accrued LSL at entitlement');
+  assert.strictEqual(atEntitlement.proRata,0,'A converted pro-rata adjustment must not remain in the new cycle pro-rata balance');
+})();
+
+(function testV126OneTimeLslReconciliationAndNotifications(){
+  const state=baseState();
+  const e1=addEmployee(state,{id:'old',firstName:'Existing',lastName:'Employee',startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',lslAccruedBalance:0,lslProRataOverride:'',lslEntitlementDateOverride:'',employmentSegments:[{startDate:'2019-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e1.id,'2019-01-01'); addRate(state,e1.id,'2019-01-01');
+  const e2=addEmployee(state,{id:'blank',firstName:'No',lastName:'Service',startDate:'',originalStartDate:'',lslServiceDate:'',employmentSegments:[],lslAccruedBalance:0});
+  const result=E.reconcileLslSevenYearMigration(state,'2026-01-01');
+  assert.strictEqual(result.employees.length,2,'Every existing employee must be checked once');
+  assert.strictEqual(e1.lslAccruedBalance,487.5,'Migration must correct existing eligible accrued LSL to the 7-year/65-day rule');
+  const notices=state.alerts.filter(a=>String(a.key||'').startsWith('lsl-reconcile-v126-'));
+  assert.strictEqual(notices.length,2,'Each employee checked must receive a separate reconciliation notification');
+  assert(notices.some(a=>a.message.includes('Existing Employee')&&a.message.includes('corrected')),'Changed employee notification must describe the correction');
+  assert(notices.some(a=>a.message.includes('No Service')&&a.message.includes('no action was taken')),'Unchanged employee notification must explicitly say no action was taken');
+  E.reconcileLslSevenYearMigration(state,'2026-01-01');
+  assert.strictEqual(state.alerts.filter(a=>String(a.key||'').startsWith('lsl-reconcile-v126-')).length,2,'One-time reconciliation must not create duplicate notifications on later loads');
+})();
+
+
+
+(function testV126LslMigrationFlagsUnreconstructableLegacyBalance(){
+  const state=baseState(); const e=addEmployee(state,{id:'review',firstName:'Needs',lastName:'Review',startDate:'',originalStartDate:'',lslServiceDate:'',employmentSegments:[],lslAccruedBalance:80,lslProRataOverride:12.5,lslEntitlementDateOverride:''});
+  const r=E.reconcileLslSevenYearMigration(state,'2026-06-04');
+  const item=r.employees.find(x=>x.empId==='review');
+  assert(item&&item.reviewRequired,'Migration must flag an employee when a legacy LSL balance cannot be reconstructed from recognised service history');
+  assert.strictEqual(e.lslAccruedBalance,80,'Migration must preserve an unreconstructable legacy accrued balance rather than silently replacing it with an invented value');
+  const n=state.alerts.find(a=>a.key==='lsl-reconcile-v126-review');
+  assert(n&&n.message.includes('Review required'),'The employee reconciliation notification must explain that review is required');
+})();
+
+(function testV126LslMigrationPreservesHistoryUsageAndManualAdjustments(){
+  const state=baseState();
+  const e=addEmployee(state,{id:'historic',firstName:'History',lastName:'Case',startDate:'2012-01-01',originalStartDate:'2012-01-01',lslServiceDate:'2012-01-01',lslAccruedBalance:123,employmentSegments:[{startDate:'2012-01-01',endDate:'',inclusiveEnd:false}]});
+  addSchedule(state,e.id,'2012-01-01'); addRate(state,e.id,'2012-01-01');
+  state.payslips.push({id:'oldlsl',empId:e.id,cycleId:-100,cycle:{id:-100,start:'2020-01-01',end:'2020-01-14',paymentDate:'2020-01-14',closeDate:'2020-01-10'},finalised:true,rows:[{description:'Long Service Leave',units:75,amount:3000,kind:'leave'}]});
+  state.jobEvents.push({id:'adjold',empId:e.id,type:'Absence Balance Adjustment',effectiveDate:'2024-01-01',description:'Balances adjusted. LSL Accrued 400.00 → 410.00, LSL Pro-rata 200.00 → 205.00.'});
+  const frozen=JSON.stringify(state.payslips);
+  E.reconcileLslSevenYearMigration(state,'2026-01-01');
+  const b=E.lslBalances(state,e,'2026-01-01');
+  assert.strictEqual(b.accrued,915,'Existing-employee migration must apply two 65-day entitlements, subtract historical LSL taken, and preserve legitimate accrued/pro-rata manual corrections');
+  assert.strictEqual(b.proRata,0,'At the second entitlement date the current cycle pro-rata must restart at zero');
+  assert.strictEqual(JSON.stringify(state.payslips),frozen,'The one-time LSL migration must not rewrite finalised historical payslips');
+})();
+
+(function testV126LslEntitlementNotificationText(){
+  const state=baseState(); const e=addEmployee(state,{id:'notify',firstName:'Alex',lastName:'Example',startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[{startDate:'2019-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01'); e.lslAccruedAdjustment=0;e.lslProRataAdjustment=0;e.lslEntitlementDateAdjustmentDays=0;
+  E.ensureLslEntitlementNotifications(state,'2026-01-01');
+  const n=state.alerts.find(a=>a.key==='lsl-entitlement-notify-2026-01-01');
+  assert(n,'An entitlement notification must be created when the entitlement date is reached');
+  assert.strictEqual(n.message,'Alex Example has reached their entitlement date for LSL with an accrued balance of 487.5000 hours.');
+  E.ensureLslEntitlementNotifications(state,'2026-01-01');
+  assert.strictEqual(state.alerts.filter(a=>a.key==='lsl-entitlement-notify-2026-01-01').length,1,'Entitlement notification must not duplicate');
+})();
+
+(function testV126TerminationLeavePayoutRules(){
+  function setup(reason){ const state=baseState(); const e=addEmployee(state,{startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',terminationDate:'2026-06-01',terminationReason:reason,annualLeaveBalance:75,lslAccruedBalance:0,employmentSegments:[{startDate:'2019-01-01',endDate:'2026-06-01',inclusiveEnd:false,terminationReason:reason}]}); addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01','Officer',40); state.taxDetails.push({id:'tax',empId:e.id,effectiveDate:'2019-01-01',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false}); e.lslAccruedAdjustment=0;e.lslProRataAdjustment=0;e.lslEntitlementDateAdjustmentDays=0; return {state,e}; }
+  let x=setup('Resignation'); let pays=E.calculateEmployee(x.state,x.e.id,1,false); let payouts=pays.flatMap(p=>p.rows).filter(r=>r.kind==='payout');
+  assert(payouts.some(r=>r.description==='Annual Leave Payout')&&payouts.some(r=>r.description==='Long Service Leave Payout'),'Non-retirement termination must pay accrued Annual Leave and accrued LSL on separate lines');
+  assert(!payouts.some(r=>r.description==='Pro-rata LSL Payout'),'Non-retirement termination must not pay pro-rata LSL');
+  assert(pays.reduce((s,p)=>s+Number(p.terminationLeaveTax||0),0)>0,'Termination leave payouts must be included in termination leave withholding');
+  x=setup('Retirement'); pays=E.calculateEmployee(x.state,x.e.id,1,false); payouts=pays.flatMap(p=>p.rows).filter(r=>r.kind==='payout');
+  assert(payouts.some(r=>r.description==='Annual Leave Payout'));
+  assert(payouts.some(r=>r.description==='Long Service Leave Payout'));
+  assert(payouts.some(r=>r.description==='Pro-rata LSL Payout'),'Retirement must also pay pro-rata LSL as a separate line');
+})();
+
+(function testV126AdditionalEarningTypes(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings=[
+    {id:'meal',empId:e.id,cycleId:1,earningType:'Meal Allowance',startDate:'2026-05-25',endDate:'2026-05-27',saved:true},
+    {id:'travel',empId:e.id,cycleId:1,earningType:'Travel Allowance',startDate:'2026-05-25',endDate:'2026-05-25',amount:44.25,saved:true},
+    {id:'mv1',empId:e.id,cycleId:1,earningType:'Motor Vehicle Allowance - Single Trip',startDate:'2026-05-25',endDate:'2026-05-25',saved:true},
+    {id:'mv2',empId:e.id,cycleId:1,earningType:'Motor Vehicle Allowance - Return Trip',startDate:'2026-05-26',endDate:'2026-05-26',saved:true},
+    {id:'bonus',empId:e.id,cycleId:1,earningType:'Bonus',startDate:'2026-05-25',endDate:'2026-05-25',amount:300,saved:true}
+  ];
+  const rows=E.earningRowsForCycle(state,e,E.cycleById(1)).filter(r=>r.kind==='additional');
+  const by=n=>rows.find(r=>r.description===n);
+  assert.strictEqual(by('Meal Allowance').amount,54,'Meal Allowance must be $18 multiplied by the number of dates in the entered range');
+  assert.strictEqual(by('Travel Allowance').amount,44.25,'Travel Allowance must use the user-entered dollar amount');
+  assert.strictEqual(by('Motor Vehicle Allowance - Single Trip').amount,25);
+  assert.strictEqual(by('Motor Vehicle Allowance - Return Trip').amount,50);
+  assert.strictEqual(by('Bonus').amount,300,'Bonus must use the user-entered dollar amount');
+  const old=DataStore.migrate(Object.assign(DataStore.emptyState(),{additionalEarnings:[{id:'old',empId:e.id,cycleId:1,earningType:'Additional Day',hours:2,startDate:'2026-05-25',endDate:'2026-05-25'}]}));
+  assert.strictEqual(old.additionalEarnings[0].earningType,'Additional Hours','Legacy Additional Day data must migrate to Additional Hours');
+})();
+
+(function testV126OpenEndedUnionFeesWithExistingOngoingPretaxSuper(){
+  const state=baseState(); state.currentCycleId=3;
+  const existing={id:'pre',empId:'e',deductionType:'Pre-tax Super Deduction',startDate:E.cycleById(1).start,endDate:'',percentage:10,saved:true};
+  const union={id:'union',empId:'e',deductionType:'Union Fees',startDate:E.cycleById(3).start,endDate:'',amount:25,percentage:'',saved:false};
+  assert.strictEqual(E.validateDeductionDates(state,existing,false).ok,true,'Existing ongoing pre-tax super with blank End Date must remain valid');
+  assert.strictEqual(E.validateDeductionDates(state,union,true).ok,true,'New ongoing Union Fees must accept a blank End Date even when another ongoing deduction exists');
+})();
+
+(function testV126SourceContainsPersonalLeaveBreakResetAndNoLegacyAdditionalDayUi(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('if(breakDays>182)')&&app.includes('e.personalLeaveBalance=0'),'Rehire logic must reset Personal Leave after a break over 182 calendar days');
+  assert(app.includes('Personal Leave and LSL pro-rata preserved'),'Rehire logic must preserve balances for breaks of 182 days or less');
+  assert(!app.includes('>Additional Day<'),'Additional Day must no longer appear as a user-facing Additional Earnings option');
+  assert(app.includes('Meal Allowance')&&app.includes('Travel Allowance')&&app.includes('Motor Vehicle Allowance - Single Trip')&&app.includes('Motor Vehicle Allowance - Return Trip')&&app.includes('Bonus'),'New Additional Earnings types must be available in the UI');
+})();
+
+
+
+
+(function testV126ExistingPersonalLeaveLongBreakReconciliation(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2025-01-01',originalStartDate:'2020-01-01',personalLeaveBalance:100,employmentSegments:[{startDate:'2020-01-01',endDate:'2024-01-01',inclusiveEnd:false},{startDate:'2025-01-01',endDate:'',inclusiveEnd:false}]});
+  const c=E.cycleById(1); state.payslips.push({id:'plafterrehire',empId:e.id,cycleId:1,cycle:c,finalised:true,personalAccrual:5,rows:[{description:'Personal Leave',units:2,kind:'leave'}]}); state.finalisedCycles['1']={id:1,finalisedAt:c.end};
+  const r=E.reconcilePersonalLeaveBreakRules(state,c.end);
+  assert.strictEqual(r.corrected.length,1,'Existing employees with a break over 182 days must be checked for Personal Leave reset/rebuild');
+  assert.strictEqual(e.personalLeaveBalance,3,'Personal Leave after a long break must rebuild from zero using only post-rehire accrual and usage');
+  E.reconcilePersonalLeaveBreakRules(state,c.end); assert.strictEqual(e.personalLeaveBalance,3,'Personal Leave long-break reconciliation must run only once');
+})();
+
+(function testV126LslStopsAccruingAfterTermination(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2020-01-01',originalStartDate:'2020-01-01',lslServiceDate:'2020-01-01',terminationDate:'2023-01-01',terminationReason:'Resignation',employmentSegments:[{startDate:'2020-01-01',endDate:'2023-01-01',inclusiveEnd:false,terminationReason:'Resignation'}]}); addSchedule(state,e.id,'2020-01-01'); addRate(state,e.id,'2020-01-01');
+  e.lslAccruedAdjustment=0;e.lslProRataAdjustment=0;e.lslEntitlementDateAdjustmentDays=0;e.lslEntitlementDateAdjustmentCycleStart='';
+  const atTermination=E.lslBalances(state,e,'2023-01-01').proRata;
+  const yearsLater=E.lslBalances(state,e,'2026-06-04').proRata;
+  assert.strictEqual(yearsLater,atTermination,'LSL pro-rata must stop accumulating after the employee ceases employment');
+  assert.strictEqual(E.lslBalances(state,e,'2028-01-01').accrued,0,'A terminated employee must not reach a future LSL entitlement merely because calendar time passes');
+})();
+
+(function testV126ManualLslDateAdjustmentDoesNotCompleteEarly(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[{startDate:'2019-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01');
+  e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=31; e.lslEntitlementDateAdjustmentCycleStart='2019-01-01';
+  assert.strictEqual(E.lslServiceProfile(state,e,'2026-01-15').nextEntitlementDate,'2026-02-01','A manual date adjustment must shift the entitlement date before completion is assessed');
+  assert.strictEqual(E.lslBalances(state,e,'2026-01-15').accrued,0,'LSL must not transfer to accrued before a manually adjusted entitlement date');
+  assert.strictEqual(E.lslBalances(state,e,'2026-02-01').accrued,487.5,'LSL must transfer on the adjusted entitlement date');
+})();
+
+(function testV126LslRecalculationDoesNotDoubleDeductFinalisedUsage(){
+  const state=baseState(); const e=addEmployee(state,{startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',employmentSegments:[{startDate:'2019-01-01',endDate:'',inclusiveEnd:false}]}); addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01');
+  e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0; e.lslEntitlementDateAdjustmentCycleStart='';
+  state.payslips.push({id:'histlsl',empId:e.id,cycleId:1,cycle:E.cycleById(1),finalised:true,rows:[{description:'Long Service Leave',units:37.5,amount:1500,kind:'leave'}],balances:{lslAccrued:450}});
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04'};
+  state.leaveBookings.push({id:'samebooking',empId:e.id,type:'Long Service Leave',startDate:'2026-05-25',endDate:'2026-05-29',hours:37.5,status:'Approved'});
+  const direct=E.lslBalances(state,e,'2026-06-04').accrued;
+  const recalculated=E.recalculateBalances(state,e,'2026-06-04').lslAccrued;
+  assert.strictEqual(recalculated,direct,'Recalculate Balances must not deduct finalised LSL usage a second time from the saved booking/cash-out history');
+})();
+
+console.log('PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.');
+console.log('PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.');
