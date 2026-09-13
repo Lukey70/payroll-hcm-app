@@ -1,27 +1,28 @@
-Payroll/HCM App v1.1.27
+Payroll/HCM App v1.1.28
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.27 migrates existing saved data in place and preserves the payrollAppData/localStorage structure.
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.28 migrates existing saved data in place and preserves the payrollAppData/localStorage structure.
 
 IMPORTANT UPGRADE BEHAVIOUR
-- Existing v1.1.26 LSL reconciliation markers/history are preserved; the one-time LSL repair is not rerun simply because v1.1.27 is opened.
-- Fixed-term Job Data is reconciled so New Fixed Term Contract / Expiry of Fixed Term sequences drive the authoritative contract end without creating a false employment break.
-- Legacy saved leave/deduction/additional-earning data continues to be defaulted/migrated in place.
+- Existing v1.1.26 LSL reconciliation markers/history are preserved; the one-time LSL reconciliation does not rerun because v1.1.28 is opened.
+- Existing v1.1.27 Annual Leave forecast approvals and Job Data fixed-term extension history are preserved.
 - Finalised historical payslips are not rewritten.
+- If saved data contains a finalised fixed-term expiry leave payout and a matching continuous New Fixed Term Contract correction, the recovery appears in the next open pay only; it does not alter the old payslip.
+- Genuine Rehire actions never trigger that payout recovery.
 
 MAJOR CHANGES
-- Deductions: unchanged historical End Dates no longer block saving a new ongoing Union Fees deduction; new/edited dates still validate normally.
-- Additional Earnings: Special Responsibility Allowance (Days) = $20 per entered calendar day.
-- Fixed term: Job Data extension workflow is authoritative for contract end and leave validation.
-- Annual Leave: future forecast balance shown/used for booking; valid forecast-approved bookings survive later schedule/FTE changes; resignation can recover the actual outstanding forecast-approved Annual Leave deficit through a separate recovery line.
+- Reports: Monthly Absence Calendar with all employees, monthly arrow navigation, existing Absence Calendar key/colours, print/save-PDF and HTML download.
+- Notifications: fixed-term contract expiry alert after the pay close of the immediately previous pay period.
+- Fixed-term correction: recover erroneous finalised Annual Leave/LSL termination payouts and reinstate leave when a late New Fixed Term Contract proves continuous service.
+- Rehire safeguard: genuine Rehire keeps prior termination payouts final.
 
 PAYROLL CONTROLS PRESERVED
-- Persisted currentCycleId remains the authoritative open pay; the app does not select a cycle from today's date.
+- Persisted currentCycleId remains the authoritative open pay; the app does not silently select a pay cycle from today's date.
 - Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026.
 - Retro cut-off remains 03/05/2026.
 - Finalisation remains manual.
 
 TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.27.txt for actual automated/static/simulated/browser results and known limitations.
+See test-results.txt and RELEASE-NOTES-v1.1.28.txt for actual automated/static/browser-attempt results and known limitations.
 
 This remains a client-side payroll demonstration and is not production payroll software.

@@ -103,3 +103,16 @@ main{margin:0 auto;align-self:start;}
   #printArea .statement-footer{position:fixed!important;left:16mm!important;right:16mm!important;bottom:5mm!important}
   #printArea .statement-table th,#printArea .statement-table td{font-size:10px!important;padding:1.2mm 1mm!important}
 }
+
+
+/* v1.1.28 Monthly Absence Calendar */
+.monthly-absence-controls{margin-top:20px}.monthly-absence-report{background:#fff;color:#172033;padding:14px;min-width:1050px}.monthly-absence-title{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}.monthly-absence-title h1{font-size:20px;margin:0}.monthly-absence-wrap{overflow:auto}.monthly-absence-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}.monthly-absence-table th,.monthly-absence-table td{border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:10px;height:28px}.monthly-absence-table .monthly-employee{width:170px;min-width:170px;text-align:left;background:#fff;font-weight:700}.monthly-day-head strong{display:block}.monthly-day-head small{display:block;color:#64748b;font-size:8px}.monthly-absence-cell span{font-weight:700;font-size:8px}.monthly-absence-cell.annual{background:var(--annual);color:#1e40af}.monthly-absence-cell.personal{background:var(--personal);color:#9a3412}.monthly-absence-cell.lsl{background:var(--lsl);color:#5b21b6}.monthly-absence-cell.lwop{background:var(--lwop);color:#fff}.monthly-absence-cell.otherleave{background:#14532d;color:#fff}.monthly-absence-cell.publicholiday{background:var(--publicholiday);color:#fff}.monthly-absence-cell.nonrostered{background:var(--nonrostered);color:#6b7280}.monthly-absence-cell.pending{outline:2px dashed var(--warning);outline-offset:-2px}.monthly-pending-note{margin:8px 0 0}
+@media print{
+  #printArea .monthly-absence-report{display:block!important;width:100%!important;min-width:0!important;padding:0!important;background:#fff!important;color:#172033!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  #printArea .monthly-absence-table{table-layout:fixed!important;width:100%!important;margin-top:4mm!important}
+  #printArea .monthly-absence-table th,#printArea .monthly-absence-table td{padding:1mm .5mm!important;font-size:7pt!important;height:7mm!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  #printArea .monthly-absence-table .monthly-employee{width:34mm!important;min-width:34mm!important;font-size:7.5pt!important}
+  #printArea .monthly-absence-table tr{break-inside:avoid!important;page-break-inside:avoid!important}
+  #printArea .monthly-absence-title h1{font-size:14pt!important}
+  @page{size:A4 landscape;margin:7mm}
+}

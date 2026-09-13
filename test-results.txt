@@ -1,38 +1,29 @@
-Payroll/HCM App v1.1.27 — Test Results
+Payroll/HCM App v1.1.28 — Test Results
 Date: 13 September 2026
 
-PRE-PACKAGE AUTOMATED REGRESSION
-- Command: node test-cases.js
-- Result: PASS / exit code 0
-- Self-invoking test blocks: 117
-- Assertion invocations: 501
-- Runtime PASS summaries: 50
+AUTOMATED NODE REGRESSION SUITE
+Command: node test-cases.js
+Result: PASS (exit code 0)
+Test blocks: 121 self-invoking test blocks
+Assertion call sites: 536 assert/assert.* calls
+Runtime PASS summaries: 53
 
-SYNTAX CHECKS
-- node --check data-store.js: PASS
-- node --check payroll-engine.js: PASS
-- node --check app.js: PASS
-- node --check test-cases.js: PASS
+JAVASCRIPT SYNTAX
+node --check data-store.js: PASS
+node --check payroll-engine.js: PASS
+node --check app.js: PASS
+node --check test-cases.js: PASS
 
-NEW/CHANGED REGRESSION AREAS
-- Deduction Save path: ongoing pre-tax super + unchanged historical ended deduction + new ongoing blank-End-Date Union Fees.
-- Special Responsibility Allowance (Days): $20/day inclusive date-range calculation.
-- Fixed-term Job Data extension workflow and migration: New Fixed Term Contract does not create a false service break; latest Expiry drives the contract end; leave inside extension is accepted and leave after expiry rejected.
-- Annual Leave forecast: future balance projection, forecast approval, later schedule-reduction grandfathering, negative-balance handling and resignation recovery.
-- Annual Leave Overutilisation Recovery is capped to the actual outstanding forecast-approved deficit and is not repeated.
+V1.1.28-SPECIFIC COVERAGE
+- Fixed-term contract-expiry notification does not appear before the previous pay close and appears after it.
+- Contract-expiry notification uses employee name/date wording and does not duplicate.
+- Extending the contract causes an unread obsolete expiry alert to be marked obsolete/read.
+- Late New Fixed Term Contract after a finalised Expiry of Fixed Term creates separate Annual Leave Payout Recovery and Long Service Leave Payout Recovery lines for the exact original units/amounts.
+- Recovery reverses termination-leave withholding under the app model, restores leave balances on finalisation, and does not repeat in later pays.
+- Genuine Rehire does not create any termination leave payout recovery.
+- Monthly Absence Calendar uses the same absence-status semantics and key helper as the existing Absence Calendar, includes month navigation, print/save-PDF and HTML download controls, and does not add Position/Labor columns.
 
-BROWSER / INTERFACE TESTING
-- Local HTTP serving: HTTP 200 during smoke attempt.
-- Chromium: attempted, but --dump-dom did not return a rendered DOM before timeout.
-- Therefore: NO successful real-browser interaction/rendering pass is claimed.
-- Static/source and simulated-interface checks included in test-cases.js passed.
-
-FINAL ZIP VERIFICATION
-- Release packaging was subsequently rebuilt with this final test record and the exact resulting ZIP was fresh-extracted and retested before delivery.
-- Expected release-gate result: ZIP integrity PASS; node test-cases.js exit 0; all four node --check commands PASS.
-- The external release test-results/release history records the final archive SHA-256.
-
-RUNTIME PASS OUTPUT
+FULL RUNTIME OUTPUT
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -79,8 +70,18 @@ PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and mu
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
 PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
 PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: v1.1.28 contract-expiry notification timing and extension suppression are verified.
+PASS: v1.1.28 late fixed-term leave-payout recovery and genuine-Rehire safeguard are verified.
+PASS: v1.1.28 Monthly Absence Calendar report structure and shared Absence Calendar key are verified.
 PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fixed-term extension workflow are verified.
 PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.
 PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.
 PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.
 
+BROWSER / INTERFACE
+- Local HTTP server start: successful.
+- Chromium headless real-browser DOM attempt: attempted, but timed out before returning rendered DOM in this environment.
+- A successful real-browser interaction test is therefore NOT claimed.
+
+FINAL ZIP VERIFICATION
+Pending until the application ZIP is frozen, freshly extracted, and the exact packaged files are retested. The external release test-results file will record that final artifact verification.

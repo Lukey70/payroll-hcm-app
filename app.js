@@ -21,6 +21,8 @@
   let selectedCertCycleId = '';
   let selectedReportEmp = '';
   let statementPreviewHtml = '';
+  let monthlyAbsenceMonth = '';
+  let monthlyAbsencePreviewHtml = '';
   let deductionDraftRows = [];
   let deductionDirty = false;
   let deductionDraftLoadedFor = '';
@@ -62,6 +64,7 @@
     attachGlobalEvents();
     hydrateLogin();
     calculateAllForCurrent();
+    if(E.ensureContractExpiryNotifications(state,todayIso())) save();
     renderAll();
   }
 
@@ -172,6 +175,7 @@
     if(!action || !action.tab) return;
     if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
     if(action.tab==='absenceBalance' && action.empId) selectedReportEmp=String(action.empId);
+    if(action.tab==='jobData' && action.empId) selectedJobDataEmp=String(action.empId);
     const btn=document.querySelector(`.nav-btn[data-tab="${action.tab}"]`);
     attemptShowTab(action.tab, btn);
     setTimeout(()=>{
@@ -431,6 +435,7 @@
   }
 
   function renderAll(){
+    if(E.ensureContractExpiryNotifications(state,todayIso())) save();
     renderMetrics(); renderEmployees(); renderBankDetails(); renderSuperDetails(); renderJobData(); renderJobSummary(); renderAdditionalEarnings(); renderTaxDetails(); renderDeductions(); renderLeave(); renderAbsenceBalance(); renderPayslip(); renderCertification(); renderReports(); renderAudit(); renderSettings(); renderAlerts();
   }
   function renderMetrics(){
@@ -1001,6 +1006,7 @@
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
   function openCalendarSelect(){ modal('Select Employee', `${showTerminatedControl('calendarShowTerminated','leave')}<label>Employee</label><select id="calendarEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="openCalendar">Open Calendar</button>`, true); bindShowTerminated('calendarShowTerminated','leave',openCalendarSelect); $('openCalendar').addEventListener('click',()=>{ selectedCalendarEmp=v('calendarEmp'); selectedCalendarYear=E.parseDate(currentCycle().start).getFullYear(); if(!selectedCalendarEmp) return alert('Select an employee.'); closeModal(); openAbsenceCalendar(); }); }
+  function absenceLegendHtml(){ return `<div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="lwop">Leave Without Pay</span><span class="otherleave">Other Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div>`; }
   function openAbsenceCalendar(){
     const e=emp(selectedCalendarEmp); if(!e) return;
     const defaultYear=E.parseDate(currentCycle().start).getFullYear();
@@ -1009,22 +1015,15 @@
     if(selectedCalendarYear < defaultYear) selectedCalendarYear = defaultYear;
     if(selectedCalendarYear > maxYear) selectedCalendarYear = maxYear;
     const year=selectedCalendarYear;
-    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div><div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="lwop">Leave Without Pay</span><span class="otherleave">Other Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div><div class="calendar">`;
+    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div>${absenceLegendHtml()}<div class="calendar">`;
     for(let m=0;m<12;m++){
       const first=new Date(year,m,1); const last=new Date(year,m+1,0);
       body+=`<div class="month"><h4>${first.toLocaleDateString('en-AU',{month:'long'})}</h4><div class="month-grid">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('')}`;
       for(let i=0;i<first.getDay();i++) body+='<div class="cal-day blank"></div>';
       for(let day=1;day<=last.getDate();day++){
         const d=E.iso(new Date(year,m,day));
-        const employed=E.isEmployedOn(e,d);
-        const sched=employed?E.activeSchedule(state,e.id,d):null;
-        const hrs=employed?Number((sched&&sched.hoursByDay&&sched.hoursByDay[E.parseDate(d).getDay()])||0):0;
-        const leave=employed?state.leaveBookings.find(l=>l.empId===e.id&&E.between(d,l.startDate,l.endDate)):null;
-        const isPH=E.isPublicHoliday(d);
-        let cls=hrs<=0?'nonrostered':''; let title=hrs<=0?'Non Rostered Day':'';
-        if(leave && hrs>0 && (!isPH || E.isParentalLeaveType(leave.type))){ cls=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave'; title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave'); }
-        if(isPH && !(leave && E.isParentalLeaveType(leave.type))){ cls='publicholiday'; title=E.publicHolidayName(d)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); }
-        body+=`<div class="cal-day ${cls}" title="${esc(title)}"><strong>${day}</strong></div>`;
+        const status=E.absenceCalendarStatus(state,e,d);
+        body+=`<div class="cal-day ${status.cssClass}" title="${esc(status.title)}"><strong>${day}</strong></div>`;
       }
       body+='</div></div>';
     }
@@ -1368,10 +1367,31 @@
     const lwopBody=lwopRows.length?lwopRows.map(r=>`<tr><td>${esc(r.job)}</td><td>${esc(E.fmtPay(r.begin))}</td><td>${esc(E.fmtPay(r.end))}</td></tr>`).join(''):'<tr><td colspan="3">No Leave Without Pay recorded.</td></tr>';
     return `<article class="statement-service"><header class="statement-header"><div class="statement-brand"><div class="statement-dept">McDonald&#39;s California Franchise</div></div><div class="statement-reference">${esc(reference)}</div></header><div class="statement-address"><strong>${esc(E.employeeName(e))}</strong><br>${esc(String(personal.addressLine||'').toUpperCase())}<br>${esc(String(locality||'').toUpperCase())}<br>${esc(String(personal.country||'').toUpperCase())}</div><h1>STATEMENT OF SERVICE</h1><p>${esc(E.employeeName(e))} commenced service with McDonald&#39;s California Franchise on ${esc(reportLongDate(commencement))}. Employment is full time equivalent (FTE) and continuous unless otherwise stated.</p><p>Job number indicates employment in different roles within the company. Multiple jobs may be active concurrently.</p><h2>Service History:</h2><table class="statement-table"><thead><tr><th>Job</th><th>Date</th><th>Position</th><th>Location</th><th>FTE</th><th>Action</th></tr></thead><tbody>${serviceBody}</tbody></table><h2>Leave Without Pay Taken:</h2><table class="statement-table statement-lwop"><thead><tr><th>Job</th><th>Begin Date</th><th>End Date</th></tr></thead><tbody>${lwopBody}</tbody></table><p>This statement is a true indication of service as at ${esc(reportLongDate(asAt))}.</p><p>Please contact the Human Resources Department on ${esc(contact)}, if you have any enquiries relating to this matter.</p><div class="statement-signature"><p>Yours sincerely</p><div class="signature-space"></div><p><strong>${esc(String(signatory||'').toUpperCase())}</strong><br><strong>${esc(String(signatoryPosition||'').toUpperCase())}</strong><br>${esc(reportLongDate(todayIso()))}</p></div><footer class="statement-footer"><span>McDonald&#39;s California Franchise</span><span class="statement-page-number">Page</span></footer></article>`;
   }
+  function monthStartIso(value){ const d=E.parseDate(value||currentCycle().start); return E.iso(new Date(d.getFullYear(),d.getMonth(),1)); }
+  function shiftMonthIso(value,delta){ const d=E.parseDate(monthStartIso(value)); return E.iso(new Date(d.getFullYear(),d.getMonth()+delta,1)); }
+  function monthlyAbsenceCalendarHtml(monthIso){
+    const first=E.parseDate(monthStartIso(monthIso)); const year=first.getFullYear(); const month=first.getMonth(); const last=new Date(year,month+1,0); const days=last.getDate();
+    const monthLabel=first.toLocaleDateString('en-AU',{month:'long',year:'numeric'});
+    const employees=(state.employees||[]).slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
+    const headers=Array.from({length:days},(_,i)=>{ const d=new Date(year,month,i+1); return `<th class="monthly-day-head"><strong>${i+1}</strong><small>${d.toLocaleDateString('en-AU',{weekday:'short'}).slice(0,1)}</small></th>`; }).join('');
+    const rows=employees.map(e=>{
+      const cells=Array.from({length:days},(_,i)=>{ const date=E.iso(new Date(year,month,i+1)); const st=E.absenceCalendarStatus(state,e,date); return `<td class="monthly-absence-cell ${st.cssClass}${st.pending?' pending':''}" title="${esc(st.title)}"><span>${esc(st.label||'')}</span></td>`; }).join('');
+      return `<tr><th class="monthly-employee">${esc(E.employeeName(e))}</th>${cells}</tr>`;
+    }).join('');
+    return `<article class="monthly-absence-report"><div class="monthly-absence-title"><h1>Monthly Absence Calendar</h1><strong>${esc(monthLabel)}</strong></div>${absenceLegendHtml()}<div class="monthly-absence-wrap"><table class="monthly-absence-table"><thead><tr><th class="monthly-employee">Employee</th>${headers}</tr></thead><tbody>${rows||`<tr><td colspan="${days+1}">No employees found.</td></tr>`}</tbody></table></div><p class="small-note monthly-pending-note">* indicates a leave booking that is not yet Approved, where applicable.</p></article>`;
+  }
+  function monthlyAbsenceStandaloneHtml(reportHtml){
+    const css=`:root{--annual:#dbeafe;--personal:#ffedd5;--lsl:#ede9fe;--lwop:#7f1d1d;--nonrostered:#e5e7eb;--publicholiday:#111827}*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:12px;color:#172033}.legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.legend span{padding:5px 8px;border-radius:999px;font-size:10px;font-weight:bold}.legend .annual{background:var(--annual);color:#1e40af}.legend .personal{background:var(--personal);color:#9a3412}.legend .lsl{background:var(--lsl);color:#5b21b6}.legend .lwop{background:var(--lwop);color:#fff}.legend .otherleave{background:#14532d;color:#fff}.legend .publicholiday{background:var(--publicholiday);color:#fff}.legend .nonrostered{background:var(--nonrostered);color:#374151}.monthly-absence-title{display:flex;justify-content:space-between;align-items:end}.monthly-absence-title h1{font-size:20px;margin:0}.monthly-absence-wrap{overflow:visible}.monthly-absence-table{width:100%;border-collapse:collapse;table-layout:fixed}.monthly-absence-table th,.monthly-absence-table td{border:1px solid #9ca3af;text-align:center;padding:2px;font-size:8px;height:24px}.monthly-absence-table .monthly-employee{width:130px;min-width:130px;text-align:left;font-size:9px;background:#fff}.monthly-day-head small{display:block;font-size:7px}.monthly-absence-cell.annual{background:var(--annual)}.monthly-absence-cell.personal{background:var(--personal)}.monthly-absence-cell.lsl{background:var(--lsl)}.monthly-absence-cell.lwop{background:var(--lwop);color:#fff}.monthly-absence-cell.otherleave{background:#14532d;color:#fff}.monthly-absence-cell.publicholiday{background:var(--publicholiday);color:#fff}.monthly-absence-cell.nonrostered{background:var(--nonrostered);color:#6b7280}.monthly-absence-cell.pending{outline:2px dashed #ca8a04;outline-offset:-2px}.small-note{font-size:9px;color:#64748b}@page{size:A4 landscape;margin:7mm}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.monthly-absence-table tr{break-inside:avoid;page-break-inside:avoid}}`;
+    return `<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><title>Monthly Absence Calendar</title><style>${css}</style></head><body>${reportHtml}</body></html>`;
+  }
+
   function renderReports(){
     const list=state.employees.slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
     const selected=selectedReportEmp&&list.some(e=>e.id===selectedReportEmp)?selectedReportEmp:'';
-    h('reports', `<h2>Reports</h2><p class="small-note">Generate payroll and employment reports. Statement of Service is available now; additional payroll reports can be added later.</p><div class="report-controls"><div class="grid form-grid"><div><label>Report</label><select id="reportType"><option>Statement of Service</option></select></div><div><label>Employee</label><select id="reportEmp">${employeeOptions(list)}</select></div><div><label>As at date</label><input id="reportAsAt" type="date" value="${esc(todayIso())}"></div><div><label>Reference number</label><input id="reportReference" placeholder="Auto-generated if blank"></div><div><label>Signatory name</label><input id="reportSignatory"></div><div><label>Signatory position</label><input id="reportSignatoryPosition" value="PAYROLL OFFICER"></div><div><label>Contact email</label><input id="reportContact" value="HR@mcdonaldscf.com"></div></div><div class="controls" style="margin-top:14px"><button id="previewStatement">Generate Preview</button><button id="printStatement" class="secondary" ${statementPreviewHtml?'':'disabled'}>Print / Save PDF</button><button id="downloadStatement" class="success" ${statementPreviewHtml?'':'disabled'}>Download HTML</button></div></div><div id="reportPreview" class="report-preview">${statementPreviewHtml||'<p class="small-note">Select an employee and generate the Statement of Service.</p>'}</div>`);
+    if(!monthlyAbsenceMonth) monthlyAbsenceMonth=monthStartIso(currentCycle().start);
+    monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth);
+    const monthLabel=E.parseDate(monthlyAbsenceMonth).toLocaleDateString('en-AU',{month:'long',year:'numeric'});
+    h('reports', `<h2>Reports</h2><p class="small-note">Generate payroll and employment reports.</p><div class="report-controls"><h3>Statement of Service</h3><div class="grid form-grid"><div><label>Employee</label><select id="reportEmp">${employeeOptions(list)}</select></div><div><label>As at date</label><input id="reportAsAt" type="date" value="${esc(todayIso())}"></div><div><label>Reference number</label><input id="reportReference" placeholder="Auto-generated if blank"></div><div><label>Signatory name</label><input id="reportSignatory"></div><div><label>Signatory position</label><input id="reportSignatoryPosition" value="PAYROLL OFFICER"></div><div><label>Contact email</label><input id="reportContact" value="HR@mcdonaldscf.com"></div></div><div class="controls" style="margin-top:14px"><button id="previewStatement">Generate Preview</button><button id="printStatement" class="secondary" ${statementPreviewHtml?'':'disabled'}>Print / Save PDF</button><button id="downloadStatement" class="success" ${statementPreviewHtml?'':'disabled'}>Download HTML</button></div></div><div id="reportPreview" class="report-preview">${statementPreviewHtml||'<p class="small-note">Select an employee and generate the Statement of Service.</p>'}</div><div class="report-controls monthly-absence-controls"><h3>Monthly Absence Calendar</h3><div class="controls"><button id="monthlyAbsencePrev" class="secondary" title="Previous month">←</button><strong id="monthlyAbsenceMonthLabel">${esc(monthLabel)}</strong><button id="monthlyAbsenceNext" class="secondary" title="Next month">→</button><button id="printMonthlyAbsence" class="secondary">Print / Save PDF</button><button id="downloadMonthlyAbsence" class="success">Download HTML</button></div><p class="small-note">Shows all employees one month at a time using the same leave key and colours as the existing Absence Calendar.</p></div><div id="monthlyAbsencePreview" class="report-preview">${monthlyAbsencePreviewHtml}</div>`);
     if(selected) setv('reportEmp',selected);
     $('reportEmp').addEventListener('change',()=>{selectedReportEmp=v('reportEmp');});
     $('previewStatement').addEventListener('click',()=>{
@@ -1390,6 +1410,11 @@
       const html=`<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Statement of Service</title><style>${standaloneCss}</style></head><body class="statement-download">${statementPreviewHtml}</body></html>`;
       const blob=new Blob([html],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500);
     });
+    const refreshMonthly=()=>{ monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth); h('monthlyAbsencePreview',monthlyAbsencePreviewHtml); h('monthlyAbsenceMonthLabel',E.parseDate(monthlyAbsenceMonth).toLocaleDateString('en-AU',{month:'long',year:'numeric'})); };
+    $('monthlyAbsencePrev').addEventListener('click',()=>{ monthlyAbsenceMonth=shiftMonthIso(monthlyAbsenceMonth,-1); refreshMonthly(); });
+    $('monthlyAbsenceNext').addEventListener('click',()=>{ monthlyAbsenceMonth=shiftMonthIso(monthlyAbsenceMonth,1); refreshMonthly(); });
+    $('printMonthlyAbsence').addEventListener('click',()=>{ monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth); h('printArea',monthlyAbsencePreviewHtml); setTimeout(()=>window.print(),0); });
+    $('downloadMonthlyAbsence').addEventListener('click',()=>{ monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth); const d=E.parseDate(monthlyAbsenceMonth); const filename=`Monthly-Absence-Calendar-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.html`; const blob=new Blob([monthlyAbsenceStandaloneHtml(monthlyAbsencePreviewHtml)],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500); });
   }
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
@@ -1498,6 +1523,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.28',notes:[
+      'Added the Monthly Absence Calendar report showing all employees one month at a time with previous/next month navigation, the existing Absence Calendar key, and print/download support.',
+      'Added fixed-term contract expiry alerts after the pay close of the immediately previous pay period, using the latest Job Data contract expiry.',
+      'Added automatic next-pay recovery and leave reinstatement when a late New Fixed Term Contract proves a fixed-term expiry payout was erroneous, while preserving the original finalised payslip.',
+      'Protected genuine Rehire actions so prior termination leave payouts are never recovered or reinstated.'
+    ]},
     {version:'v1.1.27',notes:[
       'Fixed Deductions Save so unchanged historical deductions are not retroactively rejected when adding an ongoing Union Fees deduction.',
       'Added Special Responsibility Allowance (Days) at $20 per entered day.',

@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.27'), 'sidebar/version label must show v1.1.27');
-  assert(data.includes("APP_VERSION = '1.1.27'"), 'data-store version must be 1.1.27');
+  assert(html.includes('v1.1.28'), 'sidebar/version label must show v1.1.28');
+  assert(data.includes("APP_VERSION = '1.1.28'"), 'data-store version must be 1.1.28');
 })();
 
 (function testAnchorPayCycle(){
@@ -930,7 +930,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(casualPay.rows.some(r=>r.leaveType===E.FDV_LEAVE_TYPE&&r.amount>0),'Casual employees must be paid for rostered FDV leave hours');
   assert.strictEqual(casualPay.annualAccrual,0); assert.strictEqual(casualPay.personalAccrual,0);
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
-  assert(app.includes("title=leave.type==='Family and Domestic Violence Leave'?'Private Leave'")&&app.includes('will not appear on the payslip or Absence Balance'),'Employee-facing calendar and balance displays must preserve FDV confidentiality');
+  assert(app.includes('will not appear on the payslip or Absence Balance')&&E.absenceCalendarStatus(entitlementState,e2,'2026-06-08').title==='Private Leave','Employee-facing calendar and balance displays must preserve FDV confidentiality');
   assert(app.includes("const isRehire=/^Rehire\\b/")&&app.includes("const isNewHire=/^New Hire\\b/"),'Job Data must recognise New Hire and Rehire reasons using valid word-boundary regular expressions');
 })();
 
@@ -1725,6 +1725,107 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const later=E.calculateEmployee(x.state,x.e.id,5,false).flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
   assert.strictEqual(later.length,0,'The forecast-leave recovery must not repeat in a later pay');
 })();
+
+
+
+(function testV128ContractExpiryNotificationPreviousPayClose(){
+  const state=baseState(); state.currentCycleId=2;
+  const e=addEmployee(state,{id:'fxnotice',firstName:'Alex',lastName:'Example',type:'Fixed Term',startDate:'2026-01-01',originalStartDate:'2026-01-01',contractEndDate:'2026-06-18',autoTerminate:false});
+  state.jobDataRows.push(
+    {id:'fxstart',empId:e.id,action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-01-01',effectiveSequence:0,positionClass:'Fixed-Term',saved:true},
+    {id:'fxexpiry',empId:e.id,action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2026-06-19',effectiveSequence:0,saved:true}
+  );
+  let changed=E.ensureContractExpiryNotifications(state,'2026-05-29');
+  assert.strictEqual(changed,false,'Contract expiry alert must not appear until after the previous pay period pay close');
+  assert.strictEqual(state.alerts.length,0);
+  changed=E.ensureContractExpiryNotifications(state,'2026-05-30');
+  assert.strictEqual(changed,true,'Contract expiry alert must appear the day after the previous pay period closes');
+  assert.strictEqual(state.alerts.length,1);
+  assert(state.alerts[0].message.includes("Alex Example's contract is expiring on 18/6/26"));
+  assert(state.alerts[0].message.includes("extend Alex's contract in Job Data"));
+  E.ensureContractExpiryNotifications(state,'2026-05-31');
+  assert.strictEqual(state.alerts.filter(a=>String(a.key||'').startsWith('contract-expiry-fxnotice-')).length,1,'Contract expiry notification must not duplicate');
+
+  // Extension before the next notification window must make the old expiry obsolete.
+  state.jobDataRows=state.jobDataRows.filter(r=>r.id!=='fxexpiry');
+  state.jobDataRows.push(
+    {id:'fxextension',empId:e.id,action:'Commencement',reason:'New Fixed Term Contract',effectiveDate:'2026-06-19',effectiveSequence:0,positionClass:'Fixed-Term',saved:true},
+    {id:'fxnewexpiry',empId:e.id,action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2028-01-01',effectiveSequence:0,saved:true}
+  );
+  E.ensureContractExpiryNotifications(state,'2026-06-01');
+  assert.strictEqual(state.alerts[0].read,true,'An unread old expiry alert should be marked obsolete when Job Data extends the contract');
+  assert.strictEqual(state.alerts[0].obsolete,true);
+})();
+
+(function testV128LateFixedTermExtensionRecoversFinalisedLeavePayouts(){
+  const state=baseState(); state.currentCycleId=2;
+  const e=addEmployee(state,{id:'latefx',firstName:'Late',lastName:'Extension',type:'Fixed Term',startDate:'2019-01-01',originalStartDate:'2019-01-01',lslServiceDate:'2019-01-01',annualLeaveBalance:0,status:'Active'});
+  addSchedule(state,e.id,'2019-01-01'); addRate(state,e.id,'2019-01-01','Officer',40);
+  const prior=E.cycleById(1);
+  state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04',label:E.ppeLabel(prior)};
+  state.payslips.push({
+    id:'prior_term',empId:e.id,employeeName:'Late Extension',employeeSnapshot:{terminationReason:'Expiry of Fixed Term',terminationDate:'2026-06-05'},cycleId:1,cycle:JSON.parse(JSON.stringify(prior)),position:'Officer',rate:40,finalised:true,
+    rows:[
+      {description:'Annual Leave Payout',units:20,amount:800,startDate:'2026-06-04',endDate:'2026-06-04',rate:40,baseRate:40,position:'Officer',kind:'payout',ote:false},
+      {description:'Long Service Leave Payout',units:10,amount:400,startDate:'2026-06-04',endDate:'2026-06-04',rate:40,baseRate:40,position:'Officer',kind:'payout',ote:false}
+    ],gross:1200,tax:100,net:1100
+  });
+  state.jobDataRows.push(
+    {id:'lateext',empId:e.id,action:'Commencement',reason:'New Fixed Term Contract',effectiveDate:'2026-06-05',effectiveSequence:0,positionClass:'Fixed-Term',saved:true},
+    {id:'futureexpiry',empId:e.id,action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2028-01-01',effectiveSequence:0,saved:true}
+  );
+  const rows=E.lateFixedTermPayoutRecoveryRows(state,e,E.cycleById(2));
+  assert.strictEqual(rows.length,2,'Late continuous fixed-term extension must recover each finalised leave payout separately');
+  const annual=rows.find(r=>r.description==='Annual Leave Payout Recovery');
+  const lsl=rows.find(r=>r.description==='Long Service Leave Payout Recovery');
+  assert(annual&&lsl);
+  assert.strictEqual(annual.units,-20); assert.strictEqual(annual.amount,-800);
+  assert.strictEqual(lsl.units,-10); assert.strictEqual(lsl.amount,-400);
+  const pays=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(totalAmountByDesc(pays,'Annual Leave Payout Recovery'),-800);
+  assert.strictEqual(totalAmountByDesc(pays,'Long Service Leave Payout Recovery'),-400);
+  assert(pays.reduce((sum,p)=>sum+Number(p.terminationLeaveTax||0),0)<=0,'Recovery of termination leave payout should reverse, not add, termination leave withholding');
+
+  // Once the correction is finalised, later cycles must not repeat it.
+  E.finaliseCurrentPay(state);
+  assert(e.annualLeaveBalance>20,'Finalising the late-extension correction must reinstate the Annual Leave payout hours, plus normal current-pay accrual where applicable');
+  const lslAfterRecovery=E.lslBalances(state,e,E.cycleById(2).end);
+  assert.strictEqual(lslAfterRecovery.accrued,487.5,'Finalised LSL payout recovery must reinstate the previously paid accrued LSL hours instead of leaving them deducted');
+  const later=E.calculateEmployee(state,e.id,3,false);
+  assert.strictEqual(totalAmountByDesc(later,'Annual Leave Payout Recovery'),0,'Late-extension leave recovery must occur once only');
+  assert.strictEqual(totalAmountByDesc(later,'Long Service Leave Payout Recovery'),0,'Late-extension LSL recovery must occur once only');
+})();
+
+(function testV128GenuineRehireNeverRecoversTerminationLeave(){
+  const state=baseState(); state.currentCycleId=2;
+  const e=addEmployee(state,{id:'rehireguard',type:'Fixed Term',startDate:'2026-06-05',originalStartDate:'2026-01-01'}); addSchedule(state,e.id,'2026-06-05'); addRate(state,e.id,'2026-06-05');
+  const prior=E.cycleById(1); state.finalisedCycles['1']={id:1,finalisedAt:'2026-06-04',label:E.ppeLabel(prior)};
+  state.payslips.push({id:'genuine_term',empId:e.id,employeeSnapshot:{terminationReason:'Expiry of Fixed Term',terminationDate:'2026-06-05'},cycleId:1,cycle:JSON.parse(JSON.stringify(prior)),position:'Officer',rate:40,finalised:true,rows:[{description:'Annual Leave Payout',units:20,amount:800,startDate:'2026-06-04',endDate:'2026-06-04',rate:40,position:'Officer',kind:'payout'}]});
+  state.jobDataRows.push({id:'rehire',empId:e.id,action:'Commencement',reason:'Rehire Fixed-Term',effectiveDate:'2026-06-05',effectiveSequence:0,positionClass:'Fixed-Term',saved:true});
+  assert.strictEqual(E.lateFixedTermPayoutRecoveryRows(state,e,E.cycleById(2)).length,0,'A genuine Rehire must never reverse or reinstate prior termination leave payouts');
+  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(state,e.id,2,false),'Annual Leave Payout Recovery'),0);
+})();
+
+(function testV128MonthlyAbsenceCalendarReportAndSharedKey(){
+  const state=baseState(); const e=addEmployee(state,{id:'calemp'}); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'calleave',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  let st=E.absenceCalendarStatus(state,e,'2026-05-25');
+  assert.strictEqual(st.cssClass,'annual'); assert.strictEqual(st.label,'AL');
+  st=E.absenceCalendarStatus(state,e,'2026-05-24');
+  assert.strictEqual(st.cssClass,'nonrostered'); assert.strictEqual(st.label,'NRD');
+  st=E.absenceCalendarStatus(state,e,'2026-06-01');
+  assert.strictEqual(st.cssClass,'publicholiday'); assert.strictEqual(st.label,'PH');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Monthly Absence Calendar'),'Reports must include the Monthly Absence Calendar');
+  assert(app.includes('monthlyAbsencePrev')&&app.includes('monthlyAbsenceNext'),'Monthly report must have previous/next month arrow controls');
+  assert(app.includes('printMonthlyAbsence')&&app.includes('downloadMonthlyAbsence'),'Monthly report must support print/save-PDF and download');
+  assert(app.includes('${absenceLegendHtml()}'),'Monthly report and existing Absence Calendar must reuse the same key/legend helper rather than defining a different key');
+  assert(!app.includes('monthly-absence-position')&&!app.includes('monthly-absence-labor'),'Monthly Absence Calendar must not add Position or Labor columns');
+})();
+
+console.log('PASS: v1.1.28 contract-expiry notification timing and extension suppression are verified.');
+console.log('PASS: v1.1.28 late fixed-term leave-payout recovery and genuine-Rehire safeguard are verified.');
+console.log('PASS: v1.1.28 Monthly Absence Calendar report structure and shared Absence Calendar key are verified.');
 
 console.log('PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fixed-term extension workflow are verified.');
 console.log('PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.');

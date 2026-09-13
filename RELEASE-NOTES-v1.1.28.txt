@@ -1,0 +1,82 @@
+Payroll/HCM App v1.1.28 — Release Notes
+Release date: 13 September 2026
+Starting source: verified v1.1.27 release
+
+SUMMARY
+v1.1.28 adds a Monthly Absence Calendar report, introduces advance fixed-term contract-expiry notifications, and adds controlled recovery/reinstatement when a fixed-term expiry payout was made only because a contract extension was entered late. Genuine Rehire actions are explicitly protected from that recovery logic.
+
+MONTHLY ABSENCE CALENDAR
+- Added a separate Monthly Absence Calendar report in Reports.
+- Shows all employee records in one monthly grid, one employee per row and one day per column.
+- Shows one month at a time with left/right arrow navigation.
+- Reuses the exact existing Absence Calendar key/legend, colours and leave-category semantics; the existing Absence Calendar key was not changed.
+- Does not include Position or Labor columns.
+- Public Holiday, Non Rostered Day, Annual Leave, Personal Leave, Long Service Leave, Leave Without Pay and Other Leave use the same status helper as the existing Absence Calendar.
+- Confidential Family and Domestic Violence Leave continues to display as Private/Other Leave rather than revealing the leave type.
+- Non-approved leave can show an asterisk/dashed marker where such a status exists.
+- Supports browser Print / Save PDF and standalone HTML download.
+- Print/download layout is landscape-oriented for the full monthly employee/day grid.
+
+FIXED-TERM CONTRACT EXPIRY NOTIFICATIONS
+- When the latest authoritative Job Data fixed-term contract end falls in an upcoming pay period, the expiry alert becomes eligible after the pay close of the immediately previous pay period.
+- Notification wording: “[First name] [Last name]’s contract is expiring on [date]. Please complete the exit checklist or extend [First name]’s contract in Job Data.”
+- Uses the current authoritative fixed-term contract end reconciled from Job Data.
+- Does not create duplicate alerts for the same employee/expiry date.
+- If Job Data extends the contract after an unread old expiry alert exists, the obsolete alert is marked read/obsolete rather than continuing to present stale information.
+- The alert links to Job Data and preselects the employee.
+
+LATE FIXED-TERM EXTENSION — TERMINATION LEAVE PAYOUT RECOVERY
+- If a finalised fixed-term expiry produced termination leave payouts and a late New Fixed Term Contract is subsequently entered effective the next calendar day, the next open pay treats this as a continuous-employment correction.
+- The original finalised historical payslip is preserved and is not rewritten.
+- The next open pay generates separate negative correction lines for the actual previously paid components:
+  - Annual Leave Payout Recovery
+  - Long Service Leave Payout Recovery
+  - Pro-rata LSL Payout Recovery (only if such a payout actually existed)
+- Recovery uses the original paid units and dollar amounts, preventing over-recovery.
+- Annual Leave and LSL balances are reinstated by the corresponding recovered units.
+- Termination-leave withholding is recalculated as a negative/reversing adjustment under the app’s existing simplified termination-leave tax model rather than treating the recovery as ordinary taxable pay.
+- Recovery is keyed to the original finalised payout and occurs once only; recalculation or later pay periods do not duplicate it.
+
+GENUINE REHIRE SAFEGUARD
+- Genuine Rehire Job Data does not trigger late fixed-term extension payout recovery.
+- Prior termination leave payouts remain final and the previously paid leave is not reinstated for a genuine rehire.
+- Existing Personal Leave / LSL break-in-service rules remain applicable to genuine Rehire actions.
+
+CORE PAYROLL/LSL RULES PRESERVED
+- Persisted currentCycleId remains the authoritative open pay.
+- Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026; pay close 29/05/2026.
+- Retro cut-off remains 03/05/2026.
+- Finalisation remains manual.
+- Finalised historical payslips remain frozen.
+- v1.1.26 recurring 7-year / 65-working-day LSL model, migration, service-break rules and notifications remain preserved.
+- v1.1.27 Annual Leave forecast booking and forecast-deficit resignation recovery remain preserved.
+
+TESTING
+Pre-package automated verification:
+- node test-cases.js: PASS / exit code 0.
+- 121 self-invoking test blocks.
+- 536 assert/assert.* call sites.
+- 53 runtime PASS summary lines.
+- node --check data-store.js: PASS.
+- node --check payroll-engine.js: PASS.
+- node --check app.js: PASS.
+- node --check test-cases.js: PASS.
+
+New v1.1.28 regression coverage includes:
+- previous-pay-close timing for fixed-term contract-expiry notification;
+- duplicate prevention and obsolete-alert suppression after extension;
+- exact Annual Leave and LSL payout recovery amounts after late continuous fixed-term extension;
+- leave-balance reinstatement and once-only correction finalisation;
+- negative termination-leave tax adjustment on payout recovery;
+- explicit genuine-Rehire no-recovery safeguard;
+- shared Absence Calendar status/key behaviour and Monthly Absence Calendar report controls/print/download structure.
+
+Browser/UI testing:
+- Local HTTP serving is available and responds successfully.
+- Chromium headless real-browser DOM rendering was attempted but timed out in this environment before returning a rendered DOM. No successful real-browser interaction pass is claimed.
+
+KNOWN LIMITATIONS
+- This is a client-side payroll demonstration, not production payroll software.
+- The app’s termination-leave withholding remains the existing simplified modern Australian demonstration model, not a complete implementation of every ATO historical termination-leave category.
+- Monthly Absence Calendar download is standalone HTML; PDF is produced through browser Print / Save PDF.
+- Real-browser interaction was not successfully completed in this environment.
