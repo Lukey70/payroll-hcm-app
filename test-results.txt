@@ -1,20 +1,38 @@
-Payroll/HCM App v1.1.26 — Test Results
-Date: 2026-09-12
+Payroll/HCM App v1.1.27 — Test Results
+Date: 13 September 2026
 
-Automated regression suite
+PRE-PACKAGE AUTOMATED REGRESSION
 - Command: node test-cases.js
-- Result: PASS (exit code 0)
-- Self-invoking test blocks in test-cases.js: 111
-- Total assert/assert.* call sites in test-cases.js: 467
-- Runtime PASS summaries: 48
+- Result: PASS / exit code 0
+- Self-invoking test blocks: 117
+- Assertion invocations: 501
+- Runtime PASS summaries: 50
 
-JavaScript syntax checks
+SYNTAX CHECKS
 - node --check data-store.js: PASS
 - node --check payroll-engine.js: PASS
 - node --check app.js: PASS
 - node --check test-cases.js: PASS
 
-Runtime PASS output:
+NEW/CHANGED REGRESSION AREAS
+- Deduction Save path: ongoing pre-tax super + unchanged historical ended deduction + new ongoing blank-End-Date Union Fees.
+- Special Responsibility Allowance (Days): $20/day inclusive date-range calculation.
+- Fixed-term Job Data extension workflow and migration: New Fixed Term Contract does not create a false service break; latest Expiry drives the contract end; leave inside extension is accepted and leave after expiry rejected.
+- Annual Leave forecast: future balance projection, forecast approval, later schedule-reduction grandfathering, negative-balance handling and resignation recovery.
+- Annual Leave Overutilisation Recovery is capped to the actual outstanding forecast-approved deficit and is not repeated.
+
+BROWSER / INTERFACE TESTING
+- Local HTTP serving: HTTP 200 during smoke attempt.
+- Chromium: attempted, but --dump-dom did not return a rendered DOM before timeout.
+- Therefore: NO successful real-browser interaction/rendering pass is claimed.
+- Static/source and simulated-interface checks included in test-cases.js passed.
+
+FINAL ZIP VERIFICATION
+- Release packaging was subsequently rebuilt with this final test record and the exact resulting ZIP was fresh-extracted and retested before delivery.
+- Expected release-gate result: ZIP integrity PASS; node test-cases.js exit 0; all four node --check commands PASS.
+- The external release test-results/release history records the final archive SHA-256.
+
+RUNTIME PASS OUTPUT
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -61,9 +79,8 @@ PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and mu
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
 PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
 PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fixed-term extension workflow are verified.
+PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.
 PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.
 PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.
 
-Browser testing
-- Real Chromium smoke testing was attempted during development. The app HTTP endpoint returned 200, but Chromium did not return a rendered DOM before the execution timeout.
-- Therefore no successful real-browser UI test is claimed for v1.1.26.

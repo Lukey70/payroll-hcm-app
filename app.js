@@ -622,6 +622,7 @@
     state.jobEvents = (state.jobEvents||[]).filter(j=>j.refKind!=='jobData' || j.refId!==row.id);
     if(row.action==='Termination'){
       e.terminationDate=row.effectiveDate; e.terminationReason=row.reason;
+      if(row.reason==='Expiry of Fixed Term'){ e.contractEndDate=E.addDays(row.effectiveDate,-1); e.autoTerminate=false; }
       let segment=[...e.employmentSegments].reverse().find(seg=>seg.startDate===e.startDate)||[...e.employmentSegments].reverse().find(seg=>!seg.endDate);
       if(!segment && e.startDate){ segment={id:uid('segment'),startDate:e.startDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'}; e.employmentSegments.push(segment); }
       if(segment){ segment.endDate=row.effectiveDate; segment.terminationReason=row.reason; segment.inclusiveEnd=false; }
@@ -630,6 +631,8 @@
     }
     const isRehire=/^Rehire\b/.test(row.reason||'');
     const isNewHire=/^New Hire\b/.test(row.reason||'');
+    const isNewFixedTermContract=row.reason==='New Fixed Term Contract';
+    if(isNewFixedTermContract){ e.type='Fixed Term'; e.contractEndDate=''; e.autoTerminate=false; e.terminationDate=''; e.terminationReason=''; e.status='Active'; }
     if(isRehire || isNewHire || !e.startDate){
       if(!e.employmentSegments.some(seg=>seg.startDate===row.effectiveDate)) e.employmentSegments.push({id:uid('segment'),startDate:row.effectiveDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'});
       e.startDate=row.effectiveDate;
@@ -690,6 +693,7 @@
     const c=additionalCycle();
     if(['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType||'')) return Number(a.amount||0);
     if(a.earningType==='Meal Allowance') return E.round2(E.calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start)*18);
+    if(a.earningType==='Special Responsibility Allowance (Days)') return E.round2(E.calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start)*20);
     if(a.earningType==='Motor Vehicle Allowance - Single Trip') return 25;
     if(a.earningType==='Motor Vehicle Allowance - Return Trip') return 50;
     const rate=E.activePayRate(state,v('addEmp')||a.empId,a.startDate||c.start);
@@ -703,10 +707,10 @@
     const rows=additionalDraftRows.map((a,i)=>{
       const isOver=a.earningType==='Overpayment Adjustment';
       const userAmount=['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType);
-      const fixedAmount=['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
+      const fixedAmount=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
       const isAmountOnly=userAmount||fixedAmount;
       const amount=additionalDraftAmount(a);
-      const options=['Additional Hours','Overtime 1.5','Overtime 2.0','Meal Allowance','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
+      const options=['Additional Hours','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
       return [`<select data-add-field="${i}|earningType">${options}</select>`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
     h('addRows', table(['Earnings Type','Start Date','End Date','Hours','Amount','Delete'], rows));
@@ -716,7 +720,7 @@
       row[field]=(field==='hours'||field==='amount')?Number(el.value||0):el.value;
       if(field==='earningType' && row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=0; }
       if(field==='earningType' && ['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; }
-      if(field==='earningType' && ['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=additionalDraftAmount(row); }
+      if(field==='earningType' && ['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=additionalDraftAmount(row); }
       if(field==='startDate' && row.earningType!=='Overpayment Adjustment') row.endDate=el.value;
       if(!['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)) row.amount=additionalDraftAmount(row);
       markAdditionalDirty(); renderAdditionalRows();
@@ -738,7 +742,7 @@
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
         if(row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=Number(row.amount||0); }
         else if(['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.amount=Number(row.amount||0); }
-        else if(['Meal Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.amount=additionalDraftAmount(row); }
+        else if(['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.amount=additionalDraftAmount(row); }
         else row.amount=additionalDraftAmount(row);
         state.additionalEarnings.push(row);
       });
@@ -833,11 +837,17 @@
     else d.deleted=true;
     markDeductionDirty(); renderDeductionsTable();
   }
+  function deductionDateNeedsValidation(persisted,draft){
+    if(!persisted) return true;
+    return String(persisted.startDate||'')!==String(draft.startDate||'') || String(persisted.endDate||'').trim()!==String(draft.endDate||'').trim();
+  }
   function saveDeductions(afterSave){
     const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
+    const persistedById=new Map((state.deductions||[]).filter(d=>d.empId===empId).map(d=>[d.id,d]));
     for(const d of deductionDraftRows.filter(x=>x.empId===empId && x.deleted!==true)){
       d.endDate=String(d.endDate||'').trim();
-      const dateValidation=E.validateDeductionDates(state,d,d.saved===false); if(!dateValidation.ok) return alert(dateValidation.message);
+      const persisted=persistedById.get(d.id);
+      if(deductionDateNeedsValidation(persisted,d)){ const dateValidation=E.validateDeductionDates(state,d,!persisted); if(!dateValidation.ok) return alert(dateValidation.message); }
       if(d.deductionType==='Union Fees' && (d.amount===''||d.amount==null)) return alert('Union Fees must be entered as an Amount.');
       if(d.deductionType==='Union Fees' && d.percentage!=='' && d.percentage!=null) return alert('Union Fees cannot be entered as a Percentage.');
       if((d.amount===''||d.amount==null) && (d.percentage===''||d.percentage==null)) return alert('Each deduction must have either an Amount or Percentage.');
@@ -914,7 +924,7 @@
     $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
     ['leaveEmp','leaveType','leaveStart','parentalPayOption'].forEach(id=>{
       $(id).addEventListener('change',()=>{
         if(E.isParentalLeaveType(v('leaveType'))){
@@ -942,6 +952,16 @@
     if($('personalEvidenceRow')) $('personalEvidenceRow').style.display=v('leaveType')==='Personal Leave'?'block':'none';
     if($('fdvPrivacyNote')) $('fdvPrivacyNote').style.display=v('leaveType')==='Family and Domestic Violence Leave'?'block':'none';
     if($('parentalPayOptionRow')) $('parentalPayOptionRow').style.display=v('leaveType')==='Parental Leave - Paid'?'block':'none';
+    if($('annualForecastNote')){
+      if(v('leaveType')==='Annual Leave' && v('leaveStart') && v('leaveEnd')){
+        $('annualForecastNote').style.display='block';
+        const forecast=basic.forecast || (emp(v('leaveEmp'))?E.annualLeaveForecast(state,emp(v('leaveEmp')),v('leaveStart'),v('leaveEnd'),Number(basic.hours||0)):null);
+        if(forecast){
+          const status=basic.forecastApproved?' <strong>This booking is being approved using forecast Annual Leave accrual.</strong>':'';
+          h('annualForecastNote', `Forecast Annual Leave balance at ${E.fmtPay(v('leaveEnd'))}: ${Number(forecast.availableBefore||0).toFixed(2)} hours before this booking; ${Number(forecast.balanceAfter||0).toFixed(2)} hours after this booking.${status}<br><strong>Please note: You may be required to pay back overutilised leave if work conditions change and you resign.</strong>`);
+        }else h('annualForecastNote','');
+      }else{ $('annualForecastNote').style.display='none'; h('annualForecastNote',''); }
+    }
     if($('leaveBalanceNote')){
       const le=emp(v('leaveEmp')); const lt=v('leaveType');
       if(le && ['Annual Leave','Personal Leave','Long Service Leave'].includes(lt)){
@@ -976,7 +996,7 @@
     const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
     const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided,payOption});
     if(!result.ok) return alert(result.message);
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', status:'Approved' });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved' });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
@@ -1459,7 +1479,8 @@
       if(hasPay && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) warnings.push(`${E.employeeName(e)} has no Tax Details/TFN entered.`);
       const bal=E.projectedBalances(state,e,c,false);
       const leaveNegativeLimit=E.leaveNegativeLimitHours(state,e,c.end);
-      if(bal.annual < -leaveNegativeLimit-0.0001 || bal.personal < -leaveNegativeLimit-0.0001 || bal.lslAccrued<0) warnings.push(`${E.employeeName(e)} has a leave balance beyond the permitted limit.`);
+      const forecastAnnualUsed=E.forecastApprovedAnnualLeaveHoursUsed(state,e,c.end);
+      if((bal.annual < -leaveNegativeLimit-0.0001 && forecastAnnualUsed<=0.0001) || bal.personal < -leaveNegativeLimit-0.0001 || bal.lslAccrued<0) warnings.push(`${E.employeeName(e)} has a leave balance beyond the permitted limit.`);
       const isFixed=(activeJob&&activeJob.positionClass==='Fixed-Term') || e.type==='Fixed Term';
       const hasTermRow=(state.jobDataRows||[]).some(r=>r.empId===e.id && r.action==='Termination');
       if(isFixed && !hasTermRow) warnings.push(`${E.employeeName(e)} is fixed-term but does not have a Termination row in Job Data.`);
@@ -1468,7 +1489,7 @@
     results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
       const e=emp(l.empId); if(!e) return;
-      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay'});
+      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay',forecastApproved:l.forecastApproved===true});
       if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
     });
     const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
@@ -1477,6 +1498,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.27',notes:[
+      'Fixed Deductions Save so unchanged historical deductions are not retroactively rejected when adding an ongoing Union Fees deduction.',
+      'Added Special Responsibility Allowance (Days) at $20 per entered day.',
+      'Made fixed-term Job Data contract extensions authoritative for contract-end and leave validation using the New Fixed Term Contract / Expiry of Fixed Term workflow.',
+      'Added Annual Leave forecast balances for future bookings, preservation of valid forecast-approved leave after later work-condition changes, and resignation recovery of outstanding forecast-leave deficits.'
+    ]},
     {version:'v1.1.26',notes:[
       'Changed Long Service Leave to a recurring 7-year cycle with 65 working days (13 weeks) of entitlement and added a one-time reconciliation for existing employees.',
       'Added LSL contributory-service rules for breaks in service, LWOP over 14 calendar days and unpaid parental leave extension, plus per-employee reconciliation and entitlement notifications.',
@@ -1686,5 +1713,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation };
 })();

@@ -178,20 +178,38 @@
       .slice().sort((a,b)=>compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
     if(!rows.length) return e;
     const commencementRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire|Rehire)\b/.test(String(r.reason||'')));
+    const fixedTermContractRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire Fixed-Term|Rehire Fixed-Term|New Fixed Term Contract)$/.test(String(r.reason||'')));
     const terminationRows=rows.filter(r=>r.action==='Termination');
-    if(!commencementRows.length && !terminationRows.length) return e;
+    if(!commencementRows.length && !fixedTermContractRows.length && !terminationRows.length) return e;
 
     const latestCommencement=commencementRows.length ? commencementRows[commencementRows.length-1] : null;
     const currentStart=(latestCommencement&&latestCommencement.effectiveDate) || e.startDate || e.originalStartDate || '';
     if(!currentStart) return e;
 
+    const latestFixedTermContract=fixedTermContractRows.length ? fixedTermContractRows[fixedTermContractRows.length-1] : null;
+    const contractBoundaryStart=(latestFixedTermContract&&latestFixedTermContract.effectiveDate) || currentStart;
     const explicitTermination=terminationRows.filter(r=>compare(r.effectiveDate,currentStart)>=0).slice(-1)[0] || null;
+    const explicitExpiry=terminationRows.filter(r=>r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,contractBoundaryStart)>=0).slice(-1)[0] || null;
     let terminationDate=explicitTermination ? explicitTermination.effectiveDate : '';
     let terminationReason=explicitTermination ? String(explicitTermination.reason||'') : '';
 
-    // If there is no explicit Job Data termination, retain the legitimate automatic
-    // fixed-term boundary. This prevents reconciliation from undoing contract expiry.
-    if(!explicitTermination && e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,currentStart)>=0){
+    // Job Data is authoritative for fixed-term contract extensions. The extension
+    // workflow deletes the old Expiry row, adds New Fixed Term Contract, then adds a
+    // new Expiry of Fixed Term row. A saved Expiry effective date is exclusive, so
+    // contractEndDate is the previous calendar day. Do not keep a stale master end
+    // date once Job Data contains a fixed-term contract sequence.
+    if(latestFixedTermContract){
+      e.type='Fixed Term';
+      e.autoTerminate=false;
+      e.contractEndDate=explicitExpiry ? addDays(explicitExpiry.effectiveDate,-1) : '';
+    }else if(explicitExpiry && e.type==='Fixed Term'){
+      e.autoTerminate=false;
+      e.contractEndDate=addDays(explicitExpiry.effectiveDate,-1);
+    }
+
+    // Legacy fixed-term employees without an authoritative Job Data contract sequence
+    // may still use the inclusive master contractEndDate/autoTerminate boundary.
+    if(!explicitTermination && !latestFixedTermContract && e.type==='Fixed Term' && e.autoTerminate && e.contractEndDate && compare(e.contractEndDate,currentStart)>=0){
       terminationDate=e.contractEndDate;
       terminationReason='Expiry of Fixed Term';
     }
@@ -764,9 +782,68 @@
     return round4(daily.length?Math.max(...daily):0);
   }
 
+  function annualLeaveBookingHoursAtCurrentSchedule(state,e,booking,asOfDate){
+    if(!e || !booking || booking.type!=='Annual Leave' || !booking.startDate || !booking.endDate) return 0;
+    const end=asOfDate && compare(asOfDate,booking.endDate)<0 ? asOfDate : booking.endDate;
+    if(compare(end,booking.startDate)<0) return 0;
+    const single=booking.startDate===booking.endDate;
+    let hours=0;
+    daysBetween(booking.startDate,end).forEach(d=>{
+      const sched=activeSchedule(state,e.id,d);
+      const scheduled=Number((sched&&sched.hoursByDay&&sched.hoursByDay[parseDate(d).getDay()])||0);
+      if(scheduled<=0 || isPublicHoliday(d)) return;
+      if(single && booking.requestedHours!==undefined && booking.requestedHours!==null && String(booking.requestedHours)!=='') hours+=Math.min(scheduled,Math.max(0,Number(booking.requestedHours||0)));
+      else hours+=scheduled;
+    });
+    return round4(hours);
+  }
+
+  function forecastApprovedAnnualLeaveHoursUsed(state,e,asOfDate){
+    return round4((state.leaveBookings||[])
+      .filter(l=>l.empId===e.id && l.type==='Annual Leave' && l.forecastApproved===true && (!asOfDate || compare(l.startDate,asOfDate)<=0))
+      .reduce((sum,l)=>sum+annualLeaveBookingHoursAtCurrentSchedule(state,e,l,asOfDate),0));
+  }
+
+  function annualLeaveForecast(state,e,startDate,endDate,requestedHours=0,excludeLeaveId){
+    if(!state || !e || !startDate || !endDate) return {availableBefore:0,balanceAfter:0,currentBalance:0,accrual:0,used:0};
+    reconcileEmploymentFromJobData(state,e);
+    const current=currentCycle(state);
+    const stateForForecast=excludeLeaveId ? Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(l=>l.id!==excludeLeaveId)}) : state;
+    // For dates inside the open pay, preserve the established whole-open-pay balance
+    // semantics used by booking/finalisation. Forecasting beyond the open pay then
+    // extends that committed/current-pay position through future effective-dated data.
+    if(compare(endDate,current.end)<=0){
+      const currentBalances=projectedBalances(stateForForecast,e,current,true);
+      const availableBefore=round4(Number(currentBalances.annual||0));
+      return {availableBefore,balanceAfter:round4(availableBefore-Number(requestedHours||0)),currentBalance:round4(Number(e.annualLeaveBalance||0)),accrual:0,used:0,asOf:endDate};
+    }
+    let annual=Number(e.annualLeaveBalance||0);
+    let accrualTotal=0, usedTotal=0;
+    if(compare(endDate,current.start)>=0){
+      PAY_CYCLES.filter(c=>c.id>=current.id && compare(c.start,endDate)<=0).forEach(c=>{
+        const clippedEnd=compare(c.end,endDate)>0?endDate:c.end;
+        if(compare(clippedEnd,c.start)<0) return;
+        const clipped=Object.assign({},c,{end:clippedEnd});
+        const rows=[...earningRowsForCycle(stateForForecast,e,clipped,{includeAdditional:true,includePayouts:true})];
+        if(Number(c.id)===Number(current.id)) rows.push(...retroRows(stateForForecast,e,clipped));
+        if(e.type!=='Casual'){
+          const accrual=leaveAccrualForOrdinaryHours(e,ordinaryHours(rows)).annual;
+          annual+=accrual; accrualTotal+=accrual;
+        }
+        const used=rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0)+retroBalanceUnits(rows,'Annual Leave');
+        annual-=used; usedTotal+=used;
+        const recovered=rows.filter(r=>r.description==='Annual Leave Overutilisation Recovery').reduce((sum,r)=>sum+Number(r.units||0),0);
+        annual-=recovered; usedTotal+=recovered;
+      });
+    }
+    const availableBefore=round4(annual);
+    return {availableBefore,balanceAfter:round4(availableBefore-Number(requestedHours||0)),currentBalance:round4(Number(e.annualLeaveBalance||0)),accrual:round4(accrualTotal),used:round4(usedTotal),asOf:endDate};
+  }
+
   function validateLeaveBooking(state, empId, leaveType, startDate, endDate, requestedHours, excludeLeaveId, bookingOptions={}){
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e || !startDate || !endDate) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Complete leave fields.' };
+    reconcileEmploymentFromJobData(state,e);
     if(compare(startDate,endDate)>0) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'End date cannot be before start date.' };
     const currentStart=currentEmploymentStart(e,startDate) || e.startDate;
     if(currentStart && compare(startDate,currentStart)<0) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave cannot be booked before the employee commences.' };
@@ -827,7 +904,22 @@
       const cycle = currentCycle(state);
       const balances = projectedBalances(state, e, cycle);
       const available = leaveType === 'Annual Leave' ? balances.annual : leaveType === 'Personal Leave' ? balances.personal : leaveType === 'Long Service Leave' ? balances.lslAccrued : 999999;
-      if(['Annual Leave','Personal Leave'].includes(leaveType)){
+      if(leaveType==='Annual Leave'){
+        const negativeLimit=Math.max(0,...detail.filter(d=>Number(d.countedHours||0)>0).map(d=>leaveNegativeLimitHours(state,e,d.date)));
+        const forecast=annualLeaveForecast(state,e,startDate,endDate,hours,excludeLeaveId);
+        const balanceAfter=forecast.balanceAfter;
+        const currentBalanceAfter=round4(available-hours);
+        // A booking that was validly approved using forecast accrual remains valid even
+        // if later schedule/FTE changes reduce the forecast. The changed conditions may
+        // drive the balance further negative when the leave is actually taken.
+        if(bookingOptions.forecastApproved===true){
+          return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(forecast.availableBefore), balanceAfter, currentAvailable:round4(available), currentBalanceAfter, negativeLimitHours:negativeLimit, forecastApproved:true, grandfatheredForecast:true, forecast, message:'OK' };
+        }
+        if(balanceAfter < -negativeLimit-0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(forecast.availableBefore), balanceAfter, currentAvailable:round4(available), currentBalanceAfter, negativeLimitHours:negativeLimit, forecast, message:`Insufficient Credits. Forecast Annual Leave balance at ${fmtPay(endDate)} would be ${balanceAfter.toFixed(2)} hours. Annual Leave may only go negative by up to one scheduled workday (${negativeLimit.toFixed(2)} hours).` };
+        const forecastApproved=currentBalanceAfter < -negativeLimit-0.0001 && balanceAfter>=-0.0001;
+        return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(forecast.availableBefore), balanceAfter, currentAvailable:round4(available), currentBalanceAfter, negativeLimitHours:negativeLimit, forecastApproved, forecast, message:'OK' };
+      }
+      if(leaveType==='Personal Leave'){
         const negativeLimit=Math.max(0,...detail.filter(d=>Number(d.countedHours||0)>0).map(d=>leaveNegativeLimitHours(state,e,d.date)));
         const balanceAfter=round4(available-hours);
         if(balanceAfter < -negativeLimit-0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, available:round4(available), balanceAfter, negativeLimitHours:negativeLimit, message:`Insufficient Credits. ${leaveType} may only go negative by up to one scheduled workday (${negativeLimit.toFixed(2)} hours).` };
@@ -914,6 +1006,11 @@
           rows.push({ description:earningType, units:days, amount:round2(days*18), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:18, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0 });
           return;
         }
+        if(earningType==='Special Responsibility Allowance (Days)'){
+          const days=calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start);
+          rows.push({ description:earningType, units:days, amount:round2(days*20), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:20, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:true, accruesLeave:false, serviceHours:0 });
+          return;
+        }
         if(['Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(earningType)){
           const amount=earningType.endsWith('Return Trip')?50:25;
           rows.push({ description:earningType, units:1, amount, startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:amount, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0 });
@@ -945,6 +1042,11 @@
         const payoutBaseRows = rows.filter(r=>!(r.kind==='payout'));
         const balances = projectedBalances(state,e,c,true,payoutBaseRows);
         if(balances.annual > 0) rows.push({ description:'Annual Leave Payout', units:balances.annual, amount:round2(balances.annual*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
+        if(/resign/i.test(String(e.terminationReason||'')) && balances.annual < -0.0001){
+          const forecastUsed=forecastApprovedAnnualLeaveHoursUsed(state,e,payoutDate);
+          const recoveryHours=round4(Math.min(Math.abs(Number(balances.annual||0)),forecastUsed));
+          if(recoveryHours>0) rows.push({ description:'Annual Leave Overutilisation Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, forecastLeaveRecovery:true });
+        }
         if(balances.lslAccrued > 0) rows.push({ description:'Long Service Leave Payout', units:balances.lslAccrued, amount:round2(balances.lslAccrued*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/retire/i.test(String(e.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
       }
@@ -990,7 +1092,7 @@
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       lslAccrued -= rows.filter(r=>r.description==='Long Service Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Long Service Leave');
-      annual -= rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+r.units,0);
+      annual -= rows.filter(r=>['Annual Leave Payout','Annual Leave Cash Out','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       lslAccrued -= rows.filter(r=>['Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Cash Out'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       lslProRata -= rows.filter(r=>r.description==='Pro-rata LSL Payout').reduce((s,r)=>s+Number(r.units||0),0);
     }
@@ -1312,7 +1414,7 @@
       }
       const annualUsed = rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       const personalUsed = rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
-      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>r.description==='Annual Leave Payout' || r.description==='Annual Leave Cash Out').reduce((s,r)=>s+Number(r.units||0),0));
+      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>['Annual Leave Payout','Annual Leave Cash Out','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0));
       e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) - personalUsed);
       // LSL is service-history based in v1.1.26. Finalised payslip rows become the
       // authoritative usage/payout history; cache the resulting accrued figure for export compatibility.
@@ -1348,7 +1450,7 @@
         annual += accrual.annual;
         personal += accrual.personal;
       }
-      annual -= rows.filter(r=>r.description==='Annual Leave' || r.description==='Annual Leave Cash Out' || r.description==='Annual Leave Payout').reduce((s,r)=>s+Number(r.units||0),0);
+      annual -= rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0);
     });
     const lslInfo = lslBalances(state,e,asOf);
@@ -1458,7 +1560,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

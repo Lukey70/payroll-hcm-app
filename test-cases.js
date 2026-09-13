@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.26'), 'sidebar/version label must show v1.1.26');
-  assert(data.includes("APP_VERSION = '1.1.26'"), 'data-store version must be 1.1.26');
+  assert(html.includes('v1.1.27'), 'sidebar/version label must show v1.1.27');
+  assert(data.includes("APP_VERSION = '1.1.27'"), 'data-store version must be 1.1.27');
 })();
 
 (function testAnchorPayCycle(){
@@ -1604,6 +1604,130 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const recalculated=E.recalculateBalances(state,e,'2026-06-04').lslAccrued;
   assert.strictEqual(recalculated,direct,'Recalculate Balances must not deduct finalised LSL usage a second time from the saved booking/cash-out history');
 })();
+
+
+
+(function testV127DeductionSaveDoesNotRevalidateUnchangedHistoricalRows(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const helper=context.window.PayrollApp.deductionDateNeedsValidation;
+  const state=baseState(); state.currentCycleId=3;
+  const ongoingPretax={id:'pre',empId:'e',deductionType:'Pre-tax Super Deduction',startDate:E.cycleById(1).start,endDate:'',percentage:10,saved:true};
+  const historical={id:'old',empId:'e',deductionType:'Post-Tax Super Deduction',startDate:E.cycleById(1).start,endDate:E.cycleById(1).end,amount:20,saved:true};
+  const unchanged=DataStore.clone(historical);
+  assert.strictEqual(helper(historical,unchanged),false,'An unchanged historical deduction must not be revalidated against today\'s end-date window on Save');
+  assert.strictEqual(helper(ongoingPretax,DataStore.clone(ongoingPretax)),false,'An unchanged ongoing pre-tax super deduction must not interfere with saving another deduction');
+  const changed=DataStore.clone(historical); changed.endDate=E.cycleById(3).end;
+  assert.strictEqual(helper(historical,changed),true,'An edited deduction end date must still be validated');
+  const union={id:'new',empId:'e',startDate:E.cycleById(3).start,endDate:'',deductionType:'Union Fees',amount:25,percentage:'',saved:false};
+  assert.strictEqual(helper(null,union),true,'A new deduction must be validated');
+  assert.strictEqual(E.validateDeductionDates(state,union,true).ok,true,'The new ongoing Union Fees row itself must accept a blank End Date');
+  assert(appSource.includes('if(deductionDateNeedsValidation(persisted,d))'),'The actual Save path must use change-aware date validation');
+})();
+
+(function testV127SpecialResponsibilityAllowanceDays(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'sra',empId:e.id,cycleId:1,earningType:'Special Responsibility Allowance (Days)',startDate:'2026-05-25',endDate:'2026-05-27',saved:true});
+  const row=E.earningRowsForCycle(state,e,E.cycleById(1)).find(r=>r.description==='Special Responsibility Allowance (Days)');
+  assert(row,'Special Responsibility Allowance (Days) must calculate as an Additional Earnings row');
+  assert.strictEqual(row.units,3,'The allowance must use the number of entered calendar dates as its day units');
+  assert.strictEqual(row.rate,20,'Special Responsibility Allowance must be $20 per day');
+  assert.strictEqual(row.amount,60,'Three entered days must pay $60');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Special Responsibility Allowance (Days)'),'The new allowance must be available in the Additional Earnings UI');
+})();
+
+(function testV127FixedTermExtensionJobDataControlsLeaveBoundary(){
+  const state=baseState();
+  const e=addEmployee(state,{type:'Fixed Term',startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',contractEndDate:'2026-06-30',autoTerminate:true,annualLeaveBalance:50,employmentSegments:[{startDate:'2026-01-01',endDate:'2026-06-30',inclusiveEnd:true,terminationReason:'Expiry of Fixed Term'}]});
+  state.jobDataRows.push(
+    {id:'start',empId:e.id,action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-01-01',effectiveSequence:0,positionClass:'Fixed-Term',saved:true},
+    {id:'extension',empId:e.id,action:'Commencement',reason:'New Fixed Term Contract',effectiveDate:'2026-07-01',effectiveSequence:0,positionClass:'Fixed-Term',saved:true},
+    {id:'newexpiry',empId:e.id,action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2028-01-01',effectiveSequence:0,saved:true}
+  );
+  state.schedules.push({id:'js1',empId:e.id,effectiveDate:'2026-01-01',jobDataId:'start',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}},{id:'js2',empId:e.id,effectiveDate:'2026-07-01',jobDataId:'extension',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
+  state.payRates.push({id:'jr1',empId:e.id,effectiveDate:'2026-01-01',jobDataId:'start',position:'Officer',hourlyRate:40,changeType:'Permanent'},{id:'jr2',empId:e.id,effectiveDate:'2026-07-01',jobDataId:'extension',position:'Officer',hourlyRate:40,changeType:'Permanent'});
+  E.reconcileEmploymentFromJobData(state,e);
+  assert.strictEqual(e.contractEndDate,'2027-12-31','The new Expiry effective date must make the previous day the authoritative contract end date');
+  assert.strictEqual(e.terminationDate,'2028-01-01','Expiry Job Data effective date remains the first day the termination status applies');
+  const during=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-09-01','2026-09-01',7.5);
+  assert.strictEqual(during.ok,true,'Leave in the extended contract period must not be rejected by the stale original contract end date');
+  const after=E.validateLeaveBooking(state,e.id,'Annual Leave','2028-01-01','2028-01-01',7.5);
+  assert.strictEqual(after.ok,false,'Leave on or after the new expiry effective date must still be rejected');
+})();
+
+
+(function testV127FixedTermExtensionMigrationDoesNotCreateBreakInService(){
+  const legacy=DataStore.emptyState();
+  legacy.employees.push({id:'fx',firstName:'Fixed',lastName:'Employee',name:'Fixed Employee',type:'Fixed Term',startDate:'2026-01-01',originalStartDate:'2026-01-01',contractEndDate:'2026-06-30',autoTerminate:true,status:'Active',employmentSegments:[]});
+  legacy.jobDataRows.push(
+    {id:'start',empId:'fx',action:'Commencement',reason:'New Hire Fixed-Term',effectiveDate:'2026-01-01',effectiveSequence:0,saved:true},
+    {id:'extension',empId:'fx',action:'Commencement',reason:'New Fixed Term Contract',effectiveDate:'2026-07-01',effectiveSequence:0,saved:true},
+    {id:'expiry',empId:'fx',action:'Termination',reason:'Expiry of Fixed Term',effectiveDate:'2028-01-01',effectiveSequence:0,saved:true}
+  );
+  const migrated=DataStore.migrate(legacy); const e=migrated.employees[0];
+  assert.strictEqual(e.employmentSegments.length,1,'New Fixed Term Contract must not create a new employment segment/break during import migration');
+  assert.strictEqual(e.employmentSegments[0].startDate,'2026-01-01');
+  assert.strictEqual(e.employmentSegments[0].endDate,'2028-01-01');
+  E.reconcileEmploymentFromJobData(migrated,e);
+  assert.strictEqual(e.contractEndDate,'2027-12-31','Post-import Job Data reconciliation must derive the extended contract end date from the new Expiry row');
+})();
+
+(function testV127AnnualLeaveForecastApprovalAndExistingBookings(){
+  const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:-7.5}); addSchedule(state,e.id); addRate(state,e.id);
+  const approval=E.validateLeaveBooking(state,e.id,'Annual Leave','2026-07-06','2026-07-06',7.5);
+  assert.strictEqual(approval.ok,true,'Future Annual Leave must be bookable when forecast accrual covers it');
+  assert.strictEqual(approval.forecastApproved,true,'A booking that relies on future accrual must be marked forecast-approved');
+  assert(approval.currentBalanceAfter < -approval.negativeLimitHours,'The same booking would exceed the normal current-balance negative limit without forecast accrual');
+  assert(approval.balanceAfter>=0,'Forecast-approved leave must be covered by the forecast at approval time');
+
+  const beforeOther=E.annualLeaveForecast(state,e,'2026-07-20','2026-07-20',7.5).availableBefore;
+  state.leaveBookings.push({id:'other',empId:e.id,type:'Annual Leave',startDate:'2026-06-29',endDate:'2026-06-29',hours:7.5,requestedHours:7.5,status:'Approved'});
+  const afterOther=E.annualLeaveForecast(state,e,'2026-07-20','2026-07-20',7.5).availableBefore;
+  assert.strictEqual(E.round4(beforeOther-afterOther),7.5,'Forecast must deduct other already-booked Annual Leave before assessing a later booking');
+
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Forecast Annual Leave balance at')&&app.includes('You may be required to pay back overutilised leave if work conditions change and you resign.'),'Annual Leave booking UI must show the forecast and required repayment note');
+})();
+
+(function testV127ForecastApprovedLeaveSurvivesScheduleChangeAndRecoversOnResignation(){
+  function makeState(){
+    const state=baseState(); const e=addEmployee(state,{annualLeaveBalance:-7.5}); addSchedule(state,e.id); addRate(state,e.id); return {state,e};
+  }
+  let x=makeState();
+  let approved=E.validateLeaveBooking(x.state,x.e.id,'Annual Leave','2026-07-06','2026-07-06',7.5);
+  assert.strictEqual(approved.forecastApproved,true);
+  x.state.leaveBookings.push({id:'forecast',empId:x.e.id,type:'Annual Leave',startDate:'2026-07-06',endDate:'2026-07-06',hours:7.5,requestedHours:7.5,forecastApproved:true,status:'Approved'});
+  x.state.schedules.push({id:'reduced',empId:x.e.id,effectiveDate:'2026-05-29',hoursByDay:{1:7.5,2:0,3:0,4:0,5:0,6:0,0:0}});
+  const withoutBooking=Object.assign({},x.state,{leaveBookings:[]});
+  const newAttempt=E.validateLeaveBooking(withoutBooking,x.e.id,'Annual Leave','2026-07-06','2026-07-06',7.5);
+  assert.strictEqual(newAttempt.ok,false,'After a work-schedule reduction the same new booking can become unaffordable even with the normal negative limit');
+  const grandfathered=E.validateLeaveBooking(withoutBooking,x.e.id,'Annual Leave','2026-07-06','2026-07-06',7.5,'forecast',{forecastApproved:true});
+  assert.strictEqual(grandfathered.ok,true,'A booking that was already validly forecast-approved must remain valid after work conditions change');
+  assert.strictEqual(grandfathered.grandfatheredForecast,true);
+
+  // Termination recovery: finalise the intervening pays so the stored balance reflects
+  // the reduced schedule, then recover only the outstanding forecast-approved deficit.
+  x.e.terminationDate='2026-07-07'; x.e.terminationReason='Voluntary Resignation';
+  x.e.employmentSegments=[{startDate:'2026-05-22',endDate:'2026-07-07',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}];
+  E.finaliseCurrentPay(x.state); E.finaliseCurrentPay(x.state); E.finaliseCurrentPay(x.state);
+  const terminationPayslips=E.calculateEmployee(x.state,x.e.id,4,false);
+  const recoveryRows=terminationPayslips.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  assert.strictEqual(recoveryRows.length,1,'Resignation must create one separate forecast Annual Leave recovery line');
+  assert.strictEqual(recoveryRows[0].units,-7.5,'Recovery must not exceed the forecast-approved leave hours actually used');
+  assert.strictEqual(recoveryRows[0].amount,-300,'Recovery must use the employee\'s applicable rate for the outstanding forecast leave');
+  E.finaliseCurrentPay(x.state);
+  assert(x.e.annualLeaveBalance>-7.5,'Finalisation must extinguish the recovered forecast-leave component of the negative balance');
+  const later=E.calculateEmployee(x.state,x.e.id,5,false).flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  assert.strictEqual(later.length,0,'The forecast-leave recovery must not repeat in a later pay');
+})();
+
+console.log('PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fixed-term extension workflow are verified.');
+console.log('PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.');
 
 console.log('PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.');
 console.log('PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.');

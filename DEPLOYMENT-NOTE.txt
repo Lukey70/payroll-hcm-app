@@ -1,14 +1,19 @@
-Payroll/HCM App v1.1.26
+Payroll/HCM App v1.1.27
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.26 migrates existing saved data in place and preserves the payrollAppData/localStorage structure.
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.27 migrates existing saved data in place and preserves the payrollAppData/localStorage structure.
 
 IMPORTANT UPGRADE BEHAVIOUR
-- On first load, v1.1.26 runs a one-time 7-year/65-day LSL reconciliation for every saved employee.
-- Each employee receives a separate notification describing corrections or explicitly stating that no action was taken.
-- If recognised-service/audit history is insufficient to reconstruct a legacy LSL value reliably, the notification flags Review required rather than silently inventing a replacement.
+- Existing v1.1.26 LSL reconciliation markers/history are preserved; the one-time LSL repair is not rerun simply because v1.1.27 is opened.
+- Fixed-term Job Data is reconciled so New Fixed Term Contract / Expiry of Fixed Term sequences drive the authoritative contract end without creating a false employment break.
+- Legacy saved leave/deduction/additional-earning data continues to be defaulted/migrated in place.
 - Finalised historical payslips are not rewritten.
-- A one-time Personal Leave reconstruction also applies the >182-day break rule to existing recorded employment histories.
+
+MAJOR CHANGES
+- Deductions: unchanged historical End Dates no longer block saving a new ongoing Union Fees deduction; new/edited dates still validate normally.
+- Additional Earnings: Special Responsibility Allowance (Days) = $20 per entered calendar day.
+- Fixed term: Job Data extension workflow is authoritative for contract end and leave validation.
+- Annual Leave: future forecast balance shown/used for booking; valid forecast-approved bookings survive later schedule/FTE changes; resignation can recover the actual outstanding forecast-approved Annual Leave deficit through a separate recovery line.
 
 PAYROLL CONTROLS PRESERVED
 - Persisted currentCycleId remains the authoritative open pay; the app does not select a cycle from today's date.
@@ -16,13 +21,7 @@ PAYROLL CONTROLS PRESERVED
 - Retro cut-off remains 03/05/2026.
 - Finalisation remains manual.
 
-MAJOR CHANGES
-- LSL: recurring 7-year cycle; 65 working days / 13 weeks per completed cycle; new break and non-contributory-service rules.
-- Terminations: accrued Annual Leave + accrued LSL payout for non-retirement; retirement also pays pro-rata LSL.
-- Additional Earnings: Additional Hours rename; Meal $18/date; user-entered Travel; Motor Vehicle Single $25 / Return $50; user-entered Bonus.
-- Deductions: ongoing Union Fees with blank End Date remains valid alongside other ongoing deductions.
-
 TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.26.txt for actual automated/simulated/browser results and known limitations.
+See test-results.txt and RELEASE-NOTES-v1.1.27.txt for actual automated/static/simulated/browser results and known limitations.
 
 This remains a client-side payroll demonstration and is not production payroll software.

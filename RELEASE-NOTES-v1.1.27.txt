@@ -1,0 +1,62 @@
+Payroll/HCM App v1.1.27 — Release Notes
+Release date: 13 September 2026
+Starting source: verified v1.1.26 release
+
+SUMMARY
+v1.1.27 fixes deduction Save validation and fixed-term contract extension authority, adds Special Responsibility Allowance (Days), and introduces Annual Leave forecast booking with protected forecast-approved leave and resignation recovery.
+
+DEDUCTIONS — HISTORICAL DATE VALIDATION FIX
+- Fixed the Save-path bug where adding a new ongoing Union Fees deduction could be blocked by an unchanged historical deduction whose old End Date no longer satisfies today's entry-date window.
+- New deductions and deductions whose Start/End Date is edited are still validated against the current date rules.
+- Unchanged historical deduction dates remain valid and are not retroactively rejected merely because time has passed.
+- A blank End Date remains valid for ongoing Union Fees, including when an ongoing pre-tax super deduction and other historical deductions already exist.
+
+ADDITIONAL EARNINGS
+- Added Special Responsibility Allowance (Days).
+- Rate is fixed at $20 per entered calendar day.
+- The number of days is calculated from the inclusive entered date range.
+- The allowance is included as taxable earnings and ordinary-time earnings for the app's employer-super calculation; it does not add service hours for Annual/Personal Leave accrual.
+
+FIXED-TERM CONTRACT EXTENSIONS / JOB DATA
+- Job Data is authoritative for fixed-term contract extensions.
+- Supported workflow: delete the old Expiry of Fixed Term row, add New Fixed Term Contract, then add the new Expiry of Fixed Term row.
+- New Fixed Term Contract does not create a break in service or a new employment segment by itself.
+- A saved Expiry of Fixed Term Job Data effective date is exclusive: the employee's contract/last working day is the previous calendar day.
+- The latest valid Job Data sequence updates the authoritative fixed-term contract end used by leave validation and employment/payroll checks instead of relying on a stale employee master contractEndDate.
+- Example: New Fixed Term Contract effective 01/07/2026 and Expiry of Fixed Term effective 01/01/2028 gives a final contract day of 31/12/2027. Leave in 2026/2027 is accepted; leave on/after 01/01/2028 is rejected.
+
+ANNUAL LEAVE FORECAST BOOKING
+- Annual Leave only: after dates are entered, the booking screen calculates and displays the forecast Annual Leave balance at the requested time using current saved information.
+- Future forecast considers the committed Annual Leave balance, expected accrual based on effective schedules/current work conditions, already-booked Annual Leave and applicable projected payroll activity through the target period.
+- Future Annual Leave can be booked when the forecast balance can support it even if today's committed balance cannot yet support the booking.
+- Current/open-pay bookings retain the existing one-scheduled-workday negative Annual Leave rule.
+- Forecast-approved bookings are explicitly stored so a later work-schedule/FTE reduction does not automatically invalidate/cancel leave that was valid when approved.
+- If later work-condition changes mean the employee no longer earns enough leave, the approved booking may take the Annual Leave balance below the normal one-day negative booking limit when it is actually taken.
+- Booking UI displays: “Please note: You may be required to pay back overutilised leave if work conditions change and you resign.”
+- If an employee resigns while an outstanding negative Annual Leave balance is attributable to forecast-approved leave, final pay creates a separate Annual Leave Overutilisation Recovery line.
+- Recovery is capped to the actual outstanding forecast-approved deficit and does not repeat in later calculations/pay periods.
+
+PRESERVED CONTROLS
+- Persisted currentCycleId remains the authoritative open pay; the app does not select a cycle from today's date.
+- Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026.
+- Retro cut-off remains 03/05/2026.
+- Finalisation remains manual.
+- Finalised historical payslips remain frozen.
+- v1.1.26 7-year/65-day LSL migration and service rules remain preserved.
+
+TESTING
+- Full pre-package Node regression suite: PASS (exit code 0).
+- 117 self-invoking regression test blocks.
+- 501 assertion invocations.
+- 50 runtime PASS summary lines.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- New regressions cover the exact deduction Save-path scenario, Special Responsibility Allowance, fixed-term extension/migration behaviour, Annual Leave forecast approval, schedule-change grandfathering and resignation recovery.
+- Local HTTP serving returned HTTP 200 during the browser smoke attempt; Chromium did not return a rendered DOM before timeout. No successful real-browser interaction pass is claimed.
+- The final packaged ZIP is additionally fresh-extracted and retested before release; see the external test-results-v1.1.27.txt/release record for the final artifact hash.
+
+KNOWN LIMITATIONS
+- This remains client-side demonstration software, not production payroll software.
+- The parental Unpaid Extension remains the documented fixed 730-day implementation, which can differ from two calendar years across a leap day.
+- Real-browser rendering/interaction could not be completed in this execution environment; automated calculation tests and static/simulated-interface checks are the verified coverage.
+- Import/export does not have fixtures for every historical app version.
+- Annual Leave forecast uses the app's generated/configured pay-cycle horizon and the saved information available at calculation time; it cannot predict future changes that have not yet been entered.

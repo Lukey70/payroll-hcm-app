@@ -1,19 +1,16 @@
-v1.1.26
+v1.1.27
 
 Reviewed changes:
-- Recurring 7-year / 65-working-day (13-week) Long Service Leave engine.
-- One-time existing-employee LSL reconciliation with per-employee notifications and review-required handling when source history is insufficient.
-- LSL service-break and contributory/non-contributory service rules.
-- Personal Leave >182-day break reset/rebuild rules.
-- Termination leave payouts for Annual Leave, accrued LSL and retirement pro-rata LSL.
-- Additional Day renamed to Additional Hours; new Meal, Travel, Motor Vehicle and Bonus earnings.
-- Open-ended Union Fees validation fix with concurrent deductions.
+- Deductions Save now validates new/edited deduction dates without retroactively invalidating unchanged historical deductions; ongoing Union Fees remains valid alongside ongoing pre-tax super.
+- Added Special Responsibility Allowance (Days) at $20 per entered calendar day.
+- Fixed-term contract-extension Job Data sequence is authoritative for contract end / leave validation; New Fixed Term Contract does not create a false service break.
+- Added Annual Leave forecast balance/booking, forecast-approved leave preservation after schedule changes, and capped resignation recovery of outstanding forecast-approved Annual Leave deficits.
 
 Validation:
-- Full Node regression suite passed: 111 self-invoking test blocks; 467 assertion invocations; 48 PASS summary lines.
+- Full pre-package Node regression suite passed: 117 self-invoking test blocks; 501 assertion invocations; 50 PASS summary lines.
 - JavaScript syntax checks passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- New regressions include exact reported deduction combination, fixed-term extension migration/leave validation, Special Responsibility Allowance and Annual Leave forecast/recovery.
 - Static/source and simulated-DOM/event coverage passed where included in the suite.
-- Local HTTP server returned HTTP 200.
-- Chromium 144 real-browser smoke attempt timed out before returning a rendered DOM; no real-browser pass is claimed.
+- Local HTTP serving returned HTTP 200; Chromium real-browser smoke timed out before a rendered DOM was returned, so no real-browser pass is claimed.
 
-See RELEASE-NOTES-v1.1.26.txt and test-results.txt for detail and known limitations.
+See RELEASE-NOTES-v1.1.27.txt and test-results.txt for detail and known limitations.
