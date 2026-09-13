@@ -1196,6 +1196,18 @@
     const all=hist.concat(currentOpen);
     return { gross:all.reduce((s,x)=>s+Number(x.gross||0),0), tax:all.reduce((s,x)=>s+Number(x.tax||0),0), net:all.reduce((s,x)=>s+Number(x.net||0),0) };
   }
+  function isPreviousFinancialYearRetro(row,paymentDate){
+    if(!row || row.kind!=='retro' || !paymentDate) return false;
+    const sourceEnd=row.endDate||row.startDate||'';
+    if(!sourceEnd) return false;
+    return E.compare(sourceEnd,financialYearBounds(paymentDate).start)<0;
+  }
+  function payslipDisplayDescription(row,paymentDate){ return isPreviousFinancialYearRetro(row,paymentDate)?'Retro PFY':String((row&&row.description)||'Additional Hours'); }
+  function isAmountOnlyPayslipRow(row){
+    if(!row) return false;
+    if(row.amountOnly===true) return true;
+    return ['additional','retro'].includes(row.kind) && Math.abs(Number(row.units||0))<0.0001 && Math.abs(Number(row.rate||0))<0.0001;
+  }
   function consolidatePayslipDisplayRows(rows){
     const output=[];
     const grouped=new Map();
@@ -1225,7 +1237,7 @@
       ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(e.department||'')], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
     ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
     const displayRows=consolidatePayslipDisplayRows(p.rows||[]);
-    const rows=displayRows.map(r=>`<tr><td>${esc(r.description || 'Additional Hours')}</td><td class="right">${Number(r.units||0).toFixed(2)}</td><td class="right">${r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):''}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`).join('');
+    const rows=displayRows.map(r=>{ const amountOnly=isAmountOnlyPayslipRow(r); const description=payslipDisplayDescription(r,p.cycle&&p.cycle.paymentDate); return `<tr><td>${esc(description)}</td><td class="right">${amountOnly?'':Number(r.units||0).toFixed(2)}</td><td class="right">${amountOnly?'':(r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):'')}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`; }).join('');
     const preTaxRows=(p.preTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const postTaxRows=(p.postTaxDeductions||[]).map(d=>[esc(d.description),E.money(d.amount)]);
     const preTaxSection=preTaxRows.length?`<div class="section-title">Pre-Tax Deductions</div>${table(['Description','Amount'],preTaxRows)}`:'';
@@ -1369,10 +1381,15 @@
   }
   function monthStartIso(value){ const d=E.parseDate(value||currentCycle().start); return E.iso(new Date(d.getFullYear(),d.getMonth(),1)); }
   function shiftMonthIso(value,delta){ const d=E.parseDate(monthStartIso(value)); return E.iso(new Date(d.getFullYear(),d.getMonth()+delta,1)); }
+  function employeeVisibleInMonthlyAbsence(e,monthIso){
+    const first=E.parseDate(monthStartIso(monthIso)); const year=first.getFullYear(); const month=first.getMonth(); const days=new Date(year,month+1,0).getDate();
+    for(let i=1;i<=days;i++) if(E.isEmployedOn(e,E.iso(new Date(year,month,i)))) return true;
+    return false;
+  }
   function monthlyAbsenceCalendarHtml(monthIso){
     const first=E.parseDate(monthStartIso(monthIso)); const year=first.getFullYear(); const month=first.getMonth(); const last=new Date(year,month+1,0); const days=last.getDate();
     const monthLabel=first.toLocaleDateString('en-AU',{month:'long',year:'numeric'});
-    const employees=(state.employees||[]).slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
+    const employees=(state.employees||[]).filter(e=>employeeVisibleInMonthlyAbsence(e,monthIso)).slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
     const headers=Array.from({length:days},(_,i)=>{ const d=new Date(year,month,i+1); return `<th class="monthly-day-head"><strong>${i+1}</strong><small>${d.toLocaleDateString('en-AU',{weekday:'short'}).slice(0,1)}</small></th>`; }).join('');
     const rows=employees.map(e=>{
       const cells=Array.from({length:days},(_,i)=>{ const date=E.iso(new Date(year,month,i+1)); const st=E.absenceCalendarStatus(state,e,date); return `<td class="monthly-absence-cell ${st.cssClass}${st.pending?' pending':''}" title="${esc(st.title)}"><span>${esc(st.label||'')}</span></td>`; }).join('');
@@ -1523,6 +1540,12 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.29',notes:[
+      'Monthly Absence Calendar now removes terminated employees from the month after termination and restores them from the month of a later rehire.',
+      'Amount-entered Additional Earnings such as Bonus and Travel Allowance display no Units or Rate on payslips.',
+      'Retro earnings sourced wholly from a previous financial year display as Retro PFY on payslips while preserving internal retro detail.',
+      'Resignation final pay now recovers the full actual outstanding negative Annual Leave balance, including ordinary one-workday negative balances as well as forecast-approved deficits.'
+    ]},
     {version:'v1.1.28',notes:[
       'Added the Monthly Absence Calendar report showing all employees one month at a time with previous/next month navigation, the existing Absence Calendar key, and print/download support.',
       'Added fixed-term contract expiry alerts after the pay close of the immediately previous pay period, using the latest Job Data contract expiry.',
@@ -1744,5 +1767,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription };
 })();

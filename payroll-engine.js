@@ -1070,11 +1070,11 @@
         const earningType = a.earningType || 'Additional Hours';
         const baseRate = activePayRate(state,e.id,a.startDate || c.start);
         if(earningType === 'Overpayment Adjustment'){
-          rows.push({ description:'Overpayment Adjustment', units:0, amount:round2(Number(a.amount||0)), startDate:c.start, endDate:c.end, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0 });
+          rows.push({ description:'Overpayment Adjustment', units:0, amount:round2(Number(a.amount||0)), startDate:c.start, endDate:c.end, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0, amountOnly:true });
           return;
         }
         if(['Reimbursement','Travel Allowance','Bonus'].includes(earningType)){
-          rows.push({ description:earningType, units:0, amount:round2(Number(a.amount||0)), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:earningType==='Bonus', accruesLeave:false, serviceHours:0 });
+          rows.push({ description:earningType, units:0, amount:round2(Number(a.amount||0)), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:earningType==='Bonus', accruesLeave:false, serviceHours:0, amountOnly:true });
           return;
         }
         if(earningType==='Meal Allowance'){
@@ -1119,9 +1119,12 @@
         const balances = projectedBalances(state,e,c,true,payoutBaseRows);
         if(balances.annual > 0) rows.push({ description:'Annual Leave Payout', units:balances.annual, amount:round2(balances.annual*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/resign/i.test(String(e.terminationReason||'')) && balances.annual < -0.0001){
-          const forecastUsed=forecastApprovedAnnualLeaveHoursUsed(state,e,payoutDate);
-          const recoveryHours=round4(Math.min(Math.abs(Number(balances.annual||0)),forecastUsed));
-          if(recoveryHours>0) rows.push({ description:'Annual Leave Overutilisation Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, forecastLeaveRecovery:true });
+          // Recover the employee's actual outstanding Annual Leave deficit on resignation.
+          // This applies both to forecast-approved leave and to the normal one-workday
+          // negative-balance facility. projectedBalances() has already included current-pay
+          // accruals/usage, so the recovery is capped to the true remaining deficit.
+          const recoveryHours=round4(Math.abs(Number(balances.annual||0)));
+          if(recoveryHours>0) rows.push({ description:'Annual Leave Overutilisation Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, annualLeaveDeficitRecovery:true });
         }
         if(balances.lslAccrued > 0) rows.push({ description:'Long Service Leave Payout', units:balances.lslAccrued, amount:round2(balances.lslAccrued*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/retire/i.test(String(e.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });

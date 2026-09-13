@@ -1,28 +1,27 @@
-Payroll/HCM App v1.1.28
+Payroll/HCM App v1.1.29
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.28 migrates existing saved data in place and preserves the payrollAppData/localStorage structure.
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.29 preserves the existing payrollAppData/localStorage schema and migrates saved data through the normal DataStore.migrate() path.
 
 IMPORTANT UPGRADE BEHAVIOUR
-- Existing v1.1.26 LSL reconciliation markers/history are preserved; the one-time LSL reconciliation does not rerun because v1.1.28 is opened.
-- Existing v1.1.27 Annual Leave forecast approvals and Job Data fixed-term extension history are preserved.
-- Finalised historical payslips are not rewritten.
-- If saved data contains a finalised fixed-term expiry leave payout and a matching continuous New Fixed Term Contract correction, the recovery appears in the next open pay only; it does not alter the old payslip.
-- Genuine Rehire actions never trigger that payout recovery.
+- Existing finalised payslips remain unchanged; the new amount-based and Retro PFY rules affect how payslip rows are displayed, not historical stored calculations.
+- Existing v1.1.26 LSL reconciliation markers/history are preserved and the one-time LSL reconciliation does not rerun merely because v1.1.29 is opened.
+- Existing v1.1.27 forecast-approved Annual Leave bookings remain preserved. On resignation, recovery now covers the full actual outstanding negative Annual Leave balance, not only the forecast-approved component.
+- Monthly Absence Calendar uses employment periods to decide whether an employee belongs in each month; no employee records are deleted.
 
 MAJOR CHANGES
-- Reports: Monthly Absence Calendar with all employees, monthly arrow navigation, existing Absence Calendar key/colours, print/save-PDF and HTML download.
-- Notifications: fixed-term contract expiry alert after the pay close of the immediately previous pay period.
-- Fixed-term correction: recover erroneous finalised Annual Leave/LSL termination payouts and reinstate leave when a late New Fixed Term Contract proves continuous service.
-- Rehire safeguard: genuine Rehire keeps prior termination payouts final.
+- Monthly Absence Calendar: hide terminated employees from the month after termination; re-show from rehire month.
+- Payslip: blank Units/Rate for direct-dollar Additional Earnings.
+- Payslip: display previous-financial-year retro earnings as Retro PFY.
+- Final pay: recover any actual negative Annual Leave balance on resignation, once only.
 
 PAYROLL CONTROLS PRESERVED
-- Persisted currentCycleId remains the authoritative open pay; the app does not silently select a pay cycle from today's date.
+- Persisted currentCycleId remains the authoritative open pay.
 - Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026.
 - Retro cut-off remains 03/05/2026.
 - Finalisation remains manual.
 
 TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.28.txt for actual automated/static/browser-attempt results and known limitations.
+See test-results.txt and RELEASE-NOTES-v1.1.29.txt for actual automated/static/browser-attempt results and known limitations.
 
 This remains a client-side payroll demonstration and is not production payroll software.

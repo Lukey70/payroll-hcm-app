@@ -1,0 +1,64 @@
+Payroll/HCM App v1.1.29 — Release Notes
+Release date: 13 September 2026
+Starting source: verified v1.1.28 release
+
+SUMMARY
+v1.1.29 refines the Monthly Absence Calendar, improves payslip presentation for amount-based and previous-financial-year retro earnings, and fixes resignation recovery of negative Annual Leave balances.
+
+MONTHLY ABSENCE CALENDAR
+- Employees remain visible for the calendar month in which they terminate.
+- From the following calendar month they are omitted while not employed.
+- A later rehire makes the employee visible again from the month containing the rehire effective date.
+- Inclusion is derived from authoritative employment periods/effective-dated Job Data through the existing employment-status logic.
+- Existing Monthly Absence Calendar legend, colours, print/download controls and the existing Absence Calendar remain unchanged.
+
+PAYSLIP — AMOUNT-BASED ADDITIONAL EARNINGS
+- Additional Earnings entered directly as a dollar amount display only Description and Amount on the payslip earnings row.
+- Units and Rate are blank for amount-based rows such as Bonus, Travel Allowance and Reimbursement/Overpayment Adjustment where applicable.
+- Unit/rate based earnings such as Additional Hours, Meal Allowance, Special Responsibility Allowance (Days) and Motor Vehicle Allowance retain Units and Rate.
+- Historical/current amount-only rows are recognised from row semantics as well as the new amountOnly marker.
+
+PAYSLIP — PREVIOUS FINANCIAL YEAR RETRO
+- A retro earning whose source earning period is wholly before the start of the payment date's current Australian financial year displays the payslip description simply as `Retro PFY`.
+- Current-financial-year retro keeps its normal description.
+- The simplification is display-only: calculation amount, source dates, tax, retro settlement and internal row history remain unchanged.
+
+RESIGNATION — NEGATIVE ANNUAL LEAVE RECOVERY
+- If an employee resigns with a negative Annual Leave balance, final pay now recovers the full actual outstanding deficit.
+- The rule applies whether the deficit arose from forecast-approved leave or the normal one-scheduled-workday negative Annual Leave facility.
+- Recovery is calculated after current-pay accrual and leave usage, so it is capped to the true remaining negative balance.
+- The separate `Annual Leave Overutilisation Recovery` line uses the applicable hourly rate.
+- Balance accounting brings the recovered deficit back to zero and finalisation commits it once; later pays do not repeat the recovery.
+- Existing forecast-approved Annual Leave behaviour remains preserved, but is no longer the only eligible source of a final-pay recovery.
+
+CORE RULES PRESERVED
+- Persisted currentCycleId remains the authoritative open pay.
+- Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026, payment date 04/06/2026 and pay close 29/05/2026.
+- Retro processing cut-off remains 03/05/2026.
+- Finalisation remains manual and finalised historical payslips remain frozen.
+- v1.1.26 recurring 7-year / 65-working-day LSL rules and migrations remain preserved.
+- v1.1.27 Annual Leave forecasting and Job Data contract-extension workflow remain preserved.
+- v1.1.28 Monthly Absence Calendar, contract-expiry notifications and late fixed-term payout-recovery/Rehire safeguards remain preserved.
+
+TESTING
+Pre-package automated verification:
+- node test-cases.js: PASS / exit code 0.
+- 125 self-invoking test blocks.
+- 553 assert/assert.* call sites.
+- 56 runtime PASS summary lines.
+- node --check data-store.js: PASS.
+- node --check payroll-engine.js: PASS.
+- node --check app.js: PASS.
+- node --check test-cases.js: PASS.
+
+New v1.1.29 regression coverage includes:
+- Monthly Absence Calendar visibility in termination month, exclusion from the following month, and reappearance in rehire month;
+- amount-based Bonus payslip row with blank Units/Rate and preservation of Units/Rate for days-based earnings;
+- `Retro PFY` display for previous-financial-year retro and normal description for current-FY retro;
+- resignation with an ordinary negative Annual Leave balance and no forecast-approved leave, including final-day pay/accrual, full deficit recovery, zero balance after recovery/finalisation and no repeat in the next pay;
+- the existing forecast-approved resignation recovery regression updated to require recovery of the full actual final deficit rather than the superseded forecast-hours cap.
+
+KNOWN LIMITATIONS
+- This is a client-side payroll demonstration, not production payroll software.
+- Real-browser interaction testing is attempted separately and only claimed if it completes successfully.
+- The app's termination-leave/negative-earning tax handling remains its existing simplified Australian demonstration model rather than a complete statutory payroll engine for every historical circumstance.

@@ -1,12 +1,9 @@
-Payroll/HCM App v1.1.28 — Code Review Notes
+Payroll/HCM App v1.1.29 — Code Review Notes
 
-- Source base: verified v1.1.27 release.
-- Calculation logic remains in payroll-engine.js; UI/report orchestration remains in app.js; persistence/migration remains in data-store.js.
-- New Monthly Absence Calendar and the existing Absence Calendar share PayrollEngine.absenceCalendarStatus plus one app-level legend helper so colour/type semantics cannot drift independently.
-- Contract-expiry alerts use the authoritative Job Data-reconciled contractEndDate and PAY_CYCLES pay-close dates.
-- Late fixed-term leave-payout recovery is generated only from finalised historical payout rows whose employee snapshot records Expiry of Fixed Term and whose payout date is immediately followed by a saved New Fixed Term Contract effective date.
-- A same-date Rehire row explicitly suppresses recovery.
-- Recovery rows carry a stable lateFixedTermRecoveryKey that is retained on the finalised payslip and prevents repeat recovery.
-- Leave payout recovery rows are excluded from ordinary earnings and handled in the termination-leave tax component as negative adjustments.
-- Annual Leave and LSL usage/reinstatement logic recognises the recovery rows, allowing finalisation to restore the corresponding leave units without rewriting historical payslips.
-- Full Node regression suite and syntax checks pass. Headless Chromium DOM rendering remains unavailable due environment timeout and is not claimed as passed.
+- Source base: verified v1.1.28 release.
+- Payroll calculation remains in payroll-engine.js; browser/report presentation remains in app.js; persistence/migration remains in data-store.js.
+- Monthly Absence Calendar filtering uses PayrollEngine.isEmployedOn across the selected calendar month, so termination/rehire visibility follows the same effective-dated employment model as payroll rather than a separate status flag.
+- Amount-entered Additional Earnings are tagged amountOnly at row creation. Payslip rendering also recognises legacy amount-only additional/retro rows with zero units/rate so imported/finalised history renders consistently.
+- Previous-financial-year retro labelling is display-only in app.js. Internal descriptions/source dates remain unchanged, preserving retro settlement and tax calculations.
+- Annual Leave Overutilisation Recovery on resignation now uses abs(projectedBalances.annual) after current-pay rows/accruals instead of being capped to forecast-approved leave usage. The existing negative-unit balance accounting brings the deficit to zero on finalisation.
+- Full Node regression suite and JavaScript syntax checks pass before packaging.

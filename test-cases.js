@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.28'), 'sidebar/version label must show v1.1.28');
-  assert(data.includes("APP_VERSION = '1.1.28'"), 'data-store version must be 1.1.28');
+  assert(html.includes('v1.1.29'), 'sidebar/version label must show v1.1.29');
+  assert(data.includes("APP_VERSION = '1.1.29'"), 'data-store version must be 1.1.29');
 })();
 
 (function testAnchorPayCycle(){
@@ -1718,8 +1718,8 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const terminationPayslips=E.calculateEmployee(x.state,x.e.id,4,false);
   const recoveryRows=terminationPayslips.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
   assert.strictEqual(recoveryRows.length,1,'Resignation must create one separate forecast Annual Leave recovery line');
-  assert.strictEqual(recoveryRows[0].units,-7.5,'Recovery must not exceed the forecast-approved leave hours actually used');
-  assert.strictEqual(recoveryRows[0].amount,-300,'Recovery must use the employee\'s applicable rate for the outstanding forecast leave');
+  assert.strictEqual(recoveryRows[0].units,-8.654,'Resignation must recover the full actual negative Annual Leave balance after current-pay accrual and usage, even where it exceeds the originally forecast-approved hours');
+  assert.strictEqual(recoveryRows[0].amount,-346.16,'Recovery must use the employee\'s applicable rate for the full outstanding Annual Leave deficit');
   E.finaliseCurrentPay(x.state);
   assert(x.e.annualLeaveBalance>-7.5,'Finalisation must extinguish the recovered forecast-leave component of the negative balance');
   const later=E.calculateEmployee(x.state,x.e.id,5,false).flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
@@ -1822,6 +1822,73 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert(app.includes('${absenceLegendHtml()}'),'Monthly report and existing Absence Calendar must reuse the same key/legend helper rather than defining a different key');
   assert(!app.includes('monthly-absence-position')&&!app.includes('monthly-absence-labor'),'Monthly Absence Calendar must not add Position or Labor columns');
 })();
+
+
+
+(function testV129MonthlyAbsenceCalendarHidesEmployeesAfterTerminationMonth(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const helper=context.window.PayrollApp.employeeVisibleInMonthlyAbsence;
+  const e={id:'monthterm',firstName:'Month',lastName:'Term',startDate:'2026-01-01',employmentSegments:[{startDate:'2026-01-01',endDate:'2026-06-19',inclusiveEnd:false,terminationReason:'Resignation'}]};
+  assert.strictEqual(helper(e,'2026-06-01'),true,'Employee must remain on the Monthly Absence Calendar for the month in which they terminate');
+  assert.strictEqual(helper(e,'2026-07-01'),false,'Employee must disappear from the Monthly Absence Calendar from the month after termination');
+  e.employmentSegments.push({startDate:'2026-08-10',endDate:'',inclusiveEnd:false,terminationReason:''});
+  assert.strictEqual(helper(e,'2026-08-01'),true,'A rehired employee must reappear from the month containing the rehire effective date');
+})();
+
+(function testV129AmountBasedAdditionalEarningsHideUnitsAndRateOnPayslip(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'bonus129',empId:e.id,cycleId:1,earningType:'Bonus',startDate:'2026-05-25',endDate:'2026-05-25',hours:0,amount:500,saved:true});
+  const pays=E.calculateEmployee(state,e.id,1,false); const bonus=pays.flatMap(p=>p.rows).find(r=>r.description==='Bonus');
+  assert(bonus&&bonus.amountOnly===true,'Direct dollar Additional Earnings must carry an amount-only display marker');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp;
+  assert.strictEqual(app.isAmountOnlyPayslipRow(bonus),true);
+  const html=app.payslipHtml(pays[0]);
+  assert(html.includes('<td>Bonus</td><td class="right"></td><td class="right"></td><td class="right">500.00</td>'),'Bonus payslip line must show Amount but no Units or Rate');
+  assert.strictEqual(app.isAmountOnlyPayslipRow({description:'Special Responsibility Allowance (Days)',kind:'additional',units:2,rate:20,amount:40}),false,'Days/rate based earnings must continue to show Units and Rate');
+})();
+
+(function testV129PreviousFinancialYearRetroPayslipLabel(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp;
+  assert.strictEqual(app.payslipDisplayDescription({description:'Regular Pay Retro',kind:'retro',startDate:'2026-06-20',endDate:'2026-06-30'},'2026-07-16'),'Retro PFY','Retro sourced wholly before the current financial year must display as Retro PFY');
+  assert.strictEqual(app.payslipDisplayDescription({description:'Regular Pay Retro',kind:'retro',startDate:'2026-07-01',endDate:'2026-07-01'},'2026-07-16'),'Regular Pay Retro','Current-financial-year retro must keep its normal description');
+})();
+
+(function testV129ResignationRecoversOrdinaryNegativeAnnualLeave(){
+  const state=baseState();
+  const e=addEmployee(state,{id:'negrecover129',annualLeaveBalance:-7.5,terminationDate:'2026-05-26',terminationReason:'Voluntary Resignation',status:'Active',startDate:'2026-01-01',originalStartDate:'2026-01-01'});
+  e.employmentSegments=[{startDate:'2026-01-01',endDate:'2026-05-26',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}];
+  addSchedule(state,e.id,'2026-01-01',{1:7.5,2:0,3:0,4:0,5:0,6:0,0:0}); addRate(state,e.id,'2026-01-01','Officer',40);
+  assert.strictEqual(E.forecastApprovedAnnualLeaveHoursUsed(state,e,'2026-05-25'),0,'Scenario must not rely on forecast-approved Annual Leave');
+  const expectedAccrual=E.leaveAccrualForOrdinaryHours(e,7.5).annual;
+  const expectedDeficit=E.round4(7.5-expectedAccrual);
+  const pays=E.calculateEmployee(state,e.id,1,false); const recovery=pays.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  assert.strictEqual(totalUnitsByDesc(pays,'Regular Pay'),7.5,'Scenario should include a normal final-day payment so the deficit is recovered from final pay');
+  assert.strictEqual(recovery.length,1,'Resignation with an ordinary negative Annual Leave balance must create one recovery line');
+  assert.strictEqual(recovery[0].units,-expectedDeficit,'Recovery must equal the full actual outstanding Annual Leave deficit after final-pay accrual');
+  assert.strictEqual(recovery[0].amount,E.round2(-expectedDeficit*40),'Recovery must use the applicable hourly rate');
+  assert.strictEqual(E.round4(pays[0].balances.annual),0,'Open final-pay balance must be brought back to zero by the recovery');
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.round4(e.annualLeaveBalance),0,'Finalisation must commit the recovered Annual Leave deficit as zero');
+  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(state,e.id,2,false),'Annual Leave Overutilisation Recovery'),0,'The recovery must not repeat in a later pay');
+})();
+
+console.log('PASS: v1.1.29 Monthly Absence Calendar termination-month visibility is verified.');
+console.log('PASS: v1.1.29 amount-based Additional Earnings payslip formatting and Retro PFY labelling are verified.');
+console.log('PASS: v1.1.29 resignation recovery of ordinary negative Annual Leave is verified.');
 
 console.log('PASS: v1.1.28 contract-expiry notification timing and extension suppression are verified.');
 console.log('PASS: v1.1.28 late fixed-term leave-payout recovery and genuine-Rehire safeguard are verified.');
