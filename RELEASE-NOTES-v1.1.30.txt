@@ -1,0 +1,84 @@
+Payroll/HCM App v1.1.30 — Release Notes
+Release date: 18 September 2026
+Source: verified v1.1.29 release
+
+SUMMARY
+v1.1.30 implements the accumulated requests after v1.1.29: Annual Leave recovery wording, retro amount-based Additional Earnings payslip presentation, leave approval/status controls and termination conflicts, plus future access-control flags in Position Data.
+
+CHANGES
+
+1. Annual Leave recovery label
+- Renamed the user-facing final-pay recovery line to `Annual Leave Overuse Recovery`.
+- Calculation, balance restoration, tax treatment and once-only recovery behaviour are unchanged.
+
+2. Amount-based Additional Earnings — retro payslip display
+- Direct-dollar Additional Earnings such as Bonus and Travel Allowance continue to show Description + Amount only.
+- Units and Rate are now also blank when those amount-based earnings are paid retrospectively.
+- If the retro is wholly from a previous financial year, the payslip description remains `Retro PFY`, with Units and Rate blank.
+- Internal source dates, retro settlement and tax/audit detail remain preserved.
+
+3. Leave status workflow
+- Leave booked directly in Payroll Management defaults to `Approved`.
+- The Status badge in Leave is clickable and can be changed to:
+  - Approved
+  - Awaiting Manager Approval
+  - Denied
+- Awaiting Manager Approval uses yellow status styling.
+- Denied uses red status styling.
+- Status changes preserve the leave record, dates, type and hours and append status-history/audit information.
+- Awaiting Manager Approval and Denied leave are not processed as paid/unpaid leave in payroll calculations until the booking is Approved.
+- Denied leave does not block a later replacement booking for the same dates; pending leave continues to reserve/overlap the dates for review.
+
+4. Termination / future leave conflict
+- When a Termination Job Data row is saved, leave that falls on or after the termination effective date is identified.
+- Because termination effective date is the first non-employed day, leave ending on the employee's last employed day remains unaffected.
+- Affected leave is retained and changed to `Awaiting Manager Approval` rather than being deleted.
+- A notification identifies the employee and affected leave booking(s).
+- Re-saving the same termination does not create a duplicate notification for the same employee/effective date.
+
+5. Position Data access flags
+- Added `Access to Manager Self Service` checkbox to Position Data.
+- Added `Access to Payroll Management` checkbox to Position Data.
+- Both fields are preserved through the existing JSON import/export/migration path.
+- Legacy positions default both flags to false.
+- These fields are metadata for the future ESS/MSS/role-based access design. v1.1.30 does not yet introduce an MSS/ESS login or enforce role-based access to the current Payroll Management UI.
+
+PRESERVED FUNCTIONALITY
+- Configured currentCycleId remains the authoritative open pay; no today-based pay-cycle selection.
+- PPE 04/06/2026 anchor, 03/05/2026 retro cut-off and manual finalisation remain unchanged.
+- 7-year / 65-day LSL model and existing employee reconciliation remain unchanged.
+- Annual Leave forecast and negative-balance recovery remain unchanged except for the display-label rename.
+- Fixed-term extension, late extension payout recovery, contract expiry notifications and genuine-Rehire safeguards remain unchanged.
+- Monthly Absence Calendar, payslip date filter, Union Fees, Additional Earnings and historical payslip preservation remain unchanged.
+
+AUTOMATED / STATIC / SIMULATED TESTING
+- Full Node regression suite: PASS / exit code 0.
+- Self-invoking test blocks: 130.
+- assert/assert.* call sites: 580.
+- Runtime PASS summaries: 61.
+- `node --check data-store.js`: PASS.
+- `node --check payroll-engine.js`: PASS.
+- `node --check app.js`: PASS.
+- `node --check test-cases.js`: PASS.
+
+New regression coverage includes:
+- new Annual Leave Overuse Recovery wording with the old wording absent from the engine/UI;
+- retrospective Bonus dollar correction preserving Amount-only display (zero Units/Rate);
+- previous-financial-year amount-based retro displaying `Retro PFY` with blank Units/Rate;
+- termination conflict boundary using 07/09 effective date semantics;
+- automatic change of affected future leave to Awaiting Manager Approval plus notification/status history;
+- Awaiting/Denied leave excluded from payroll processing;
+- Position Data MSS and Payroll Management access fields surviving migration/import-export.
+
+REAL-BROWSER ATTEMPT
+- Local HTTP server returned HTTP 200 for index.html.
+- Chromium headless was attempted but timed out before returning a rendered DOM.
+- Therefore no successful real-browser interaction pass is claimed.
+
+KNOWN LIMITATIONS
+- Position access flags are stored/configurable only; actual ESS/MSS and position-driven access enforcement are future work.
+- No packaged end-to-end browser automation framework is included.
+- Existing documented parental Unpaid Extension remains a fixed 730-day implementation.
+- Import/export is not fixture-tested against every historical app release.
+
+This remains a client-side payroll demonstration and is not production payroll software.

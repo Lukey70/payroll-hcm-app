@@ -300,8 +300,9 @@
     if(!e || !c) return false;
     return employmentSegments(e).some(seg=>compare(seg.startDate,c.end)<=0 && (!seg.endDate || (seg.inclusiveEnd ? compare(seg.endDate,c.start)>=0 : compare(seg.endDate,c.start)>0)));
   }
+  function leaveBookingIsApproved(leave){ return !!leave && (!leave.status || leave.status==='Approved'); }
   function leaveOnDate(state, empId, dateIso){
-    return (state.leaveBookings||[]).find(l=>l.empId===empId && compare(l.startDate,dateIso)<=0 && compare(dateIso,l.endDate)<=0);
+    return (state.leaveBookings||[]).find(l=>l.empId===empId && leaveBookingIsApproved(l) && compare(l.startDate,dateIso)<=0 && compare(dateIso,l.endDate)<=0);
   }
   function segmentLastEmployedDay(seg){
     if(!seg || !seg.endDate) return '';
@@ -358,7 +359,7 @@
     return {start:(segments[0]&&segments[0].startDate)||e.lslServiceDate||e.startDate||'',segments,shortBreaks,lastResetBreakDays};
   }
   function continuousLwopRanges(state,e){
-    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && l.type==='LWOP' && l.startDate && l.endDate)
+    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && l.type==='LWOP' && l.startDate && l.endDate)
       .map(l=>({start:l.startDate,end:l.endDate,reason:'Leave Without Pay'}));
     return mergeDateRanges(source).filter(r=>calendarDaysInclusive(r.start,r.end)>LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS);
   }
@@ -368,7 +369,7 @@
     // the preceding break is recognised when calculating service as at the rehire date.
     const info=lslContinuityInfo(state,e,addDays(end,1));
     const ranges=[...info.shortBreaks, ...continuousLwopRanges(state,e), ...(state.leaveBookings||[])
-      .filter(l=>l.empId===e.id && l.type===PARENTAL_UNPAID_EXTENSION_TYPE && l.startDate && l.endDate)
+      .filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && l.type===PARENTAL_UNPAID_EXTENSION_TYPE && l.startDate && l.endDate)
       .map(l=>({start:l.startDate,end:l.endDate,reason:'Unpaid Parental Leave Extension'}))];
     return mergeDateRanges(ranges.map(r=>clipRange(r,start,end)).filter(Boolean));
   }
@@ -610,7 +611,7 @@
   }
   function fdvUsedDays(state,e,onDate,excludeLeaveId){
     const window=fdvEntitlementWindow(e,onDate);
-    return round4((state.leaveBookings||[]).filter(l=>l.empId===e.id && l.id!==excludeLeaveId && l.type===FDV_LEAVE_TYPE && compare(l.endDate,window.start)>=0 && compare(l.startDate,window.end)<=0)
+    return round4((state.leaveBookings||[]).filter(l=>l.empId===e.id && l.id!==excludeLeaveId && leaveBookingIsApproved(l) && l.type===FDV_LEAVE_TYPE && compare(l.endDate,window.start)>=0 && compare(l.startDate,window.end)<=0)
       .reduce((sum,l)=>sum+bookingWorkingDayFractions(state,e,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined)),0));
   }
   function fdvRemainingDays(state,e,onDate,excludeLeaveId){ return round4(Math.max(0,FDV_LEAVE_DAYS_PER_YEAR-fdvUsedDays(state,e,onDate,excludeLeaveId))); }
@@ -627,7 +628,7 @@
   }
   function parentalLeaveUsage(state,e,excludeLeaveId){
     let paidCalendarDays=0, paidFullPayEquivalentDays=0, unpaidDays=0, extensionDays=0;
-    (state.leaveBookings||[]).filter(l=>l.empId===e.id && l.id!==excludeLeaveId).forEach(l=>{
+    (state.leaveBookings||[]).filter(l=>l.empId===e.id && l.id!==excludeLeaveId && leaveBookingIsApproved(l)).forEach(l=>{
       const days=calendarDaysInclusive(l.startDate,l.endDate);
       if(l.type===PARENTAL_PAID_LEAVE_TYPE){
         const half=String(l.payOption||'Full Pay')==='Half Pay';
@@ -847,7 +848,7 @@
 
   function forecastApprovedAnnualLeaveHoursUsed(state,e,asOfDate){
     return round4((state.leaveBookings||[])
-      .filter(l=>l.empId===e.id && l.type==='Annual Leave' && l.forecastApproved===true && (!asOfDate || compare(l.startDate,asOfDate)<=0))
+      .filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && l.type==='Annual Leave' && l.forecastApproved===true && (!asOfDate || compare(l.startDate,asOfDate)<=0))
       .reduce((sum,l)=>sum+annualLeaveBookingHoursAtCurrentSchedule(state,e,l,asOfDate),0));
   }
 
@@ -879,7 +880,7 @@
         }
         const used=rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0)+retroBalanceUnits(rows,'Annual Leave');
         annual-=used; usedTotal+=used;
-        const recovered=rows.filter(r=>r.description==='Annual Leave Overutilisation Recovery').reduce((sum,r)=>sum+Number(r.units||0),0);
+        const recovered=rows.filter(r=>r.description==='Annual Leave Overuse Recovery').reduce((sum,r)=>sum+Number(r.units||0),0);
         annual-=recovered; usedTotal+=recovered;
       });
     }
@@ -897,7 +898,7 @@
     if(e.terminationDate && isTerminatedOn(e,endDate)) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave cannot be booked on or after the termination effective date.' };
     if(e.type==='Fixed Term' && e.contractEndDate && compare(endDate,e.contractEndDate)>0) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave cannot be booked after the contract has ended.' };
     if(!isEmployedOn(e,startDate) || !isEmployedOn(e,endDate)) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave must fall within an active employment period.' };
-    const existingOverlap = (state.leaveBookings||[]).find(l=>l.empId===empId && l.id!==excludeLeaveId && compare(l.startDate,endDate)<=0 && compare(startDate,l.endDate)<=0);
+    const existingOverlap = (state.leaveBookings||[]).find(l=>l.empId===empId && l.id!==excludeLeaveId && l.status!=='Denied' && compare(l.startDate,endDate)<=0 && compare(startDate,l.endDate)<=0);
     if(existingOverlap) return { ok:false, hours:0, detail:[], partialAllowed:false, message:`Leave overlaps an existing ${existingOverlap.type || 'leave'} booking from ${fmtPay(existingOverlap.startDate)} to ${fmtPay(existingOverlap.endDate)}.` };
     const singleDay = startDate === endDate;
     const partialAllowedType = ['Annual Leave','Personal Leave','LWOP',FDV_LEAVE_TYPE].includes(leaveType);
@@ -1124,7 +1125,7 @@
           // negative-balance facility. projectedBalances() has already included current-pay
           // accruals/usage, so the recovery is capped to the true remaining deficit.
           const recoveryHours=round4(Math.abs(Number(balances.annual||0)));
-          if(recoveryHours>0) rows.push({ description:'Annual Leave Overutilisation Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, annualLeaveDeficitRecovery:true });
+          if(recoveryHours>0) rows.push({ description:'Annual Leave Overuse Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, annualLeaveDeficitRecovery:true });
         }
         if(balances.lslAccrued > 0) rows.push({ description:'Long Service Leave Payout', units:balances.lslAccrued, amount:round2(balances.lslAccrued*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/retire/i.test(String(e.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
@@ -1171,7 +1172,7 @@
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       lslAccrued -= rows.filter(r=>r.description==='Long Service Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Long Service Leave');
-      annual -= rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
+      annual -= rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       lslAccrued -= rows.filter(r=>['Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Payout Recovery','Long Service Leave Cash Out'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       lslProRata -= rows.filter(r=>['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
     }
@@ -1182,6 +1183,7 @@
     return { rows, gross:round2(rows.reduce((s,r)=>s+r.amount,0)), units:round4(rows.reduce((s,r)=>s+r.units,0)) };
   }
   function retroDescription(desc){ return String(desc||'Regular Pay').endsWith(' Retro') ? String(desc||'Regular Pay') : `${desc || 'Regular Pay'} Retro`; }
+  function amountOnlyAdditionalDescription(desc){ return ['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(String(desc||'').replace(/ Retro$/,'')); }
   function retroRowsFromComparison(expectedRows, paidRows){
     const map = new Map();
     function baseDescription(row){ return String(row.description||'Regular Pay').replace(/ Retro$/,''); }
@@ -1192,7 +1194,7 @@
         description, expectedUnits:0, paidBaseUnits:0, expectedAmount:0, paidAmount:0,
         expectedOrdinaryUnits:0, paidOrdinaryUnits:0, paidRetroAccrualUnits:0,
         expectedBalanceUnits:0, paidBalanceUnits:0, paidRetroBalanceUnits:0,
-        rateBuckets:new Map(), startDate:'', endDate:'', position:'', kind:'retro', ote:row.ote!==false
+        rateBuckets:new Map(), startDate:'', endDate:'', position:'', kind:'retro', ote:row.ote!==false, amountOnly:amountOnlyAdditionalDescription(baseDescription(row))
       };
       map.set(key,existing);
       return existing;
@@ -1206,7 +1208,7 @@
     expectedRows.forEach(row=>{
       const g=ensure(row); const desc=baseDescription(row); const units=Number(row.units||0); const amount=Number(row.amount||0); const rate=Number(row.rate||row.baseRate||0);
       g.expectedUnits=round4(g.expectedUnits+units); g.expectedAmount=round2(g.expectedAmount+amount);
-      if(rate){
+      if(rate && !g.amountOnly){
         const rateKey=String(round4(rate)); const bucket=g.rateBuckets.get(rateKey)||{rate:round4(rate),expectedAmount:0,paidAmount:0};
         bucket.expectedAmount=round2(bucket.expectedAmount+amount); g.rateBuckets.set(rateKey,bucket);
       }
@@ -1225,7 +1227,7 @@
         g.paidOrdinaryUnits=round4(g.paidOrdinaryUnits+ordinaryHours([row]));
         if(isBalanceLeave(desc)) g.paidBalanceUnits=round4(g.paidBalanceUnits+units);
       }
-      if(rate){
+      if(rate && !g.amountOnly){
         const rateKey=String(round4(rate)); const bucket=g.rateBuckets.get(rateKey)||{rate:round4(rate),expectedAmount:0,paidAmount:0};
         bucket.paidAmount=round2(bucket.paidAmount+amount); g.rateBuckets.set(rateKey,bucket);
       }
@@ -1248,6 +1250,10 @@
         units=unitDiff;
         rate=round2(Number((rateBuckets.find(b=>b.rate)||{}).rate||0));
         rows.push({ description:g.description, units, amount:0, startDate:g.startDate, endDate:g.endDate, rate, baseRate:rate, position:g.position||'', kind:'retro', ote:false, balanceUnits:0, accrualUnits:0, informational:true });
+        return;
+      }
+      if(g.amountOnly){
+        rows.push({ description:g.description, units:0, amount, startDate:g.startDate, endDate:g.endDate, rate:0, baseRate:0, position:g.position||'', kind:'retro', ote:g.ote, balanceUnits, accrualUnits, amountOnly:true });
         return;
       }
       const positiveExpectedRate=rateBuckets.filter(b=>b.rate&&b.delta>0.004).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
@@ -1493,7 +1499,7 @@
       }
       const annualUsed = rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       const personalUsed = rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
-      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0));
+      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0));
       e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) - personalUsed);
       // LSL is service-history based in v1.1.26. Finalised payslip rows become the
       // authoritative usage/payout history; cache the resulting accrued figure for export compatibility.
@@ -1529,7 +1535,7 @@
         annual += accrual.annual;
         personal += accrual.personal;
       }
-      annual -= rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout','Annual Leave Overutilisation Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
+      annual -= rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0);
     });
     const lslInfo = lslBalances(state,e,asOf);
@@ -1639,7 +1645,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, activeSchedule, activePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

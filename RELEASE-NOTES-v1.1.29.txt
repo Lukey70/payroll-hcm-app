@@ -27,7 +27,7 @@ RESIGNATION — NEGATIVE ANNUAL LEAVE RECOVERY
 - If an employee resigns with a negative Annual Leave balance, final pay now recovers the full actual outstanding deficit.
 - The rule applies whether the deficit arose from forecast-approved leave or the normal one-scheduled-workday negative Annual Leave facility.
 - Recovery is calculated after current-pay accrual and leave usage, so it is capped to the true remaining negative balance.
-- The separate `Annual Leave Overutilisation Recovery` line uses the applicable hourly rate.
+- The separate `Annual Leave Overuse Recovery` line uses the applicable hourly rate.
 - Balance accounting brings the recovered deficit back to zero and finalisation commits it once; later pays do not repeat the recovery.
 - Existing forecast-approved Annual Leave behaviour remains preserved, but is no longer the only eligible source of a final-pay recovery.
 

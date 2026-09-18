@@ -1,9 +1,11 @@
-Payroll/HCM App v1.1.29 — Code Review Notes
+Payroll/HCM App v1.1.30 — Code Review Notes
 
-- Source base: verified v1.1.28 release.
+- Source base: verified v1.1.29 release.
 - Payroll calculation remains in payroll-engine.js; browser/report presentation remains in app.js; persistence/migration remains in data-store.js.
-- Monthly Absence Calendar filtering uses PayrollEngine.isEmployedOn across the selected calendar month, so termination/rehire visibility follows the same effective-dated employment model as payroll rather than a separate status flag.
-- Amount-entered Additional Earnings are tagged amountOnly at row creation. Payslip rendering also recognises legacy amount-only additional/retro rows with zero units/rate so imported/finalised history renders consistently.
-- Previous-financial-year retro labelling is display-only in app.js. Internal descriptions/source dates remain unchanged, preserving retro settlement and tax calculations.
-- Annual Leave Overutilisation Recovery on resignation now uses abs(projectedBalances.annual) after current-pay rows/accruals instead of being capped to forecast-approved leave usage. The existing negative-unit balance accounting brings the deficit to zero on finalisation.
-- Full Node regression suite and JavaScript syntax checks pass before packaging.
+- `Annual Leave Overuse Recovery` is a label-only rename; existing full-deficit resignation recovery logic is preserved.
+- Retro comparison now explicitly recognises direct-dollar Additional Earnings (Overpayment Adjustment, Reimbursement, Travel Allowance and Bonus) as amount-only. Retro rows for those descriptions carry amountOnly=true with units/rate zero, avoiding the previous fallback to baseRate-derived Units/Rate.
+- Leave Status is stored on the leave booking. Payroll calculations use only Approved bookings; Absence Calendar may still display non-approved bookings with its existing pending marker semantics.
+- Saving a Termination Job Data row calls the termination/leave conflict helper after employment reconciliation. Any booking extending into the termination effective date or later is retained, set to Awaiting Manager Approval, status-history stamped and notified once per employee/effective date.
+- Position Data now persists `accessManagerSelfService` and `accessPayrollManagement`; migration defaults missing legacy values to false. No access enforcement is activated yet because ESS/MSS/role identity is not implemented.
+- Full Node regression suite and all four JavaScript syntax checks pass before packaging.
+- Real Chromium DOM rendering was attempted over a successful local HTTP 200 response but timed out; no browser pass is claimed.

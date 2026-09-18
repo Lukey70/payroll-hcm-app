@@ -33,7 +33,7 @@ ANNUAL LEAVE FORECAST BOOKING
 - Forecast-approved bookings are explicitly stored so a later work-schedule/FTE reduction does not automatically invalidate/cancel leave that was valid when approved.
 - If later work-condition changes mean the employee no longer earns enough leave, the approved booking may take the Annual Leave balance below the normal one-day negative booking limit when it is actually taken.
 - Booking UI displays: “Please note: You may be required to pay back overutilised leave if work conditions change and you resign.”
-- If an employee resigns while an outstanding negative Annual Leave balance is attributable to forecast-approved leave, final pay creates a separate Annual Leave Overutilisation Recovery line.
+- If an employee resigns while an outstanding negative Annual Leave balance is attributable to forecast-approved leave, final pay creates a separate Annual Leave Overuse Recovery line.
 - Recovery is capped to the actual outstanding forecast-approved deficit and does not repeat in later calculations/pay periods.
 
 PRESERVED CONTROLS

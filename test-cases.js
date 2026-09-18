@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.29'), 'sidebar/version label must show v1.1.29');
-  assert(data.includes("APP_VERSION = '1.1.29'"), 'data-store version must be 1.1.29');
+  assert(html.includes('v1.1.30'), 'sidebar/version label must show v1.1.30');
+  assert(data.includes("APP_VERSION = '1.1.30'"), 'data-store version must be 1.1.30');
 })();
 
 (function testAnchorPayCycle(){
@@ -1716,13 +1716,13 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   x.e.employmentSegments=[{startDate:'2026-05-22',endDate:'2026-07-07',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}];
   E.finaliseCurrentPay(x.state); E.finaliseCurrentPay(x.state); E.finaliseCurrentPay(x.state);
   const terminationPayslips=E.calculateEmployee(x.state,x.e.id,4,false);
-  const recoveryRows=terminationPayslips.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  const recoveryRows=terminationPayslips.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overuse Recovery');
   assert.strictEqual(recoveryRows.length,1,'Resignation must create one separate forecast Annual Leave recovery line');
   assert.strictEqual(recoveryRows[0].units,-8.654,'Resignation must recover the full actual negative Annual Leave balance after current-pay accrual and usage, even where it exceeds the originally forecast-approved hours');
   assert.strictEqual(recoveryRows[0].amount,-346.16,'Recovery must use the employee\'s applicable rate for the full outstanding Annual Leave deficit');
   E.finaliseCurrentPay(x.state);
   assert(x.e.annualLeaveBalance>-7.5,'Finalisation must extinguish the recovered forecast-leave component of the negative balance');
-  const later=E.calculateEmployee(x.state,x.e.id,5,false).flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  const later=E.calculateEmployee(x.state,x.e.id,5,false).flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overuse Recovery');
   assert.strictEqual(later.length,0,'The forecast-leave recovery must not repeat in a later pay');
 })();
 
@@ -1875,7 +1875,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(E.forecastApprovedAnnualLeaveHoursUsed(state,e,'2026-05-25'),0,'Scenario must not rely on forecast-approved Annual Leave');
   const expectedAccrual=E.leaveAccrualForOrdinaryHours(e,7.5).annual;
   const expectedDeficit=E.round4(7.5-expectedAccrual);
-  const pays=E.calculateEmployee(state,e.id,1,false); const recovery=pays.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overutilisation Recovery');
+  const pays=E.calculateEmployee(state,e.id,1,false); const recovery=pays.flatMap(p=>p.rows).filter(r=>r.description==='Annual Leave Overuse Recovery');
   assert.strictEqual(totalUnitsByDesc(pays,'Regular Pay'),7.5,'Scenario should include a normal final-day payment so the deficit is recovered from final pay');
   assert.strictEqual(recovery.length,1,'Resignation with an ordinary negative Annual Leave balance must create one recovery line');
   assert.strictEqual(recovery[0].units,-expectedDeficit,'Recovery must equal the full actual outstanding Annual Leave deficit after final-pay accrual');
@@ -1883,8 +1883,101 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(E.round4(pays[0].balances.annual),0,'Open final-pay balance must be brought back to zero by the recovery');
   E.finaliseCurrentPay(state);
   assert.strictEqual(E.round4(e.annualLeaveBalance),0,'Finalisation must commit the recovered Annual Leave deficit as zero');
-  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(state,e.id,2,false),'Annual Leave Overutilisation Recovery'),0,'The recovery must not repeat in a later pay');
+  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(state,e.id,2,false),'Annual Leave Overuse Recovery'),0,'The recovery must not repeat in a later pay');
 })();
+
+
+(function testV130RecoveryLabelRename(){
+  const engine=fs.readFileSync(path.join(__dirname,'payroll-engine.js'),'utf8');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(engine.includes('Annual Leave Overuse Recovery'),'New final-pay recovery label must be used in the payroll engine');
+  assert(!engine.includes('Annual Leave Overutilisation Recovery'),'Old Annual Leave Overutilisation Recovery label must not remain in the engine');
+  assert(!app.includes('Annual Leave Overutilisation Recovery'),'Old recovery label must not remain in user-facing app text');
+})();
+
+(function testV130RetroAmountBasedAdditionalEarningsHideUnitsAndRate(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.additionalEarnings.push({id:'bonusretro130',empId:e.id,cycleId:1,earningType:'Bonus',startDate:'2026-05-25',endDate:'2026-05-25',hours:0,amount:100,saved:true});
+  const original=E.calculateEmployee(state,e.id,1,false).map(p=>JSON.parse(JSON.stringify(p)));
+  original.forEach(p=>{p.finalised=true;});
+  state.payslips.push(...original); state.finalisedCycles['1']=true; state.currentCycleId=2;
+  state.additionalEarnings.find(a=>a.id==='bonusretro130').amount=175;
+  const current=E.calculateEmployee(state,e.id,2,false);
+  const retro=current.flatMap(p=>p.rows).find(r=>r.description==='Bonus Retro');
+  assert(retro,'Changing a finalised amount-based Bonus must create a Bonus Retro row');
+  assert.strictEqual(retro.amount,75,'Bonus Retro must pay only the outstanding dollar difference');
+  assert.strictEqual(retro.amountOnly,true,'Retro amount-based Additional Earnings must retain the amount-only marker');
+  assert.strictEqual(Number(retro.units||0),0,'Retro amount-based Additional Earnings must have no Units');
+  assert.strictEqual(Number(retro.rate||0),0,'Retro amount-based Additional Earnings must have no Rate');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const html=context.window.PayrollApp.payslipHtml(current[0]);
+  assert(html.includes('<td>Bonus Retro</td><td class="right"></td><td class="right"></td><td class="right">75.00</td>'),'Retro Bonus payslip line must show Amount with blank Units and Rate');
+  const pfyPay=Object.assign({},current[0],{cycle:Object.assign({},current[0].cycle,{paymentDate:'2026-07-16'}),rows:[Object.assign({},retro,{startDate:'2026-06-30',endDate:'2026-06-30'})]});
+  const pfyHtml=context.window.PayrollApp.payslipHtml(pfyPay);
+  assert(pfyHtml.includes('<td>Retro PFY</td><td class="right"></td><td class="right"></td><td class="right">75.00</td>'),'Previous-financial-year retro amount-based earnings must display as Retro PFY with blank Units and Rate');
+})();
+
+(function testV130TerminationLeaveConflictAndStatuses(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const app=context.window.PayrollApp; const state=app.getState();
+  state.employees.push({id:'termleave130',firstName:'Taylor',lastName:'Worker',name:'Taylor Worker',startDate:'2026-01-01',status:'Active'});
+  state.leaveBookings.push(
+    {id:'before130',empId:'termleave130',type:'Annual Leave',startDate:'2026-09-05',endDate:'2026-09-06',hours:7.5,status:'Approved'},
+    {id:'after130',empId:'termleave130',type:'Annual Leave',startDate:'2026-09-07',endDate:'2026-09-08',hours:15,status:'Approved'}
+  );
+  const affected=app.flagLeaveAfterTermination('termleave130','2026-09-07');
+  assert.strictEqual(affected.length,1,'Only leave that falls on/after the termination effective date should be flagged');
+  assert.strictEqual(state.leaveBookings.find(l=>l.id==='before130').status,'Approved','Leave ending on the last employed day must remain Approved');
+  const future=state.leaveBookings.find(l=>l.id==='after130');
+  assert.strictEqual(future.status,'Awaiting Manager Approval','Future leave after termination must change to Awaiting Manager Approval');
+  assert(future.statusHistory.some(x=>x.status==='Awaiting Manager Approval'&&x.source==='Termination conflict'),'Automatic status change must be preserved in status history');
+  assert((state.alerts||[]).some(a=>/Taylor Worker has leave booked after their termination date/.test(a.message)&&/Awaiting Manager Approval/.test(a.message)),'Termination/leave conflict must create an employee notification');
+  assert(app.leaveStatusButton({id:'x',status:'Awaiting Manager Approval'}).includes('badge-awaiting-manager-approval'),'Awaiting Manager Approval must use the yellow status class');
+  assert(app.leaveStatusButton({id:'x',status:'Denied'}).includes('badge-denied'),'Denied must use the red status class');
+  assert(appSource.includes('data-leave-status')&&appSource.includes("setLeaveStatus(leaveId,'Approved')")&&appSource.includes("setLeaveStatus(leaveId,'Denied')"),'Leave status must be clickable and offer Approved/Awaiting/Denied choices');
+  const css=fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
+  assert(css.includes('.badge-awaiting-manager-approval')&&css.includes('.badge-denied'),'Awaiting Manager Approval and Denied must have dedicated yellow/red badge styling');
+})();
+
+(function testV130NonApprovedLeaveDoesNotProcessPayroll(){
+  ['Awaiting Manager Approval','Denied'].forEach(status=>{
+    const state=baseState(); const e=addEmployee(state,{id:`status_${status.replace(/\\W/g,'')}`}); addSchedule(state,e.id); addRate(state,e.id);
+    state.leaveBookings.push({id:'statusleave',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status});
+    const pays=E.calculateEmployee(state,e.id,1,false);
+    assert.strictEqual(totalUnitsByDesc(pays,'Annual Leave'),0,`${status} leave must not be paid/deducted as approved leave`);
+    assert(totalUnitsByDesc(pays,'Regular Pay')>=7.5,`${status} leave must leave the scheduled day payable as Regular Pay`);
+  });
+})();
+
+(function testV130PositionAccessFlagsPersist(){
+  const state=baseState();
+  state.positions.push({id:'p130',positionNumber:'1300',positionName:'Payroll Manager',department:'Human Resources',hourlyRate:60,active:true,accessManagerSelfService:true,accessPayrollManagement:true});
+  const migrated=DataStore.migrate(JSON.parse(DataStore.exportJson(state)));
+  const p=migrated.positions.find(x=>x.id==='p130');
+  assert.strictEqual(p.accessManagerSelfService,true,'Position Data must preserve Access to Manager Self Service');
+  assert.strictEqual(p.accessPayrollManagement,true,'Position Data must preserve Access to Payroll Management');
+  migrated.positions.push({id:'legacy130',positionNumber:'1301',positionName:'Legacy',department:'Operations',hourlyRate:40,active:true});
+  const legacy=DataStore.migrate(migrated).positions.find(x=>x.id==='legacy130');
+  assert.strictEqual(legacy.accessManagerSelfService,false,'Legacy positions must default MSS access to false');
+  assert.strictEqual(legacy.accessPayrollManagement,false,'Legacy positions must default Payroll Management access to false');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes('Access to Manager Self Service')&&appSource.includes('posAccessManagerSelfService'),'Position Data UI must include the MSS access checkbox');
+  assert(appSource.includes('Access to Payroll Management')&&appSource.includes('posAccessPayrollManagement'),'Position Data UI must include the Payroll Management access checkbox');
+})();
+
+console.log('PASS: v1.1.30 Annual Leave Overuse Recovery label is verified.');
+console.log('PASS: v1.1.30 retro amount-based Additional Earnings keep Units and Rate blank.');
+console.log('PASS: v1.1.30 termination/leave conflict notifications and interactive leave statuses are verified.');
+console.log('PASS: v1.1.30 non-approved leave is excluded from payroll processing.');
+console.log('PASS: v1.1.30 Position Data MSS/Payroll Management access flags are preserved.');
 
 console.log('PASS: v1.1.29 Monthly Absence Calendar termination-month visibility is verified.');
 console.log('PASS: v1.1.29 amount-based Additional Earnings payslip formatting and Retro PFY labelling are verified.');

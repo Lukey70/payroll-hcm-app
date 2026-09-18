@@ -1,35 +1,21 @@
-Payroll/HCM App v1.1.29 — Test Results
-Date: 13 September 2026
-Source: verified v1.1.28 release
+Payroll/HCM App v1.1.30 — Test Results
+Date: 18 September 2026
 
-AUTOMATED REGRESSION SUITE
-Command: node test-cases.js
-Result: PASS / exit code 0
-Test blocks: 125 self-invoking test blocks
-Assertion call sites: 553 assert/assert.* calls
-Runtime PASS summaries: 56
+SUMMARY
+- Full Node suite: PASS / exit code 0
+- Self-invoking test blocks: 130
+- assert/assert.* call sites: 580
+- Runtime PASS summaries: 61
+- JavaScript syntax checks: PASS for data-store.js, payroll-engine.js, app.js, test-cases.js
+- Local HTTP response: 200 OK
+- Chromium headless DOM attempt: TIMEOUT; no successful real-browser pass claimed
 
-JAVASCRIPT SYNTAX
-- node --check data-store.js: PASS
-- node --check payroll-engine.js: PASS
-- node --check app.js: PASS
-- node --check test-cases.js: PASS
-
-V1.1.29-SPECIFIC COVERAGE
-- Monthly Absence Calendar keeps an employee visible in the month of termination, hides them from the following month while terminated, and shows them again from a later rehire month.
-- Direct-dollar Additional Earnings such as Bonus render with Amount but blank Units and Rate on payslips; unit/rate-based earnings remain unchanged.
-- Previous-financial-year retro payslip rows display the description `Retro PFY`, while current-FY retro retains its normal description.
-- A resignation with an ordinary negative Annual Leave balance and no forecast-approved leave creates one Annual Leave Overutilisation Recovery for the full post-accrual deficit, commits the balance to zero on finalisation and does not repeat later.
-- Existing forecast-approved Annual Leave recovery now verifies the full actual final deficit is recovered rather than the superseded forecast-hours cap.
-
-REGRESSION PRESERVATION
-The full prior suite remains green, including configured pay cycle, retro cut-off and cumulative settlement, +8.29/-8.29 recurrence prevention, Job Data effective-date boundaries, fixed-term extension workflow, 7-year/65-day LSL, break/non-contributory service, termination payouts, Union Fees, Annual/Personal Leave negative limits, payslip current balances, Monthly Absence Calendar structure, contract-expiry notifications and late fixed-term payout correction/Rehire protection.
-
-BROWSER / INTERFACE TESTING
-- Local static HTTP server: PASS; index.html returned HTTP 200.
-- Chromium headless real-browser DOM rendering: ATTEMPTED but timed out after 20 seconds before returning rendered DOM.
-- Therefore no successful real-browser interaction pass is claimed.
-- Node VM/static/simulated-interface assertions are included in the automated suite and are distinct from real-browser testing.
+V1.1.30-SPECIFIC COVERAGE
+- Annual Leave Overuse Recovery label and removal of the old user-facing label.
+- Retro amount-based Bonus keeps Units/Rate blank; previous-FY amount-based retro displays Retro PFY with blank Units/Rate.
+- Termination effective-date boundary flags future leave, preserves last-employed-day leave, writes notification and status history.
+- Awaiting Manager Approval and Denied leave are excluded from payroll processing until Approved.
+- Position Data MSS/Payroll Management access flags default/persist through migration/import-export.
 
 RUNTIME PASS OUTPUT
 PASS: Login button/password strings and app version are present
@@ -78,6 +64,11 @@ PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and mu
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
 PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
 PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: v1.1.30 Annual Leave Overuse Recovery label is verified.
+PASS: v1.1.30 retro amount-based Additional Earnings keep Units and Rate blank.
+PASS: v1.1.30 termination/leave conflict notifications and interactive leave statuses are verified.
+PASS: v1.1.30 non-approved leave is excluded from payroll processing.
+PASS: v1.1.30 Position Data MSS/Payroll Management access flags are preserved.
 PASS: v1.1.29 Monthly Absence Calendar termination-month visibility is verified.
 PASS: v1.1.29 amount-based Additional Earnings payslip formatting and Retro PFY labelling are verified.
 PASS: v1.1.29 resignation recovery of ordinary negative Annual Leave is verified.
@@ -88,4 +79,3 @@ PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fi
 PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.
 PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.
 PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.
-

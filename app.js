@@ -316,6 +316,31 @@
     const cls = String(text).toLowerCase().replace(/\s+/g,'-');
     return `<span class="badge badge-${cls}">${safe}</span>`;
   }
+  function leaveStatusButton(leave){
+    const status=(leave&&leave.status)||'Approved';
+    const cls=String(status).toLowerCase().replace(/\s+/g,'-');
+    return `<button type="button" class="badge badge-${cls} leave-status-button" data-leave-status="${esc(leave.id)}">${esc(status)}</button>`;
+  }
+  function setLeaveStatus(leaveId,status,source='Payroll Management'){
+    const leave=(state.leaveBookings||[]).find(l=>l.id===leaveId); if(!leave) return false;
+    const allowed=['Approved','Awaiting Manager Approval','Denied'];
+    if(!allowed.includes(status)) return false;
+    if(leave.status===status) return true;
+    leave.statusHistory=Array.isArray(leave.statusHistory)?leave.statusHistory:[];
+    leave.statusHistory.push({status,changedAt:(new Date()).toISOString(),source});
+    leave.status=status;
+    state.auditLog=state.auditLog||[];
+    state.auditLog.unshift(`Leave status changed for ${E.employeeName(emp(leave.empId)||{})}: ${leave.type} ${E.fmtPay(leave.startDate)} - ${E.fmtPay(leave.endDate)} -> ${status} (${source}).`);
+    save(); calculateAllForCurrent(); renderAll();
+    return true;
+  }
+  function openLeaveStatusModal(leaveId){
+    const leave=(state.leaveBookings||[]).find(l=>l.id===leaveId); if(!leave) return;
+    modal('Change Leave Status', `<p><strong>${esc(E.employeeName(emp(leave.empId)||{}))}</strong><br>${esc(leave.type)} — ${E.fmtPay(leave.startDate)} to ${E.fmtPay(leave.endDate)}</p><p class="small-note">Current status: ${esc(leave.status||'Approved')}</p>`, `<button type="button" id="leaveStatusApproved" class="success">Approved</button><button type="button" id="leaveStatusAwaiting" class="warning-button">Awaiting Manager Approval</button><button type="button" id="leaveStatusDenied" class="danger">Denied</button><button type="button" class="secondary" data-close-modal>Cancel</button>`, true);
+    $('leaveStatusApproved').addEventListener('click',()=>{ closeModal(); setLeaveStatus(leaveId,'Approved'); });
+    $('leaveStatusAwaiting').addEventListener('click',()=>{ closeModal(); setLeaveStatus(leaveId,'Awaiting Manager Approval'); });
+    $('leaveStatusDenied').addEventListener('click',()=>{ closeModal(); setLeaveStatus(leaveId,'Denied'); });
+  }
   function modal(title, body, footer='', small=false){
     $('modalRoot').innerHTML = `<div class="modal ${small?'small':''}"><div class="modal-header"><h2>${esc(title)}</h2><button type="button" class="secondary" data-close-modal>Close</button></div>${body}${footer?`<div class="modal-footer">${footer}</div>`:''}</div>`;
     $('modalRoot').classList.add('open');
@@ -605,6 +630,22 @@
     const existing = selectedJobDataDraft || (jobDataDisplayRows(selectedJobDataEmp)[selectedJobDataRowIndex]||{});
     return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason:v('jdReason'), positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass:v('jdPositionClass'), hoursByDay:getSchedule('jd'), saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
   }
+  function flagLeaveAfterTermination(empId,terminationEffectiveDate){
+    const e=emp(empId); if(!e || !terminationEffectiveDate) return [];
+    const affected=(state.leaveBookings||[]).filter(l=>l.empId===empId && E.compare(l.endDate||l.startDate,terminationEffectiveDate)>=0);
+    if(!affected.length) return [];
+    affected.forEach(l=>{
+      if(l.status!=='Awaiting Manager Approval'){
+        l.status='Awaiting Manager Approval';
+        l.statusHistory=Array.isArray(l.statusHistory)?l.statusHistory:[];
+        l.statusHistory.push({status:'Awaiting Manager Approval',changedAt:(new Date()).toISOString(),source:'Termination conflict'});
+      }
+    });
+    const details=affected.map(l=>`${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}`).join('; ');
+    addAlert(`${E.employeeName(e)} has leave booked after their termination date. The affected leave has been changed to Awaiting Manager Approval: ${details}.`, `termination-leave-conflict:${empId}:${terminationEffectiveDate}`, 'warning', {tab:'leave',empId});
+    return affected;
+  }
+
   function saveJobDataRow(){
     const row=readJobDataForm(); const e=emp(row.empId); if(!e) return alert('Select an employee.');
     if(!row.effectiveDate) return alert('Enter an effective date.');
@@ -615,6 +656,7 @@
     const appliedRow = existing ? Object.assign(existing,row) : row;
     if(!existing) state.jobDataRows.push(row);
     applyJobDataToEmployee(appliedRow);
+    if(appliedRow.action==='Termination') flagLeaveAfterTermination(appliedRow.empId,appliedRow.effectiveDate);
     selectedJobDataDraft=null;
     selectedJobDataRowIndex=0;
     save(); calculateAllForCurrent(); log(`Job Data saved for ${E.employeeName(e)}`); renderAll(); toast('Job Data saved');
@@ -925,8 +967,8 @@
     const base=new Date(E.parseDate(currentCycle().start).getFullYear(),E.parseDate(currentCycle().start).getMonth()+leaveMonthOffset,1); const monthStart=E.iso(new Date(base.getFullYear(),base.getMonth(),1)); const monthEnd=E.iso(new Date(base.getFullYear(),base.getMonth()+1,0));
     const list=state.leaveBookings.filter(l=>(!leaveFilterEmp||l.empId===leaveFilterEmp)&&E.compare(l.startDate,monthEnd)<=0&&E.compare(l.endDate,monthStart)>=0).sort((a,b)=>E.compare(a.startDate,b.startDate));
     h('leave', `<h2>Leave</h2><div class="leave-action-row"><div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="purple">Absence Calendar</button><button id="cashOutLeaveBtn" class="success">Cash Out Leave</button></div><div class="controls right-controls"><button id="filterLeaveBtn" class="teal">Filter</button></div></div><br><br><div class="controls"><button id="prevMonth" class="secondary">Previous Month</button><strong>${base.toLocaleDateString('en-AU',{month:'long',year:'numeric'})}</strong><button id="nextMonth" class="secondary">Next Month</button>${leaveFilterEmp?`<span class="badge badge-info">Filtered: ${esc(E.employeeName(emp(leaveFilterEmp)))}</span>`:''}</div><div id="leaveList"></div>`);
-    h('leaveList', table(['Employee','Type','Start','End','Hours','Status','Action'], list.map(l=>[esc(E.employeeName(emp(l.empId)||{})),esc(l.type==='LWOP'?'Leave Without Pay':(l.type==='Parental Leave - Paid'&&l.payOption?`${l.type} (${l.payOption})`:l.type)),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),badge(l.status||'Approved'),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`])));
-    $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));
+    h('leaveList', table(['Employee','Type','Start','End','Hours','Status','Action'], list.map(l=>[esc(E.employeeName(emp(l.empId)||{})),esc(l.type==='LWOP'?'Leave Without Pay':(l.type==='Parental Leave - Paid'&&l.payOption?`${l.type} (${l.payOption})`:l.type)),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),leaveStatusButton(l),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`])));
+    $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave)))); document.querySelectorAll('[data-leave-status]').forEach(b=>b.addEventListener('click',()=>openLeaveStatusModal(b.dataset.leaveStatus)));
   }
   function openLeaveModal(){
     modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
@@ -1001,7 +1043,7 @@
     const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
     const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided,payOption});
     if(!result.ok) return alert(result.message);
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved' });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
@@ -1458,10 +1500,10 @@
   }
   function positionForm(pos,isCreate){
     const reportsToName=pos.reportsTo?((positionByNumber(pos.reportsTo)||{}).positionName||'Position not found'):'';
-    return `<div class="grid form-grid"><div><label>Position Name</label><input id="posName" value="${esc(pos.positionName||'')}"></div><div><label>Position Number</label><input id="posNumber" readonly class="readonly" value="${esc(pos.positionNumber||generatePositionNumber())}"></div><div><label>Department</label><select id="posDepartment"><option ${pos.department==='Operations'?'selected':''}>Operations</option><option ${pos.department==='ICT'?'selected':''}>ICT</option><option ${pos.department==='Human Resources'?'selected':''}>Human Resources</option></select></div><div><label>Hourly Rate</label><input id="posRate" type="number" step="0.01" value="${esc(pos.hourlyRate||'')}"></div><div><label>Reports To</label><div class="inline-field"><input id="posReportsTo" value="${esc(pos.reportsTo||'')}"><button id="posLookup" type="button" class="icon-btn">🔍</button></div><p id="posReportsToName" class="small-note">${esc(reportsToName)}</p></div>${isCreate?'':`<div><label>Status</label><select id="posActive"><option value="true" ${pos.active!==false?'selected':''}>Active</option><option value="false" ${pos.active===false?'selected':''}>Inactive</option></select></div>`}</div>`;
+    return `<div class="grid form-grid"><div><label>Position Name</label><input id="posName" value="${esc(pos.positionName||'')}"></div><div><label>Position Number</label><input id="posNumber" readonly class="readonly" value="${esc(pos.positionNumber||generatePositionNumber())}"></div><div><label>Department</label><select id="posDepartment"><option ${pos.department==='Operations'?'selected':''}>Operations</option><option ${pos.department==='ICT'?'selected':''}>ICT</option><option ${pos.department==='Human Resources'?'selected':''}>Human Resources</option></select></div><div><label>Hourly Rate</label><input id="posRate" type="number" step="0.01" value="${esc(pos.hourlyRate||'')}"></div><div><label>Reports To</label><div class="inline-field"><input id="posReportsTo" value="${esc(pos.reportsTo||'')}"><button id="posLookup" type="button" class="icon-btn">🔍</button></div><p id="posReportsToName" class="small-note">${esc(reportsToName)}</p></div>${isCreate?'':`<div><label>Status</label><select id="posActive"><option value="true" ${pos.active!==false?'selected':''}>Active</option><option value="false" ${pos.active===false?'selected':''}>Inactive</option></select></div>`}<div class="full-line"><label class="inline-check"><input id="posAccessManagerSelfService" type="checkbox" ${pos.accessManagerSelfService===true?'checked':''}> Access to Manager Self Service</label></div><div class="full-line"><label class="inline-check"><input id="posAccessPayrollManagement" type="checkbox" ${pos.accessPayrollManagement===true?'checked':''}> Access to Payroll Management</label></div></div>`;
   }
   function openCreatePosition(){
-    const pos={positionNumber:generatePositionNumber(),department:'Operations',active:true};
+    const pos={positionNumber:generatePositionNumber(),department:'Operations',active:true,accessManagerSelfService:false,accessPayrollManagement:false};
     modal('Create Position', positionForm(pos,true), '<button id="addPosition">Add</button>', true);
     bindPositionFormLookup();
     $('addPosition').addEventListener('click',()=>savePosition(null,true));
@@ -1501,7 +1543,7 @@
       const assigned=employeesAssignedToPosition(pos.positionNumber);
       if(assigned.length) return alert(`This position cannot be made inactive because it has current employees assigned: ${assigned.map(E.employeeName).join(', ')}`);
     }
-    pos.positionName=v('posName').trim(); pos.department=v('posDepartment'); pos.hourlyRate=Number(v('posRate')); pos.reportsTo=reportsTo; pos.active=requestedActive;
+    pos.positionName=v('posName').trim(); pos.department=v('posDepartment'); pos.hourlyRate=Number(v('posRate')); pos.reportsTo=reportsTo; pos.active=requestedActive; pos.accessManagerSelfService=!!($('posAccessManagerSelfService')&&$('posAccessManagerSelfService').checked); pos.accessPayrollManagement=!!($('posAccessPayrollManagement')&&$('posAccessPayrollManagement').checked);
     save(); closeModal(); renderSettings(); toast(isCreate?'Position added':'Position saved');
   }
 
@@ -1530,6 +1572,7 @@
     (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>warnings.push(`${E.employeeName(emp(a.empId)||{})} has unsaved Additional Earnings.`));
     results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
+      if(l.status==='Denied') return;
       const e=emp(l.empId); if(!e) return;
       const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay',forecastApproved:l.forecastApproved===true});
       if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
@@ -1540,6 +1583,13 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.30',notes:[
+      'Renamed the Annual Leave final-pay recovery line to Annual Leave Overuse Recovery without changing the recovery calculation.',
+      'Kept Units and Rate blank on retrospective direct-dollar Additional Earnings, including Bonus and Travel Allowance; Retro PFY still applies where relevant.',
+      'Added termination/leave conflict notifications and automatically moved leave after the termination boundary to Awaiting Manager Approval.',
+      'Made Leave Status interactive with Approved, Awaiting Manager Approval and Denied options, including yellow/red status presentation and status history.',
+      'Added Position Data access flags for Access to Manager Self Service and Access to Payroll Management for future role-based access control.'
+    ]},
     {version:'v1.1.29',notes:[
       'Monthly Absence Calendar now removes terminated employees from the month after termination and restores them from the month of a later rehire.',
       'Amount-entered Additional Earnings such as Bonus and Travel Allowance display no Units or Rate on payslips.',
@@ -1767,5 +1817,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm };
 })();
