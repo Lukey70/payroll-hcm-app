@@ -1,22 +1,14 @@
-Payroll/HCM App v1.1.33 — Code Review Notes
+Payroll/HCM App v1.1.34 — Code Review Notes
 
 Baseline
-- Built from verified v1.1.32.
-- Existing effective-dated payroll, retro, LSL, deductions, leave, casual-employment, login/access and finalised-history behavior was preserved unless directly affected by a v1.1.33 request.
+- Built from verified v1.1.33.
+- Existing payroll, retro, LSL, leave, casual-employment, login/access, roster, Job Data and finalised-history behaviour is preserved.
 
-Observed implementation changes
-- Landing is now an isolated fixed full-screen view. appShell is explicitly hidden while landing is active and body scrolling is locked; Payroll metrics remain inside Payroll Management only.
-- Landing tile slots are semantically fixed: Payroll left, ESS centre, MSS right. Missing access hides only that tile and does not shift the other slots.
-- Home uses a standard inline SVG house icon and returns to landing without ending the session.
-- DataStore migration repairs Permanency Confirmed rows to Permanent and propagates that class across later inherited variation/movement rows until an explicit new employment-type transition.
-- Employment reconciliation ignores obsolete fixed-term expiry rows after the effective Permanent transition and clears stale contract-end state.
-- Check for Errors now skips leave periods fully covered by finalised pay history and only revalidates the unprocessed portion of a partly historical booking.
-- Schedules support rosterPattern 1-week or 2-week, with hoursByDayWeek1/hoursByDayWeek2. The fortnight pattern is anchored to PPE 04/06/2026: first seven days are Week 1 / Pay Week, final seven are Week 2 / Pay Close Week.
-- Daily schedule calculations resolve the applicable roster week by date. Weekly-equivalent calculations use the average of both weeks so LSL/FTE-like calculations do not oscillate between weeks.
-- Added Acting Lower Level, Deceased, Misconduct and Abandonment Job Data reasons.
-- Added Absent Without Leave as a distinct leave record with unpaid/LWOP processing, LWOP non-contributory service thresholds and LWOP calendar presentation.
+Observed implementation change
+- Position Data Department dropdown now includes Customer Services alongside Operations, ICT and Human Resources.
+- Department continues to be stored as a normal position.department string, so existing Job Data inheritance, filtering/report data and import/export compatibility require no schema migration.
 
 Compatibility / risk notes
-- Existing one-week schedules are migrated to rosterPattern=1-week with both week maps populated from the existing hoursByDay.
-- Historical finalised payslips are not rewritten.
-- Client-side login remains demo authentication rather than production-grade security.
+- No state schema change is required.
+- Existing departments and custom stored department values are not rewritten.
+- Historical finalised payslips are not changed.

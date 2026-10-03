@@ -36,8 +36,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.33'), 'sidebar/version label must show v1.1.33');
-  assert(data.includes("APP_VERSION = '1.1.33'"), 'data-store version must be 1.1.33');
+  assert(html.includes('v1.1.34'), 'sidebar/version label must show v1.1.34');
+  assert(data.includes("APP_VERSION = '1.1.34'"), 'data-store version must be 1.1.34');
 })();
 
 (function testAnchorPayCycle(){
@@ -2331,6 +2331,16 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes('<option>Absent Without Leave</option>'),'Leave booking UI must include Absent Without Leave');
 })();
+
+(function testV134CustomerServicesDepartment(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes(">Customer Services</option>"),'Position Data Department list must include Customer Services');
+  assert(app.includes("pos.department==='Customer Services'"),'Existing Customer Services positions must reselect the department when edited');
+  const state=DataStore.migrate(Object.assign(baseState(),{positions:[{id:'cs134',positionNumber:'CS134',positionName:'Customer Service Officer',department:'Customer Services',hourlyRate:35,active:true}]}));
+  assert.strictEqual(state.positions[0].department,'Customer Services','Migration/import must preserve the Customer Services department value');
+})();
+
+console.log('PASS: v1.1.34 Customer Services department availability and compatibility are verified.');
 
 console.log('PASS: v1.1.33 isolated landing page, fixed tile positions, improved Home icon and access navigation are verified.');
 console.log('PASS: v1.1.33 Permanency Confirmed and historical Annual Leave error-check fixes are verified.');

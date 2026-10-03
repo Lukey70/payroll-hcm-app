@@ -1,0 +1,28 @@
+Payroll/HCM App v1.1.34 — Release Notes
+Release date: 03 October 2026
+
+SUMMARY
+v1.1.34 adds Customer Services as a new Department option while preserving all verified v1.1.33 payroll, retro, LSL, leave, casual-employment, login/access, roster, Job Data and finalised-history behaviour.
+
+POSITION DATA — DEPARTMENTS
+- Added Customer Services to the Department dropdown in Position Data.
+- Existing departments remain available and unchanged.
+- Positions assigned to Customer Services preserve that department through normal save/load and migration/import handling.
+- Job Data continues to inherit the Department from the selected Position Data record, so Customer Services positions flow through existing employee/job history and report fields without a separate data model.
+
+COMPATIBILITY
+- v1.1.34 preserves the v1.1.33 localStorage/import-export data model.
+- No employee, payroll, leave, deduction, LSL, Job Data, position, credential or finalised-payslip data is rewritten for this change.
+
+TESTING
+- Full automated Node regression suite passes: 156 self-invoking test blocks, 693 assert/assert.* call sites and 71 runtime PASS summaries.
+- Customer Services has dedicated regression coverage for Position Data availability and migration preservation.
+- data-store.js, payroll-engine.js, app.js and test-cases.js pass node --check.
+- Local HTTP serving returned HTTP 200.
+- Chromium headless was attempted, but the environment timed out before returning a rendered DOM; no successful real-browser interaction pass is claimed.
+- The final packaged ZIP is freshly extracted and the full suite/syntax checks are rerun from that clean copy before release.
+
+KNOWN LIMITATIONS
+- ESS and MSS remain Coming Soon landing destinations.
+- Login/password protection remains client-side demonstration functionality rather than production-grade authentication.
+- Real-browser interaction testing is reported separately in test-results.txt and is not inferred from syntax/Node tests.
