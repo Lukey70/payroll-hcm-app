@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.31';
+  const APP_VERSION = '1.1.32';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -25,7 +25,8 @@
       repairs: {},
       currentCycleId: 1,
       lastOvernightDate: '',
-      auditLog: ['System created with no demo employees.']
+      auditLog: ['System created with no demo employees.'],
+      loginCredentials: {}
     };
   }
 
@@ -61,7 +62,7 @@
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
     ['employees','schedules','payRates','leaveBookings','additionalEarnings','deductions','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
-    ['payResults','certifications','finalisedCycles','repairs'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
+    ['payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
 
     state.employees.forEach(e=>{
@@ -139,6 +140,11 @@
         if(open){ open.endDate=e.terminationDate; open.terminationReason=e.terminationReason||''; open.inclusiveEnd=!!(e.terminationReason==='Expiry of Fixed Term'); }
       }
       e.employmentSegments=segments.filter(seg=>seg.startDate);
+    });
+    state.employees.forEach(e=>{
+      const existing=state.loginCredentials[e.id];
+      if(!existing || typeof existing!=='object') state.loginCredentials[e.id]={password:'1234'};
+      else if(existing.password===undefined || existing.password===null || existing.password==='') existing.password='1234';
     });
     state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });

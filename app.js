@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const APP_VERSION = DataStore.APP_VERSION;
-  const PASSWORD = '1234';
+  const DEFAULT_PASSWORD = '1234';
   let state = DataStore.load();
   let showTerminated = false;
   let employeeTypeFilter = 'All';
@@ -39,6 +39,7 @@
   let pendingTab = null;
   let timeoutWarning = null;
   let timeoutLogout = null;
+  let currentUserId = '';
 
   const $ = id => document.getElementById(id);
   const h = (id,html) => { const el=$(id); if(el) el.innerHTML=html; };
@@ -73,7 +74,10 @@
   function attachGlobalEvents(){
     $('loginButton').addEventListener('click', login);
     $('loginPassword').addEventListener('keydown', e=>{ if(e.key==='Enter') login(); });
+    $('loginUser').addEventListener('change', ()=>h('loginError',''));
     $('logoutButton').addEventListener('click', logout);
+    $('landingLogoutButton').addEventListener('click', logout);
+    $('homeButton').addEventListener('click', showLanding);
     $('calculatePayButton').addEventListener('click', openCalculateModal);
     $('importDataButton').addEventListener('click', ()=>$('importFile').click());
     $('exportDataButton').addEventListener('click', exportData);
@@ -208,25 +212,114 @@
     if(bell) bell.setAttribute('aria-expanded','false');
   }
 
+  function activePositionRowForEmployee(empId,onDate=todayIso()){
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&E.compare(r.effectiveDate,onDate)<=0)
+      .slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
+  }
+  function accessProfileForEmployee(empId,onDate=todayIso()){
+    const e=emp(empId); if(!e) return {payroll:false,mss:false,position:null,row:null};
+    const row=activePositionRowForEmployee(empId,onDate);
+    let position=row&&row.positionNumber?positionByNumber(row.positionNumber):null;
+    if(!position){
+      const activeRate=E.activePayRate(state,empId,onDate);
+      const name=String((activeRate&&activeRate.position)||e.position||'');
+      position=(state.positions||[]).find(p=>p.active!==false&&String(p.positionName||'')===name)||null;
+    }
+    return {payroll:!!(position&&position.accessPayrollManagement===true),mss:!!(position&&position.accessManagerSelfService===true),position,row};
+  }
+  function ensureLoginCredential(empId){
+    state.loginCredentials=state.loginCredentials||{};
+    const existing=state.loginCredentials[empId];
+    if(!existing||typeof existing!=='object') state.loginCredentials[empId]={password:DEFAULT_PASSWORD};
+    else if(existing.password===undefined||existing.password===null||existing.password==='') existing.password=DEFAULT_PASSWORD;
+    return state.loginCredentials[empId];
+  }
+  function loginEligibleEmployees(){ return activeEmployees().slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b))); }
+  function landingAreasForEmployee(empId,onDate=todayIso()){ const profile=accessProfileForEmployee(empId,onDate); return [profile.payroll?'payroll':'','ess',profile.mss?'mss':''].filter(Boolean); }
+  function renderLoginUsers(){
+    const users=loginEligibleEmployees();
+    users.forEach(e=>ensureLoginCredential(e.id));
+    const current=v('loginUser');
+    h('loginUser','<option value="">Select user</option>'+users.map(e=>`<option value="${esc(e.id)}">${esc(E.employeeName(e))} (${esc(e.id)})</option>`).join(''));
+    if(current&&users.some(e=>e.id===current)) setv('loginUser',current);
+  }
+  function renderLanding(){
+    const e=emp(currentUserId); if(!e) return logout();
+    const profile=accessProfileForEmployee(e.id,todayIso());
+    const areas=landingAreasForEmployee(e.id,todayIso());
+    h('landingWelcome',`Welcome ${esc(e.firstName||E.employeeName(e).split(' ')[0]||'')}`);
+    const tiles=[];
+    if(areas.includes('payroll')) tiles.push(`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`);
+    tiles.push(`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`);
+    if(areas.includes('mss')) tiles.push(`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`);
+    h('landingTiles',tiles.join(''));
+    document.querySelectorAll('[data-landing-area]').forEach(button=>button.addEventListener('click',()=>{
+      if(button.dataset.landingArea==='payroll') openPayrollManagement();
+      else if(button.dataset.landingArea==='ess') modal('Employee Self-Service','<p>Coming Soon</p>','<button type="button" class="secondary" data-close-modal>Close</button>',true);
+      else modal('Manager Self Service','<p>Coming Soon</p>','<button type="button" class="secondary" data-close-modal>Close</button>',true);
+    }));
+  }
+  function showLanding(){
+    if(sessionStorage.getItem('payrollAuthed')!=='true'||!currentUserId) return logout();
+    const shell=$('appShell'); const landing=$('landingScreen');
+    if(shell) shell.hidden=true;
+    if(landing) landing.hidden=false;
+    renderLanding();
+    closeModal();
+    resetTabScroll();
+  }
+  function openPayrollManagement(){
+    const profile=accessProfileForEmployee(currentUserId,todayIso());
+    if(!profile.payroll){ showLanding(); return alert('You do not have access to Payroll Management.'); }
+    const landing=$('landingScreen'); const shell=$('appShell');
+    if(landing) landing.hidden=true;
+    if(shell) shell.hidden=false;
+    renderAll();
+    resetTabScroll();
+  }
   function hydrateLogin(){
-    if(sessionStorage.getItem('payrollAuthed') === 'true'){
+    renderLoginUsers();
+    const savedUser=sessionStorage.getItem('payrollUserId')||'';
+    const valid=activeEmployees().some(e=>e.id===savedUser);
+    if(sessionStorage.getItem('payrollAuthed') === 'true' && valid){
+      currentUserId=savedUser;
       $('loginScreen').style.display='none';
       startInactivityTimers();
       checkOvernightProcessing(false);
-    }else $('loginScreen').style.display='flex';
+      showLanding();
+    }else{
+      sessionStorage.removeItem('payrollAuthed'); sessionStorage.removeItem('payrollUserId'); currentUserId='';
+      if($('appShell')) $('appShell').hidden=true;
+      if($('landingScreen')) $('landingScreen').hidden=true;
+      $('loginScreen').style.display='flex';
+    }
   }
   function login(){
     if($('processingScreen').classList.contains('open')) return;
-    if(v('loginPassword') === PASSWORD){
+    const userId=v('loginUser');
+    if(!userId) return h('loginError','Select a user.');
+    const e=emp(userId);
+    if(!e||employeeDisplayStatus(e)==='Terminated') return h('loginError','This user is not active.');
+    const credential=ensureLoginCredential(userId);
+    if(v('loginPassword') === String(credential.password||DEFAULT_PASSWORD)){
+      currentUserId=userId;
       sessionStorage.setItem('payrollAuthed','true');
+      sessionStorage.setItem('payrollUserId',userId);
+      save();
       $('loginScreen').style.display='none';
       h('loginError',''); setv('loginPassword','');
       startInactivityTimers();
       checkOvernightProcessing(false);
+      showLanding();
     }else h('loginError','Incorrect password.');
   }
   function logout(){
     sessionStorage.removeItem('payrollAuthed');
+    sessionStorage.removeItem('payrollUserId');
+    currentUserId='';
+    if($('appShell')) $('appShell').hidden=true;
+    if($('landingScreen')) $('landingScreen').hidden=true;
+    renderLoginUsers();
     $('loginScreen').style.display='flex';
     closeModal();
     clearTimeout(timeoutWarning); clearTimeout(timeoutLogout);
@@ -614,9 +707,10 @@
     const action=row.action||'Commencement';
     const reasons=(JOB_REASON_OPTIONS[action]||[]).map(r=>`<option ${row.reason===r?'selected':''}>${esc(r)}</option>`).join('');
     h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"><p class="small-note">First day this action applies. For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.</p></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div></div><div class="grid form-grid"><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div></div><div class="divider"></div><h3>Work Schedule</h3>${scheduleInputs('jd')}<p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="saveJobData">Save</button></div></div>`);
-    setScheduleInputs('jd', row.hoursByDay||{}); updateJobDataWeeklyHours();
+    setScheduleInputs('jd', row.positionClass==='Casual'?{}:(row.hoursByDay||{})); updateJobDataScheduleForClass();
     $('jdAction').addEventListener('change',()=>{ const draft=syncJobDataRowFromForm(Object.assign({}, row), false); draft.action=v('jdAction'); draft.reason=''; selectedJobDataDraft=draft; renderJobData(); });
-    $('jdReason').addEventListener('change',()=>{ const reason=v('jdReason'); if(/Casual/.test(reason)) setv('jdPositionClass','Casual'); else if(/Fixed-Term|Fixed Term Contract/.test(reason)) setv('jdPositionClass','Fixed-Term'); else if(/Permanent/.test(reason)) setv('jdPositionClass','Permanent'); });
+    $('jdReason').addEventListener('change',()=>{ const reason=v('jdReason'); if(/Casual/.test(reason)) setv('jdPositionClass','Casual'); else if(/Fixed-Term|Fixed Term Contract/.test(reason)) setv('jdPositionClass','Fixed-Term'); else if(/Permanent/.test(reason)) setv('jdPositionClass','Permanent'); updateJobDataScheduleForClass(); });
+    $('jdPositionClass').addEventListener('change',updateJobDataScheduleForClass);
     $('jdPositionNumber').addEventListener('change',()=>populateJobDataPosition(v('jdPositionNumber')));
     $('jdPositionLookup').addEventListener('click',openJobDataPositionLookup);
     ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun'].forEach(id=>$(id).addEventListener('input',updateJobDataWeeklyHours));
@@ -624,6 +718,11 @@
   }
   function setScheduleInputs(prefix,map){ ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d,i)=>{ const key=[1,2,3,4,5,6,0][i]; if($(prefix+d)) setv(prefix+d, Number((map||{})[key]||0)); }); }
   function updateJobDataWeeklyHours(){ if($('jdWeeklyHours')) h('jdWeeklyHours', `Total Weekly Hours: ${weeklyHours(getSchedule('jd')).toFixed(2)}`); }
+  function updateJobDataScheduleForClass(){
+    const casual=v('jdPositionClass')==='Casual';
+    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun'].forEach(id=>{ const el=$(id); if(!el) return; if(casual) el.value='0'; el.disabled=casual; });
+    if($('jdWeeklyHours')) h('jdWeeklyHours',casual?'Total Weekly Hours: 0.00 — Casual employees do not have a regular work schedule.':`Total Weekly Hours: ${weeklyHours(getSchedule('jd')).toFixed(2)}`);
+  }
   function populateJobDataPosition(num){
     const p=positionByNumber(num); if(!p){ setv('jdPositionName',''); setv('jdDepartment',''); setv('jdHourlyRate',''); setv('jdReportsTo',''); h('jdReportsToName',''); return; }
     setv('jdPositionNumber',p.positionNumber); setv('jdPositionName',p.positionName||''); setv('jdDepartment',p.department||''); setv('jdHourlyRate',Number(p.hourlyRate||0)); setv('jdReportsTo',p.reportsTo||''); h('jdReportsToName', p.reportsTo ? esc((positionByNumber(p.reportsTo)||{}).positionName||'Position not found') : '');
@@ -637,7 +736,9 @@
     const pos=positionByNumber(v('jdPositionNumber'));
     const reportsTo=pos ? (pos.reportsTo||'') : '';
     const existing = selectedJobDataDraft || (jobDataDisplayRows(selectedJobDataEmp)[selectedJobDataRowIndex]||{});
-    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason:v('jdReason'), positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass:v('jdPositionClass'), hoursByDay:getSchedule('jd'), saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
+    const positionClass=v('jdPositionClass');
+    const hoursByDay=positionClass==='Casual'?{0:0,1:0,2:0,3:0,4:0,5:0,6:0}:getSchedule('jd');
+    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason:v('jdReason'), positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass, hoursByDay, saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
   }
   function flagLeaveAfterTermination(empId,terminationEffectiveDate){
     const e=emp(empId); if(!e || !terminationEffectiveDate) return [];
@@ -660,7 +761,7 @@
     if(!row.effectiveDate) return alert('Enter an effective date.');
     if(!row.reason) return alert('Select a reason.');
     if(row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
-    if(row.action!=='Termination' && weeklyHours(row.hoursByDay)<=0) return alert('Enter a work schedule.');
+    if(row.action!=='Termination' && row.positionClass!=='Casual' && weeklyHours(row.hoursByDay)<=0) return alert('Enter a work schedule.');
     const existing=(state.jobDataRows||[]).find(r=>r.id===row.id);
     const appliedRow = existing ? Object.assign(existing,row) : row;
     if(!existing) state.jobDataRows.push(row);
@@ -1290,15 +1391,33 @@
     const grouped=new Map();
     (rows||[]).forEach(row=>{
       const description=String(row.description||'');
-      const canGroup=row.kind!=='retro' && ['Annual Leave','Annual Leave Loading'].includes(description);
-      if(!canGroup){ output.push(Object.assign({},row)); return; }
-      const key=[description,Number(row.rate||0).toFixed(6),row.position||'',row.kind||'',row.ote===false?'nonote':'ote'].join('|');
+      const bookingId=String(row.leaveBookingId||'');
+      const isBookingLeave=row.kind!=='retro' && !!bookingId && ['leave','leaveLoading'].includes(row.kind);
+      const legacyAnnual=row.kind!=='retro' && !bookingId && ['Annual Leave','Annual Leave Loading'].includes(description);
+      if(!isBookingLeave && !legacyAnnual){ output.push(Object.assign({},row)); return; }
+      const key=isBookingLeave
+        ? [bookingId,description,Number(row.rate||0).toFixed(6),row.position||'',row.kind||'',row.payOption||'',row.ote===false?'nonote':'ote'].join('|')
+        : ['legacy',description,Number(row.rate||0).toFixed(6),row.position||'',row.kind||'',row.ote===false?'nonote':'ote'].join('|');
       let target=grouped.get(key);
-      if(!target){ target=Object.assign({},row); grouped.set(key,target); output.push(target); return; }
+      if(!target){ target=Object.assign({},row,{_actualStart:row.startDate,_actualEnd:row.endDate}); grouped.set(key,target); output.push(target); return; }
       target.units=E.round4(Number(target.units||0)+Number(row.units||0));
       target.amount=E.round2(Number(target.amount||0)+Number(row.amount||0));
-      if(!target.startDate || E.compare(row.startDate,target.startDate)<0) target.startDate=row.startDate;
-      if(!target.endDate || E.compare(row.endDate,target.endDate)>0) target.endDate=row.endDate;
+      if(!target._actualStart || E.compare(row.startDate,target._actualStart)<0) target._actualStart=row.startDate;
+      if(!target._actualEnd || E.compare(row.endDate,target._actualEnd)>0) target._actualEnd=row.endDate;
+    });
+    const bookingGroups=new Map();
+    output.forEach(row=>{
+      if(!row.leaveBookingId) return;
+      const k=[row.leaveBookingId,row.description||'',row.kind||''].join('|');
+      bookingGroups.set(k,(bookingGroups.get(k)||0)+1);
+    });
+    output.forEach(row=>{
+      if(row.leaveBookingId){
+        const k=[row.leaveBookingId,row.description||'',row.kind||''].join('|');
+        if(bookingGroups.get(k)===1){ row.startDate=row.bookingStartDate||row._actualStart||row.startDate; row.endDate=row.bookingEndDate||row._actualEnd||row.endDate; }
+        else { row.startDate=row._actualStart||row.startDate; row.endDate=row._actualEnd||row.endDate; }
+      }else if(row._actualStart){ row.startDate=row._actualStart; row.endDate=row._actualEnd; }
+      delete row._actualStart; delete row._actualEnd;
     });
     return output;
   }
@@ -1598,7 +1717,7 @@
       const activeJob=jobRows.find(r=>r.action!=='Termination') || null;
       const schedule=E.activeSchedule(state,e.id,c.end);
       const hasPay=results.some(p=>p.empId===e.id && (Math.abs(Number(p.gross||0))>0.004 || Math.abs(Number(p.net||0))>0.004 || (p.rows||[]).length));
-      if(hasPay && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) warnings.push(`${E.employeeName(e)} has a missing or invalid work schedule.`);
+      if(hasPay && employmentTypeFor(e,c.end)!=='Casual' && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) warnings.push(`${E.employeeName(e)} has a missing or invalid work schedule.`);
       if(hasPay && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) warnings.push(`${E.employeeName(e)} has no Tax Details/TFN entered.`);
       const bal=E.projectedBalances(state,e,c,false);
       const leaveNegativeLimit=E.leaveNegativeLimitHours(state,e,c.end);
@@ -1622,6 +1741,14 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.32',notes:[
+      'Added active-employee user login selection with per-user credentials defaulting to 1234 and a role-aware application landing page.',
+      'Added Payroll Management, Employee Self-Service and Manager Self Service landing tiles; Payroll/MSS visibility follows effective Position Data access flags while ESS/MSS are Coming Soon.',
+      'Added a Home button beside Alerts to return to the landing page without logging out.',
+      'Consolidated each single leave booking into one payslip line across intervening weekends/non-rostered days while keeping scheduled leave units accurate.',
+      'Casual Job Data now uses a zero regular schedule and no longer requires roster hours; Casual Earnings across different positions remain on one payslip.',
+      'Denied leave is retained in history but hidden from Absence Calendar and Monthly Absence Calendar views.'
+    ]},
     {version:'v1.1.31',notes:[
       'Changed Leave Status editing to a dropdown and kept Awaiting Manager Approval/Denied leave out of payroll, leave deductions and payslips until Approved.',
       'Fixed manual LSL Accrued/Pro-rata adjustments so they take effect in the configured open pay and future LSL accrual continues normally.',
@@ -1865,5 +1992,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement };
 })();

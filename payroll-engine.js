@@ -147,7 +147,7 @@
     if(employed && isCasualOnly(state,e,dateIso)) return {cssClass:'',title:'',label:'',hours:0,employed:true,leaveType:'',status:'',pending:false,casual:true};
     const sched=employed?activeSchedule(state,e.id,dateIso):null;
     const hrs=employed?Number((sched&&sched.hoursByDay&&sched.hoursByDay[parseDate(dateIso).getDay()])||0):0;
-    const leave=employed?(state.leaveBookings||[]).find(l=>l.empId===e.id&&between(dateIso,l.startDate,l.endDate)):null;
+    const leave=employed?(state.leaveBookings||[]).find(l=>l.empId===e.id&&String(l.status||'Approved')!=='Denied'&&between(dateIso,l.startDate,l.endDate)):null;
     const isPH=isPublicHoliday(dateIso);
     let cssClass=hrs<=0?'nonrostered':'';
     let title=hrs<=0?'Non Rostered Day':'';
@@ -1121,10 +1121,10 @@
         const parentalPayFactor = leave.type===PARENTAL_PAID_LEAVE_TYPE && String(leave.payOption||'Full Pay')==='Half Pay' ? 0.5 : 1;
         const leaveRate=round4(Number(rate.hourlyRate||0)*parentalPayFactor);
         if(leaveUnits > 0){
-          rows.push({ description:normaliseLeaveDescription(leave.type), units:leaveUnits, amount: paid ? round2(leaveUnits * leaveRate) : 0, startDate:d, endDate:d, rate:paid?leaveRate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'leave', leaveType:leave.type, confidential:leave.type===FDV_LEAVE_TYPE, ote: paid });
+          rows.push({ description:normaliseLeaveDescription(leave.type), units:leaveUnits, amount: paid ? round2(leaveUnits * leaveRate) : 0, startDate:d, endDate:d, rate:paid?leaveRate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'leave', leaveType:leave.type, leaveBookingId:leave.id||'', bookingStartDate:leave.startDate||d, bookingEndDate:leave.endDate||d, payOption:leave.payOption||'', confidential:leave.type===FDV_LEAVE_TYPE, ote: paid });
           if(leave.type==='Annual Leave'){
             const loadingRate=round4(Number(rate.hourlyRate||0)*ANNUAL_LEAVE_LOADING_RATE);
-            rows.push({ description:'Annual Leave Loading', units:leaveUnits, amount:round2(leaveUnits*loadingRate), startDate:d, endDate:d, rate:loadingRate, baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'leaveLoading', leaveType:'Annual Leave', ote:true, accruesLeave:false, serviceHours:0 });
+            rows.push({ description:'Annual Leave Loading', units:leaveUnits, amount:round2(leaveUnits*loadingRate), startDate:d, endDate:d, rate:loadingRate, baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'leaveLoading', leaveType:'Annual Leave', leaveBookingId:leave.id||'', bookingStartDate:leave.startDate||d, bookingEndDate:leave.endDate||d, payOption:leave.payOption||'', ote:true, accruesLeave:false, serviceHours:0 });
           }
         }
         if(regularRemainder > 0){
@@ -1557,9 +1557,10 @@
       // the employee's underlying/base-rate earnings. Their own calculated rate must
       // not create a second payslip for the same position and pay period.
       const groupingRate=['additional','leaveLoading'].includes(r.kind)?(r.baseRate||r.rate||0):(r.rate||0);
-      const key=`${r.position||e.position}|${groupingRate}`;
+      const casualGroup=r.casualEarnings===true;
+      const key=casualGroup?'__casual_earnings__':`${r.position||e.position}|${groupingRate}`;
       let group=groups.find(x=>x.key===key);
-      if(!group){ group={key,position:r.position||e.position,rate:groupingRate,rows:[]}; groups.push(group); }
+      if(!group){ group={key,position:casualGroup?(e.position||'Casual'):r.position||e.position,rate:casualGroup?0:groupingRate,rows:[]}; groups.push(group); }
       group.rows.push(r);
     });
     if(!groups.length&&retro.length) groups.push({key:'retro',position:e.position,rate:e.hourlyRate,rows:[]});

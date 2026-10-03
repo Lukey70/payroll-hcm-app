@@ -4,18 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Payroll/HCM App</title>
-  <link rel="stylesheet" href="styles.css?v=1.1.31">
+  <link rel="stylesheet" href="styles.css?v=1.1.32">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
     <div class="login-card">
       <h1>Payroll/HCM Login</h1>
-      <p class="muted">Enter your password to continue.</p>
+      <p class="muted">Select your user and enter your password to continue.</p>
+      <label for="loginUser">User</label>
+      <select id="loginUser"><option value="">Select user</option></select>
       <label for="loginPassword">Password</label>
       <input id="loginPassword" type="password" autocomplete="current-password">
       <button id="loginButton" type="button">Sign in</button>
       <p id="loginError" class="error-text"></p>
     </div>
+  </div>
+
+  <div id="landingScreen" class="landing-screen" hidden>
+    <div class="landing-header">
+      <div>
+        <p class="landing-kicker">Payroll/HCM</p>
+        <h1 id="landingWelcome">Welcome</h1>
+      </div>
+      <button id="landingLogoutButton" type="button" class="secondary">Log Out</button>
+    </div>
+    <div id="landingTiles" class="landing-tiles" aria-label="Application areas"></div>
   </div>
 
   <div id="processingScreen" class="processing-screen" aria-live="polite">
@@ -26,11 +39,11 @@
     </div>
   </div>
 
-  <div class="app-shell" id="appShell">
+  <div class="app-shell" id="appShell" hidden>
     <aside class="sidebar no-print">
       <div>
         <h1>Payroll/HCM</h1>
-        <p id="versionLabel">v1.1.31</p>
+        <p id="versionLabel">v1.1.32</p>
       </div>
       <nav class="nav">
         <button class="nav-parent open" id="employeeDataToggle" type="button" aria-expanded="true">Employee Data <span>▾</span></button>
@@ -61,6 +74,7 @@
         <button id="importDataButton" type="button" class="secondary">Import Data</button>
         <button id="exportDataButton" type="button" class="success">Export Data</button>
         <input id="importFile" type="file" accept="application/json" hidden>
+        <button id="homeButton" class="home-button" type="button" title="Home" aria-label="Home">⌂</button>
         <div class="alerts-menu" id="alertsMenu">
           <button id="alertsBell" class="alert-bell" type="button" aria-haspopup="true" aria-expanded="false" title="Alerts">🔔<span id="alertsBadge" class="alerts-badge hide">0</span></button>
           <div id="alertsDropdown" class="alerts-dropdown" hidden>No New Alerts</div>
@@ -96,8 +110,8 @@
   <div id="toast" class="toast no-print"></div>
   <div id="printArea"></div>
 
-  <script src="data-store.js?v=1.1.31"></script>
-  <script src="payroll-engine.js?v=1.1.31"></script>
-  <script src="app.js?v=1.1.31"></script>
+  <script src="data-store.js?v=1.1.32"></script>
+  <script src="payroll-engine.js?v=1.1.32"></script>
+  <script src="app.js?v=1.1.32"></script>
 </body>
 </html>

@@ -1,36 +1,20 @@
-Payroll/HCM App v1.1.31
+Payroll/HCM App v1.1.32
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.31 preserves the existing payrollAppData/localStorage data model and migrates saved data through DataStore.migrate().
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.32 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
 
-IMPORTANT UPGRADE BEHAVIOUR
-- Existing leave bookings retain their saved status; missing status still migrates safely to Approved. v1.1.31 presents status as a dropdown and excludes Awaiting Manager Approval/Denied leave from payroll/payslip processing.
-- Existing LSL manual balance-adjustment history is preserved. New manual LSL adjustments are effective in the configured open-pay context rather than being accidentally future-dated by the real-world calendar date.
-- Existing finalised LWOP retro corrections remain historical; v1.1.31 counts previously finalised informational LWOP Retro units as settled so they do not repeat without a genuine new historical change.
-- Existing tax history remains preserved; current effective Tax Details determines whether a new STSL Repayment Retro applies in the open pay.
-- Legacy employee/Job Data records continue to migrate. Casual employment uses the existing effective-dated Position Class/employment data and does not create a separate concurrent-position model.
-- Legacy positions can safely omit rateHistory; Casual Earnings falls back to the position's existing hourlyRate when no effective-dated position rate history is present.
-- Existing finalised payslips are not rewritten.
+IMPORTANT BEFORE UPDATE
+Ensure at least one active employee's current Position Data record has "Access to Payroll Management" enabled. v1.1.32 now uses that effective position flag to decide whether the Payroll Management landing tile is visible.
 
-MAJOR CHANGES
-- Leave Status dropdown with Approved-only payroll/payslip processing.
-- Manual LSL Accrued/Pro-rata adjustment save correction.
-- Once-only LWOP Retro informational settlement.
-- Public Holiday Paid only on rostered/scheduled days.
-- STSL Retro based on current effective Tax Details.
-- Overpayment Adjustment is non-taxable, non-STSL and non-leave-accruing.
-- Future LSL non-contributory service is applied only as the service occurs.
-- Personal Leave Retro and late movement/rate retro are kept as meaningful separate components.
-- Casual Earnings: selected position + hours at base rate plus 25% casual loading, taxable/superable normally, no leave accrual.
-- Casual-only employees: no automatic Regular Pay, no leave/LSL entitlement, no leave-calendar display, and non-casual service starts from the later Permanent/Fixed-Term effective date.
+LOGIN
+- Select an active employee at login.
+- Default password is 1234 for migrated/current employees unless a stored credential already exists.
+- Employee Self-Service is shown for active users but is Coming Soon.
+- Manager Self Service is shown only for MSS-enabled positions and is Coming Soon.
+- Payroll Management opens the existing payroll application and is shown only for Payroll Management-enabled positions.
 
-PAYROLL CONTROLS PRESERVED
-- Persisted currentCycleId remains the authoritative open pay.
-- Original anchor remains PPE 04/06/2026, period 22/05/2026–04/06/2026.
-- Retro cut-off remains 03/05/2026.
-- Finalisation remains manual.
+DATA
+- Existing employees, Job Data, Position Data, payroll history, finalised payslips, leave, balances, deductions, Additional Earnings, certifications and alerts are preserved.
+- loginCredentials is added to stored/exported data for future ESS password-change support.
 
-TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.31.txt for actual automated/static/browser results and known limitations.
-
-This remains a client-side payroll demonstration and is not production payroll software.
+See RELEASE-NOTES-v1.1.32.txt and test-results.txt for release details and actual verification results.

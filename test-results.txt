@@ -1,90 +1,35 @@
-Payroll/HCM App v1.1.31 — Test Results
-Date: 3 October 2026
+Payroll/HCM App v1.1.32 — Test Results
+Date: 03 October 2026
 
-SUMMARY (PRE-PACKAGE SOURCE)
-- Full Node suite: PASS / exit code 0
-- Self-invoking test blocks: 142
-- assert/assert.* call sites: 635
-- Runtime PASS summaries: 65
-- JavaScript syntax checks: PASS for data-store.js, payroll-engine.js, app.js, test-cases.js
-- Local HTTP response: 200 OK
-- Chromium headless rendered-DOM attempt: TIMEOUT; no successful real-browser pass claimed
+AUTOMATED REGRESSION SUITE
+Command: node test-cases.js
+Result: PASS (exit code 0)
+Test blocks: 148
+assert/assert.* call sites: 656
+Runtime PASS summaries: 67
 
-V1.1.31-SPECIFIC COVERAGE
-- Leave Status is a dropdown and Awaiting Manager Approval/Denied leave is excluded from payroll, balance deduction and payslip output.
-- Manual LSL Accrued/Pro-rata adjustments apply in the open-pay context and future accrual continues.
-- Finalised $0 Leave Without Pay Retro informational units settle once and do not repeat without a genuine new historical change.
-- Public holidays on non-rostered days generate no Public Holiday Paid earnings.
-- STSL Repayment Retro follows current effective open-pay Tax Details.
-- Overpayment Adjustment changes net without changing PAYG/STSL/super or leave accrual.
-- Future LSL non-contributory service affects entitlement dates only as qualifying days occur.
-- Retro Personal Leave preserves actual scheduled leave hours with separate Regular Pay reversal and Acting Higher Level movement segments.
-- Casual Earnings uses selected position rate + 25% loading, normal tax/super and no leave accrual.
-- Casual-only employees receive no automatic Regular Pay, no LSL entitlement, no leave-calendar presence, no leave payouts, and begin non-casual LSL service only from a later Permanent/Fixed-Term effective date.
+JAVASCRIPT SYNTAX
+node --check data-store.js: PASS
+node --check payroll-engine.js: PASS
+node --check app.js: PASS
+node --check test-cases.js: PASS
 
-RUNTIME PASS OUTPUT
-PASS: Login button/password strings and app version are present
-PASS: Current pay is PPE4/6/26
-PASS: Period is 22/5/26 - 4/6/26
-PASS: Payment date is 4/6/26
-PASS: Pay close is 29/5/26
-PASS: Monday-Friday 7.5 hours pays 37.5 hours
-PASS: Commencement date is included in pay
-PASS: Leave over non-working days only deducts scheduled work days
-PASS: Leave over public holiday does not deduct credits and pays Public Holiday
-PASS: No zero-gross payslips are generated
-PASS: Position changes create separate payslips
-PASS: Backdated commencement retro includes all scheduled days
-PASS: Additional earnings only pay once saved and use effective rates
-PASS: Retro prior-processing cut-off prevents payments before 03/05/2026
-PASS: Tax Details, Marginal Tax and STSL calculations are present
-PASS: Payslip removes LSL pro-rata and Certification Report removes Super
-PASS: Partial-day leave deducts only entered hours and pays the remaining day as Regular Pay
-PASS: Overlapping leave bookings are prevented
-PASS: Current-pay additional earnings stay on the same payslip
-PASS: SG rate is 12% of ordinary time earnings and excludes overtime
-PASS: Prior-pay leave creates Regular Pay Retro and leave Retro replacement rows
-PASS: Prior-pay additional earnings use the original earnings type plus Retro
-PASS: Payslip summary, YTD financial-year logic and Employer Super Contribution Retro are present
-PASS: No Tax Details fallback tax and payslip No TFN label are present
-PASS: Uploaded tax tables, tax-free-threshold Yes/No and STSL Yes affect pay calculations
-PASS: Leave Without Pay shows with hours/zero earnings and full-period LWOP suppresses payslip
-PASS: Zero-net prior-period leave retro replacement remains visible
-PASS: Additional Earnings Amount and Overpayment Adjustment are calculated correctly
-PASS: Commencement tax fields, read-only balances, tab order and DOB warning removal are present
-PASS: Absence Calendar defaults to current year and can navigate up to one year ahead
-PASS: Deductions, payslip deduction sections, Check for Errors, Import Preview and Recalculate Balances are present and calculated
-PASS: v1.1.18 audit fixes, deduction end-dating, retro controls, certification workflow, print/navigation and termination semantics are verified.
-PASS: v1.1.18 leave payout, rehire, structured address, evidence, Overpayment Adjustment, Bereavement Leave and confidential FDV Leave changes are verified.
-PASS: v1.1.17 Reports, Statement of Service, Reimbursement and Annual Leave Loading changes are verified.
-PASS: v1.1.18 consolidated Annual Leave payslip rows and McDonald's California Franchise Statement of Service changes are verified.
-PASS: v1.1.19 terminated-employee Additional Earnings and same-payslip Annual Leave Loading behaviour are verified.
-PASS: v1.1.20 cumulative retro settlement prevents +8.29/-8.29 oscillation across pay periods.
-PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term expiry with resignation and stops Regular Pay at the correct boundary.
-PASS: v1.1.26 payslip Annual and Personal Leave balances include current-pay leave usage and remain stable on recalculation/finalisation.
-PASS: Retro Personal Leave balance repair, Leave Without Pay Retro payslip display and parental leave rules remain verified.
-PASS: Parental automatic end dates cover full/half pay, unpaid limits, extension, prior usage and exhausted entitlement
-PASS: Booking form events auto-fill parental dates, update half pay and preserve manually shortened dates
-PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and multiple deductions may be active concurrently.
-PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
-PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
-PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
-PASS: v1.1.31 leave-status dropdown and non-approved payslip exclusion are verified.
-PASS: v1.1.31 manual LSL adjustment, non-contributory timing, LWOP settlement and STSL retro fixes are verified.
-PASS: v1.1.31 public-holiday roster rule, non-taxable Overpayment Adjustment and retro movement/Personal Leave separation are verified.
-PASS: v1.1.31 Casual Earnings and casual-only employment rules are verified.
-PASS: v1.1.30 Annual Leave Overuse Recovery label is verified.
-PASS: v1.1.30 retro amount-based Additional Earnings keep Units and Rate blank.
-PASS: v1.1.30 termination/leave conflict notifications and interactive leave statuses are verified.
-PASS: v1.1.30 non-approved leave is excluded from payroll processing.
-PASS: v1.1.30 Position Data MSS/Payroll Management access flags are preserved.
-PASS: v1.1.29 Monthly Absence Calendar termination-month visibility is verified.
-PASS: v1.1.29 amount-based Additional Earnings payslip formatting and Retro PFY labelling are verified.
-PASS: v1.1.29 resignation recovery of ordinary negative Annual Leave is verified.
-PASS: v1.1.28 contract-expiry notification timing and extension suppression are verified.
-PASS: v1.1.28 late fixed-term leave-payout recovery and genuine-Rehire safeguard are verified.
-PASS: v1.1.28 Monthly Absence Calendar report structure and shared Absence Calendar key are verified.
-PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fixed-term extension workflow are verified.
-PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.
-PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.
-PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.
+V1.1.32-SPECIFIC COVERAGE
+- Login screen includes active-employee user selection and default per-user password migration.
+- Terminated employees are excluded from login eligibility.
+- Effective Position Data access flags control Payroll Management and MSS landing availability; ESS remains available to active users.
+- Landing page/Home workflow source and role logic are present.
+- Single leave bookings consolidate to one payslip display line across intervening weekends/non-rostered days while preserving scheduled leave units.
+- Denied leave is hidden from calendar display while Awaiting Manager Approval remains visible/pending.
+- Casual Job Data allows/saves a zero regular schedule and non-casual schedule validation remains intact.
+- Casual Earnings for different selected positions in one pay period remain on one payslip with distinct position lines.
+
+EXISTING REGRESSION COVERAGE
+The suite continues to cover open-cycle anchoring, retro cut-off/settlement, effective-dated Job Data, terminations/rehire/contract extensions, leave balances and forecast Annual Leave, 7-year/65-day LSL, non-contributory service, deductions, Union Fees, STSL/tax/super, public holidays, parental leave, certification, payslips, reports, Statement of Service and import/export compatibility.
+
+HTTP / BROWSER CHECK
+Local HTTP server: PASS (HTTP 200 for index.html).
+Chromium headless: ATTEMPTED. The environment timed out before returning a rendered DOM; no successful real-browser interaction pass is claimed.
+
+PACKAGE VERIFICATION
+Exact final ZIP fresh-extraction verification: PASS. The packaged archive was extracted to a clean directory; node test-cases.js again exited 0 with 148 test blocks / 656 assertion call sites / 67 PASS summaries, all four JavaScript syntax checks passed, and ZIP integrity was clean.

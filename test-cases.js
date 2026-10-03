@@ -34,9 +34,10 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const app = fs.readFileSync(path.join(root,'app.js'),'utf8');
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
-  assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.31'), 'sidebar/version label must show v1.1.31');
-  assert(data.includes("APP_VERSION = '1.1.31'"), 'data-store version must be 1.1.31');
+  assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
+  assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
+  assert(html.includes('v1.1.32'), 'sidebar/version label must show v1.1.32');
+  assert(data.includes("APP_VERSION = '1.1.32'"), 'data-store version must be 1.1.32');
 })();
 
 (function testAnchorPayCycle(){
@@ -2128,6 +2129,105 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert(app.includes("if(/Casual/.test(reason)) setv('jdPositionClass','Casual')"),'Casual commencement/rehire reasons should automatically align Position Class to Casual');
 })();
 
+
+
+(function testV132ConsolidatedLeavePayslipRangeIncludesWeekend(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const rows=[
+    {description:'Long Service Leave',kind:'leave',leaveBookingId:'lsl-book',bookingStartDate:'2026-09-07',bookingEndDate:'2026-09-18',startDate:'2026-09-07',endDate:'2026-09-07',units:7.5,rate:40,amount:300,position:'Officer',ote:true},
+    {description:'Long Service Leave',kind:'leave',leaveBookingId:'lsl-book',bookingStartDate:'2026-09-07',bookingEndDate:'2026-09-18',startDate:'2026-09-11',endDate:'2026-09-11',units:7.5,rate:40,amount:300,position:'Officer',ote:true},
+    {description:'Long Service Leave',kind:'leave',leaveBookingId:'lsl-book',bookingStartDate:'2026-09-07',bookingEndDate:'2026-09-18',startDate:'2026-09-14',endDate:'2026-09-14',units:7.5,rate:40,amount:300,position:'Officer',ote:true},
+    {description:'Long Service Leave',kind:'leave',leaveBookingId:'lsl-book',bookingStartDate:'2026-09-07',bookingEndDate:'2026-09-18',startDate:'2026-09-18',endDate:'2026-09-18',units:7.5,rate:40,amount:300,position:'Officer',ote:true}
+  ];
+  const out=context.window.PayrollApp.consolidatePayslipDisplayRows(rows);
+  assert.strictEqual(out.length,1,'One leave booking at one rate/position should display as one payslip line');
+  assert.strictEqual(out[0].startDate,'2026-09-07');
+  assert.strictEqual(out[0].endDate,'2026-09-18','The displayed booking range must include intervening weekend/non-rostered dates');
+  assert.strictEqual(out[0].units,30,'Only actual scheduled leave units should be totalled');
+})();
+
+(function testV132DeniedLeaveHiddenFromCalendarsAwaitingStillVisible(){
+  const state=baseState(); const e=addEmployee(state); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'denied132',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Denied'});
+  const denied=E.absenceCalendarStatus(state,e,'2026-05-25');
+  assert.strictEqual(denied.leaveType,'','Denied leave must be hidden from calendar display');
+  assert.strictEqual(denied.label,'','Denied leave must not show a calendar leave label');
+  state.leaveBookings[0].status='Awaiting Manager Approval';
+  const pending=E.absenceCalendarStatus(state,e,'2026-05-25');
+  assert.strictEqual(pending.leaveType,'Annual Leave','Awaiting Manager Approval leave remains visible on calendars');
+  assert.strictEqual(pending.pending,true);
+})();
+
+(function testV132CasualEarningsDifferentPositionsStayOnOnePayslip(){
+  const state=baseState(); const e=addEmployee(state,{id:'casual132',type:'Casual',position:'Casual Employee'});
+  state.jobDataRows.push({id:'jc132',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionClass:'Casual',positionNumber:'C1',positionName:'Crew A',hoursByDay:{0:0,1:0,2:0,3:0,4:0,5:0,6:0},saved:true});
+  state.positions.push({id:'pc1',positionNumber:'C1',positionName:'Crew A',hourlyRate:30,active:true},{id:'pc2',positionNumber:'C2',positionName:'Crew B',hourlyRate:40,active:true});
+  state.additionalEarnings.push(
+    {id:'ce132a',empId:e.id,cycleId:1,earningType:'Casual Earnings',positionNumber:'C1',positionName:'Crew A',hours:4,startDate:'2026-05-25',endDate:'2026-05-25',saved:true},
+    {id:'ce132b',empId:e.id,cycleId:1,earningType:'Casual Earnings',positionNumber:'C2',positionName:'Crew B',hours:5,startDate:'2026-05-26',endDate:'2026-05-26',saved:true}
+  );
+  const pays=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(pays.length,1,'Different Casual Earnings positions in the same pay period must remain on one payslip');
+  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew A'));
+  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew B'));
+})();
+
+(function testV132LoginCredentialsAccessTilesAndActiveUsers(){
+  const migrated=DataStore.migrate(Object.assign(baseState(),{
+    employees:[
+      {id:'u132',firstName:'Alex',lastName:'Payroll',name:'Alex Payroll',status:'Active',type:'Permanent',startDate:'2026-01-01',employmentSegments:[{id:'us',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]},
+      {id:'t132',firstName:'Terry',lastName:'Terminated',name:'Terry Terminated',status:'Terminated',type:'Permanent',startDate:'2026-01-01',terminationDate:'2026-09-01',employmentSegments:[{id:'ts',startDate:'2026-01-01',endDate:'2026-09-01',inclusiveEnd:false}]}
+    ],
+    positions:[{id:'p132',positionNumber:'P132',positionName:'Payroll Manager',hourlyRate:50,active:true,accessPayrollManagement:true,accessManagerSelfService:true}],
+    jobDataRows:[{id:'j132',empId:'u132',effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionClass:'Permanent',positionNumber:'P132',positionName:'Payroll Manager',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},saved:true}]
+  }));
+  assert.strictEqual(migrated.loginCredentials.u132.password,'1234','Existing active employees must receive the default password during migration');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const appState=context.window.PayrollApp.getState(); Object.assign(appState,migrated);
+  const ids=context.window.PayrollApp.loginEligibleEmployees().map(x=>x.id);
+  assert(ids.includes('u132')&&!ids.includes('t132'),'Login user list must include active employees and exclude terminated employees');
+  assert.deepStrictEqual(Array.from(context.window.PayrollApp.landingAreasForEmployee('u132','2026-10-03')),['payroll','ess','mss'],'Position access flags must control Payroll/MSS landing tiles while ESS remains available');
+})();
+
+(function testV132ActingPositionTemporarilyControlsMssAccess(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const st=context.window.PayrollApp.getState();
+  st.employees.push({id:'act132',firstName:'Acting',lastName:'Manager',name:'Acting Manager',status:'Active',type:'Permanent',startDate:'2026-01-01',employmentSegments:[{id:'a132seg',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
+  st.positions.push(
+    {id:'base132',positionNumber:'BASE132',positionName:'Officer',active:true,accessPayrollManagement:false,accessManagerSelfService:false},
+    {id:'mgr132',positionNumber:'MGR132',positionName:'Manager',active:true,accessPayrollManagement:false,accessManagerSelfService:true}
+  );
+  st.jobDataRows.push(
+    {id:'start132',empId:'act132',effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'BASE132',positionName:'Officer',positionClass:'Permanent',saved:true},
+    {id:'acting132',empId:'act132',effectiveDate:'2026-09-01',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'MGR132',positionName:'Manager',positionClass:'Permanent',saved:true},
+    {id:'return132',empId:'act132',effectiveDate:'2026-09-15',effectiveSequence:0,action:'Movement',reason:'Return from Temp Assignment',positionNumber:'BASE132',positionName:'Officer',positionClass:'Permanent',saved:true}
+  );
+  assert(context.window.PayrollApp.landingAreasForEmployee('act132','2026-09-10').includes('mss'),'Acting in an MSS-enabled position must grant the MSS tile during the acting period');
+  assert(!context.window.PayrollApp.landingAreasForEmployee('act132','2026-09-20').includes('mss'),'MSS access must end after return to a non-MSS position');
+})();
+
+(function testV132CasualJobDataZeroScheduleAndLandingUiStrings(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8'); const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  assert(app.includes("row.positionClass!=='Casual' && weeklyHours(row.hoursByDay)<=0"),'Casual Job Data must not require a regular work schedule');
+  assert(app.includes("positionClass==='Casual'?{0:0,1:0,2:0,3:0,4:0,5:0,6:0}:getSchedule('jd')"),'Casual Job Data must save a zero regular schedule');
+  assert(html.includes('id="landingScreen"')&&html.includes('id="homeButton"'),'v1.1.32 must include the landing page and Home button');
+  assert(app.includes('Employee Self-Service')&&app.includes('Manager Self Service')&&app.includes('Coming Soon'),'ESS/MSS landing tiles must be present as Coming Soon areas');
+})();
+
+console.log('PASS: v1.1.32 consolidated leave ranges, denied-calendar exclusion and casual zero-schedule behavior are verified.');
+console.log('PASS: v1.1.32 Casual Earnings single-payslip grouping and active-user login/access landing rules are verified.');
 console.log('PASS: v1.1.31 leave-status dropdown and non-approved payslip exclusion are verified.');
 console.log('PASS: v1.1.31 manual LSL adjustment, non-contributory timing, LWOP settlement and STSL retro fixes are verified.');
 console.log('PASS: v1.1.31 public-holiday roster rule, non-taxable Overpayment Adjustment and retro movement/Personal Leave separation are verified.');

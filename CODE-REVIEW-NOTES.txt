@@ -1,16 +1,22 @@
-Payroll/HCM App v1.1.31 — Code Review Notes
+Payroll/HCM App v1.1.32 — Code Review Notes
 
-- Source base: verified v1.1.30 release.
-- Payroll calculation remains in payroll-engine.js; browser/report presentation remains in app.js; persistence/migration remains in data-store.js.
-- Leave Status is now presented as a select/dropdown. The payroll engine continues to treat only Approved leave as actionable; Awaiting Manager Approval and Denied bookings remain stored but do not generate pay, deductions, balance usage or payslip leave lines.
-- Manual LSL Absence Balance Adjustment Job Summary events now use the configured open-cycle context instead of todayIso(), preventing an adjustment from being ignored merely because the real-world date is later than the demonstration's open pay cycle.
-- Retro settlement tracks finalised informational LWOP Retro units separately so the $0 visibility row settles once without changing the associated Regular Pay Retro financial correction.
-- STSL retro eligibility now comes from current effective open-pay Tax Details. Historical tax records remain available for historical/pay-period calculations.
-- Overpayment Adjustment is flagged nonTaxable and non-leave-accruing; it is excluded from taxable/STSL/super/leave bases while remaining a visible net-pay balancing earning.
-- LSL non-contributory service uses an as-of date and clips qualifying LWOP/Unpaid Parental Leave Extension days to days that have actually occurred by that calculation date.
-- Retro comparison preserves a dedicated segment key for leave-day Regular Pay reversals and incompatible movement/rate segments, preventing artificial fractional-unit display while retaining cumulative settlement/idempotence.
-- Casual Earnings stores the selected position, hours, base rate, 25% loading, loaded rate and amount. It is taxable and superable under normal app rules but has accruesLeave=false/serviceHours=0.
-- Casual employment uses effective-dated Position Class/Job Data. Active casual-only employment suppresses automatic Regular Pay and applicable leave/LSL/report behavior; transition to Permanent/Fixed-Term establishes a new non-casual LSL service start.
-- Existing Position Data MSS/Payroll Management flags remain stored metadata only; no role-access enforcement is activated in v1.1.31.
-- Full Node regression suite and all four JavaScript syntax checks pass before packaging.
-- Local HTTP serving returned HTTP 200; Chromium headless DOM rendering timed out, so no successful real-browser interaction pass is claimed.
+Baseline
+- Built from verified v1.1.31.
+- Existing effective-dated payroll, retro, LSL, deductions, leave, casual-employment and finalised-history logic was preserved unless directly affected by a v1.1.32 request.
+
+Observed implementation changes
+- Added loginCredentials to state migration/export/import, defaulting missing employee passwords to 1234.
+- Login eligibility is derived from active employees; terminated employees are excluded.
+- Position access is derived from the latest effective saved non-termination Job Data position, with a current pay-rate/name fallback for legacy data lacking a position number.
+- Landing areas are Payroll Management (position flag), ESS (active employee), and MSS (position flag). ESS/MSS are not yet implemented beyond Coming Soon.
+- Home preserves the authenticated session and returns to the landing page.
+- Leave earnings rows now carry leaveBookingId/bookingStartDate/bookingEndDate metadata for presentation consolidation without changing scheduled paid units.
+- Payslip display consolidates one leave booking where treatment is homogeneous; rate/position differences remain distinct.
+- Casual Job Data saves zero hoursByDay and bypasses non-casual schedule validation.
+- Denied leave is excluded at the shared absenceCalendarStatus source, covering both calendar reports.
+- Current-period Casual Earnings rows use a shared payslip grouping key so different selected positions do not create multiple payslips solely for Casual Earnings.
+
+Compatibility / risk notes
+- Existing finalised payslips are not mutated to add leave booking IDs. The new consolidated leave-range behavior is strongest for newly calculated/current rows that carry booking identity metadata.
+- Position access flags were introduced before this release. v1.1.32 enforces them at the landing page. Administrators should ensure at least one active user's current position has Payroll Management access before deployment.
+- Client-side passwords are intentionally demo-only and should not be represented as production security.

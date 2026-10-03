@@ -1,0 +1,62 @@
+Payroll/HCM App v1.1.32 — Release Notes
+Release date: 03 October 2026
+
+SUMMARY
+v1.1.32 introduces the first user-login/access landing workflow and completes the queued payroll/leave presentation changes after v1.1.31. It preserves the existing Payroll Management application while adding active-employee logins, position-based area visibility, a Home landing page, consolidated leave payslip ranges, casual zero-schedule handling, denied-leave calendar suppression, and single-payslip Casual Earnings across positions.
+
+NEW LOGIN AND LANDING PAGE
+- Login now requires selecting an active employee/user and entering that user's password.
+- Terminated/inactive employees are not offered as login users.
+- Existing employees receive a default client-side demo password of 1234 through migration.
+- Credentials are stored in the exported/imported application data model so a future ESS password-change workflow can update them.
+- After login, users land on a tile page headed "Welcome [First Name]".
+- Payroll Management tile is visible only when the employee's effective current/acting Position Data record has Access to Payroll Management enabled.
+- Employee Self-Service tile is available to active logged-in employees and currently opens a Coming Soon message.
+- Manager Self Service tile is visible only when the employee's effective current/acting Position Data record has Access to Manager Self Service enabled and currently opens a Coming Soon message.
+- Effective-dated Job Data determines the active/acting position used for access, so temporary acting assignments can temporarily grant the relevant tile.
+- A Home icon has been added beside Alerts in Payroll Management. It returns to the landing page without logging the user out.
+- This remains a client-side demonstration login and is not production-grade authentication/security.
+
+IMPORTANT ACCESS NOTE
+Before deploying v1.1.32, ensure at least one active user's current Position Data record has "Access to Payroll Management" enabled. The Payroll Management tile is intentionally hidden from users whose current/acting position does not have that flag.
+
+LEAVE PAYSLIP DISPLAY
+- A single leave booking now displays as one consolidated payslip line across its booking date range, including intervening weekends/non-rostered days.
+- Paid/deducted leave units remain based only on applicable scheduled workdays.
+- This applies to all leave types where a booking generates a payslip line.
+- Annual Leave Loading follows the associated Annual Leave booking grouping.
+- Genuinely different rates/positions/pay options remain separate where payroll treatment requires separation.
+- Historical finalised payslip calculations are not rewritten; the new booking identity metadata applies to newly calculated rows.
+
+CASUAL JOB DATA AND CASUAL EARNINGS
+- Casual Job Data no longer requires a regular work schedule.
+- Casual regular scheduled hours default/save as zero and schedule inputs are disabled while Position Class is Casual.
+- If the employee later becomes Permanent or Fixed Term, normal work-schedule requirements resume.
+- Pay Error / Warning Check no longer flags a casual-only employee's intentional zero regular schedule as missing/invalid.
+- Casual Earnings entered against different positions in the same pay period remain on one employee payslip.
+- Position-specific Casual Earnings lines continue to show "Casual Earnings - [Position Name]" with their correct hours/rate/amount.
+
+LEAVE CALENDARS
+- Denied leave remains in leave history/audit data but is hidden from Absence Calendar and Monthly Absence Calendar views.
+- Awaiting Manager Approval leave remains visible using the existing pending indicator.
+- Approved leave continues to display normally.
+
+COMPATIBILITY
+- v1.1.32 migrates the existing v1.1.31 localStorage data model in place.
+- Employee/payroll data, finalised payslips, effective-dated Job Data, Position Data access flags, leave, deductions, Additional Earnings and existing import/export structures are preserved.
+- Existing users are given default login credentials only where credentials do not already exist.
+
+TESTING
+- Full automated Node regression suite passes.
+- 148 self-invoking test blocks.
+- 656 assert/assert.* call sites.
+- 67 runtime PASS summaries.
+- data-store.js, payroll-engine.js, app.js and test-cases.js pass node --check.
+- The final packaged ZIP is freshly extracted and the full suite/syntax checks are rerun from that clean copy.
+- Local HTTP serving returned HTTP 200.
+- Chromium headless was attempted, but the environment timed out before returning a rendered DOM. A successful real-browser interaction test is therefore not claimed.
+
+KNOWN LIMITATIONS
+- ESS and MSS are landing tiles only in this release and display Coming Soon.
+- Login/password protection is browser/client-side demonstration functionality, not secure production authentication.
+- A deployment with no active employee occupying a Payroll Management-enabled position will intentionally have no visible Payroll Management tile.
