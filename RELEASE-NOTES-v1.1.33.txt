@@ -1,0 +1,68 @@
+Payroll/HCM App v1.1.33 — Release Notes
+Release date: 03 October 2026
+
+SUMMARY
+v1.1.33 corrects the new login landing experience, improves effective-dated employment validation, adds optional fortnightly rosters and expands Job Data/leave reasons. It preserves all existing v1.1.32 payroll, retro, LSL, casual-employment, leave, deductions, access, payslip and finalised-history behaviour unless directly affected by the changes below.
+
+LOGIN / LANDING PAGE
+- The post-login landing page is now a separate full-screen app view rather than a section above Payroll Management.
+- Users cannot scroll from the landing page into Payroll Management.
+- Payroll Management dashboard metrics such as employee count/current gross pay are hidden while on the landing page.
+- Access tiles are centred in the landing content area.
+- Tile locations are fixed: Payroll Management left, Employee Self-Service centre, Manager Self Service right.
+- If Payroll Management or MSS access is unavailable, its slot remains empty so ESS stays centred.
+- The Home control now uses a clearer SVG house icon with matching header styling and a Home label/tooltip.
+- Clicking Home returns to the isolated landing page without ending the logged-in session.
+
+JOB DATA — PERMANENCY CONFIRMED
+- Variation — Permanency Confirmed now explicitly changes the effective-dated employment/position class to Permanent.
+- Later inherited Job Data rows are migrated/treated as Permanent until another explicit employment-type change occurs.
+- Obsolete future fixed-term expiry/contract-end state is ignored from the permanency effective date.
+- Check for Errors no longer raises a false “fixed-term but does not have a Termination row” warning for employees whose permanency has been confirmed.
+- Historical fixed-term Job Data remains preserved before the permanency effective date.
+
+CHECK FOR ERRORS — HISTORICAL ANNUAL LEAVE
+- Check for Errors no longer re-tests Annual Leave credit sufficiency for leave that has already been fully processed in finalised pay periods.
+- This prevents historical leave from being effectively counted twice against the current/forecast balance.
+- Terminated employees whose negative Annual Leave was already recovered in final pay no longer receive stale Insufficient Credits warnings from old bookings.
+- Current/future unprocessed leave continues to be validated normally.
+
+TWO-WEEK ROSTERS
+- Job Data now supports Roster Pattern = 1 Week (Default) or 2 Week.
+- A 2-week roster has separate daily hours for Week 1 — Pay Week and Week 2 — Pay Close Week.
+- The fortnightly pattern is aligned to the configured payroll-cycle calendar rather than simply repeating one seven-day schedule.
+- Effective-dated 2-week rosters are used by schedule-dependent payroll logic, including Regular Pay, leave hours, public-holiday eligibility, Annual Leave forecasting and related daily schedule calculations.
+- Weekly-equivalent service calculations use the average of the two roster weeks where appropriate.
+
+JOB DATA REASONS
+- Added Movement reason: Acting Lower Level.
+- Acting Lower Level uses the selected position/rate and the existing effective-dated movement/return framework.
+- Added Termination reasons: Deceased, Misconduct and Abandonment.
+- These new termination reasons use the same leave-payout treatment as Voluntary Resignation: accrued Annual Leave and accrued LSL are payable; pro-rata LSL is not payable.
+
+ABSENT WITHOUT LEAVE
+- Added Leave Type: Absent Without Leave.
+- Payroll treatment is the same as Leave Without Pay: scheduled hours are unpaid and Regular Pay is removed for the affected scheduled time.
+- It follows the same LSL non-contributory-service threshold/rules as LWOP.
+- Leave history keeps the description Absent Without Leave.
+- Absence Calendar and Monthly Absence Calendar show it using the existing LWOP calendar colour/code/key; no new legend item is introduced.
+
+COMPATIBILITY
+- v1.1.33 migrates the existing v1.1.32 localStorage data model in place.
+- Existing finalised payslips, payroll history, leave, LSL, deductions, Additional Earnings, Position Data access flags, credentials and import/export data are preserved.
+- 1-week roster data is migrated as the default roster pattern; equivalent Week 1/Week 2 fields are initialized for compatibility.
+
+TESTING
+- Full automated Node regression suite passes.
+- 155 self-invoking test blocks.
+- 690 assert/assert.* call sites.
+- 70 runtime PASS summaries.
+- data-store.js, payroll-engine.js, app.js and test-cases.js pass node --check.
+- Local HTTP serving returned HTTP 200.
+- Chromium headless was attempted, but the environment timed out before returning a rendered DOM. A successful real-browser interaction test is therefore not claimed.
+- The final packaged ZIP is freshly extracted and the full suite/syntax checks are rerun from that clean copy before release.
+
+KNOWN LIMITATIONS
+- ESS and MSS remain Coming Soon landing destinations.
+- Login/password protection remains client-side demonstration functionality rather than production-grade authentication.
+- Browser-rendered interaction testing could not be completed in the execution environment; automated/simulated UI and source regressions are relied on for this release.

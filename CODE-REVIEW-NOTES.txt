@@ -1,22 +1,22 @@
-Payroll/HCM App v1.1.32 — Code Review Notes
+Payroll/HCM App v1.1.33 — Code Review Notes
 
 Baseline
-- Built from verified v1.1.31.
-- Existing effective-dated payroll, retro, LSL, deductions, leave, casual-employment and finalised-history logic was preserved unless directly affected by a v1.1.32 request.
+- Built from verified v1.1.32.
+- Existing effective-dated payroll, retro, LSL, deductions, leave, casual-employment, login/access and finalised-history behavior was preserved unless directly affected by a v1.1.33 request.
 
 Observed implementation changes
-- Added loginCredentials to state migration/export/import, defaulting missing employee passwords to 1234.
-- Login eligibility is derived from active employees; terminated employees are excluded.
-- Position access is derived from the latest effective saved non-termination Job Data position, with a current pay-rate/name fallback for legacy data lacking a position number.
-- Landing areas are Payroll Management (position flag), ESS (active employee), and MSS (position flag). ESS/MSS are not yet implemented beyond Coming Soon.
-- Home preserves the authenticated session and returns to the landing page.
-- Leave earnings rows now carry leaveBookingId/bookingStartDate/bookingEndDate metadata for presentation consolidation without changing scheduled paid units.
-- Payslip display consolidates one leave booking where treatment is homogeneous; rate/position differences remain distinct.
-- Casual Job Data saves zero hoursByDay and bypasses non-casual schedule validation.
-- Denied leave is excluded at the shared absenceCalendarStatus source, covering both calendar reports.
-- Current-period Casual Earnings rows use a shared payslip grouping key so different selected positions do not create multiple payslips solely for Casual Earnings.
+- Landing is now an isolated fixed full-screen view. appShell is explicitly hidden while landing is active and body scrolling is locked; Payroll metrics remain inside Payroll Management only.
+- Landing tile slots are semantically fixed: Payroll left, ESS centre, MSS right. Missing access hides only that tile and does not shift the other slots.
+- Home uses a standard inline SVG house icon and returns to landing without ending the session.
+- DataStore migration repairs Permanency Confirmed rows to Permanent and propagates that class across later inherited variation/movement rows until an explicit new employment-type transition.
+- Employment reconciliation ignores obsolete fixed-term expiry rows after the effective Permanent transition and clears stale contract-end state.
+- Check for Errors now skips leave periods fully covered by finalised pay history and only revalidates the unprocessed portion of a partly historical booking.
+- Schedules support rosterPattern 1-week or 2-week, with hoursByDayWeek1/hoursByDayWeek2. The fortnight pattern is anchored to PPE 04/06/2026: first seven days are Week 1 / Pay Week, final seven are Week 2 / Pay Close Week.
+- Daily schedule calculations resolve the applicable roster week by date. Weekly-equivalent calculations use the average of both weeks so LSL/FTE-like calculations do not oscillate between weeks.
+- Added Acting Lower Level, Deceased, Misconduct and Abandonment Job Data reasons.
+- Added Absent Without Leave as a distinct leave record with unpaid/LWOP processing, LWOP non-contributory service thresholds and LWOP calendar presentation.
 
 Compatibility / risk notes
-- Existing finalised payslips are not mutated to add leave booking IDs. The new consolidated leave-range behavior is strongest for newly calculated/current rows that carry booking identity metadata.
-- Position access flags were introduced before this release. v1.1.32 enforces them at the landing page. Administrators should ensure at least one active user's current position has Payroll Management access before deployment.
-- Client-side passwords are intentionally demo-only and should not be represented as production security.
+- Existing one-week schedules are migrated to rosterPattern=1-week with both week maps populated from the existing hoursByDay.
+- Historical finalised payslips are not rewritten.
+- Client-side login remains demo authentication rather than production-grade security.

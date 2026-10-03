@@ -248,11 +248,10 @@
     const profile=accessProfileForEmployee(e.id,todayIso());
     const areas=landingAreasForEmployee(e.id,todayIso());
     h('landingWelcome',`Welcome ${esc(e.firstName||E.employeeName(e).split(' ')[0]||'')}`);
-    const tiles=[];
-    if(areas.includes('payroll')) tiles.push(`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`);
-    tiles.push(`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`);
-    if(areas.includes('mss')) tiles.push(`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`);
-    h('landingTiles',tiles.join(''));
+    const payrollTile=areas.includes('payroll')?`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`:'';
+    const essTile=`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`;
+    const mssTile=areas.includes('mss')?`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`:'';
+    h('landingTiles',`<div class="landing-slot landing-slot-payroll">${payrollTile}</div><div class="landing-slot landing-slot-ess">${essTile}</div><div class="landing-slot landing-slot-mss">${mssTile}</div>`);
     document.querySelectorAll('[data-landing-area]').forEach(button=>button.addEventListener('click',()=>{
       if(button.dataset.landingArea==='payroll') openPayrollManagement();
       else if(button.dataset.landingArea==='ess') modal('Employee Self-Service','<p>Coming Soon</p>','<button type="button" class="secondary" data-close-modal>Close</button>',true);
@@ -264,6 +263,7 @@
     const shell=$('appShell'); const landing=$('landingScreen');
     if(shell) shell.hidden=true;
     if(landing) landing.hidden=false;
+    document.body.classList.add('landing-active');
     renderLanding();
     closeModal();
     resetTabScroll();
@@ -274,6 +274,7 @@
     const landing=$('landingScreen'); const shell=$('appShell');
     if(landing) landing.hidden=true;
     if(shell) shell.hidden=false;
+    document.body.classList.remove('landing-active');
     renderAll();
     resetTabScroll();
   }
@@ -317,6 +318,7 @@
     sessionStorage.removeItem('payrollAuthed');
     sessionStorage.removeItem('payrollUserId');
     currentUserId='';
+    document.body.classList.remove('landing-active');
     if($('appShell')) $('appShell').hidden=true;
     if($('landingScreen')) $('landingScreen').hidden=true;
     renderLoginUsers();
@@ -598,6 +600,22 @@
   }
   function getSchedule(prefix){ return {1:Number(v(`${prefix}Mon`)||0),2:Number(v(`${prefix}Tue`)||0),3:Number(v(`${prefix}Wed`)||0),4:Number(v(`${prefix}Thu`)||0),5:Number(v(`${prefix}Fri`)||0),6:Number(v(`${prefix}Sat`)||0),0:Number(v(`${prefix}Sun`)||0)}; }
   function weeklyHours(map){ return Object.values(map||{}).reduce((s,x)=>s+Number(x||0),0); }
+  function rosterPatternFromForm(){ return v('jdRosterPattern')||'1-week'; }
+  function rosterHoursFromForm(positionClass){
+    if(positionClass==='Casual'){
+      const zero={0:0,1:0,2:0,3:0,4:0,5:0,6:0};
+      return {rosterPattern:'1-week',hoursByDay:zero,hoursByDayWeek1:Object.assign({},zero),hoursByDayWeek2:Object.assign({},zero)};
+    }
+    const week1=getSchedule('jd');
+    const pattern=rosterPatternFromForm();
+    const week2=pattern==='2-week'?getSchedule('jd2'):Object.assign({},week1);
+    return {rosterPattern:pattern,hoursByDay:week1,hoursByDayWeek1:week1,hoursByDayWeek2:week2};
+  }
+  function rosterTotalHours(row){
+    if(!row) return 0;
+    if(String(row.rosterPattern||'1-week')==='2-week') return weeklyHours(row.hoursByDayWeek1||row.hoursByDay)+weeklyHours(row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay);
+    return weeklyHours(row.hoursByDay);
+  }
   function openAddEmployee(){
     modal('Add New Employee', `<div class="grid form-grid"><div><label>Employee ID</label><input id="newId" readonly value="${nextEmployeeId()}"></div><div><label>First Name</label><input id="newFirst" autocomplete="given-name"></div><div><label>Last Name</label><input id="newLast" autocomplete="family-name"></div></div><div class="divider"></div><h3>Personal Details</h3><div class="grid form-grid"><div><label>Date of Birth</label><input id="newDOB" type="date"></div><div><label>Email</label><input id="newEmail" type="email" autocomplete="email"></div><div><label>Phone number</label><input id="newPhone" type="tel" autocomplete="tel"></div><div class="full-line"><label>Address</label><input id="newAddressLine" autocomplete="address-line1"></div><div><label>Town/Suburb</label><input id="newTownSuburb" autocomplete="address-level2"></div><div><label>State</label><input id="newState" autocomplete="address-level1"></div><div><label>Postcode</label><input id="newPostcode" autocomplete="postal-code"></div><div><label>Country</label><input id="newCountry" autocomplete="country-name" value="Australia"></div></div><div class="divider"></div><h3>Tax Details</h3><div class="grid form-grid"><div><label>Effective Date</label><input id="newTaxEffective" type="date" value="${todayIso()}"></div><div><label>Tax File Number</label><input id="newTaxFileNumber" type="password"></div><div><label>Claim Tax Free Threshold</label><select id="newTaxThreshold"><option value="true">Yes</option><option value="false">No</option></select></div><div><label>STSL</label><select id="newTaxStsl"><option value="false">No</option><option value="true">Yes</option></select></div></div>`, `<button id="saveNewEmployee">Add Employee</button>`, false);
     $('saveNewEmployee').addEventListener('click', saveNewEmployee);
@@ -639,8 +657,8 @@
   const JOB_REASON_OPTIONS = {
     Commencement: ['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],
     Variation: ['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change'],
-    Movement: ['Acting Same Level','Acting Higher Level','Return from Temp Assignment','Promotion','Regression'],
-    Termination: ['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term']
+    Movement: ['Acting Same Level','Acting Higher Level','Acting Lower Level','Return from Temp Assignment','Promotion','Regression'],
+    Termination: ['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term','Deceased','Misconduct','Abandonment']
   };
   function positionByNumber(num){ return (state.positions||[]).find(p=>String(p.positionNumber)===String(num)); }
   function sortedJobDataRows(empId){
@@ -699,29 +717,47 @@
     const pos=positionByNumber(row.positionNumber);
     if(pos){ row.positionName=pos.positionName||''; row.department=pos.department||''; row.hourlyRate=Number(pos.hourlyRate||0); row.reportsTo=pos.reportsTo||''; row.reportsToName=row.reportsTo?((positionByNumber(row.reportsTo)||{}).positionName||''):''; }
     row.positionClass=v('jdPositionClass') || row.positionClass || 'Permanent';
-    row.hoursByDay=getSchedule('jd');
+    if(row.reason==='Permanency Confirmed') row.positionClass='Permanent';
+    Object.assign(row,rosterHoursFromForm(row.positionClass));
     return row;
   }
   function renderJobDataForm(row){
     if(!row){ h('jobDataForm','<p class="small-note">No Job Data rows yet. Click the plus button to create the first row.</p>'); return; }
     const action=row.action||'Commencement';
     const reasons=(JOB_REASON_OPTIONS[action]||[]).map(r=>`<option ${row.reason===r?'selected':''}>${esc(r)}</option>`).join('');
-    h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"><p class="small-note">First day this action applies. For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.</p></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div></div><div class="grid form-grid"><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div></div><div class="divider"></div><h3>Work Schedule</h3>${scheduleInputs('jd')}<p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="saveJobData">Save</button></div></div>`);
-    setScheduleInputs('jd', row.positionClass==='Casual'?{}:(row.hoursByDay||{})); updateJobDataScheduleForClass();
+    h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"><p class="small-note">First day this action applies. For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.</p></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div></div><div class="grid form-grid"><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div><div><label>Roster Pattern</label><select id="jdRosterPattern"><option value="1-week" ${(row.rosterPattern||'1-week')==='1-week'?'selected':''}>1 Week (Default)</option><option value="2-week" ${(row.rosterPattern||'1-week')==='2-week'?'selected':''}>2 Week</option></select></div></div><div class="divider"></div><h3>Work Schedule</h3><div id="jdWeek1Schedule"><h4 id="jdWeek1Title">Regular Week</h4>${scheduleInputs('jd')}</div><div id="jdWeek2Schedule"><h4>Week 2 — Pay Close Week</h4>${scheduleInputs('jd2')}</div><p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="saveJobData">Save</button></div></div>`);
+    setScheduleInputs('jd', row.positionClass==='Casual'?{}:(row.hoursByDayWeek1||row.hoursByDay||{}));
+    setScheduleInputs('jd2', row.positionClass==='Casual'?{}:(row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay||{}));
+    updateJobDataScheduleForClass();
     $('jdAction').addEventListener('change',()=>{ const draft=syncJobDataRowFromForm(Object.assign({}, row), false); draft.action=v('jdAction'); draft.reason=''; selectedJobDataDraft=draft; renderJobData(); });
-    $('jdReason').addEventListener('change',()=>{ const reason=v('jdReason'); if(/Casual/.test(reason)) setv('jdPositionClass','Casual'); else if(/Fixed-Term|Fixed Term Contract/.test(reason)) setv('jdPositionClass','Fixed-Term'); else if(/Permanent/.test(reason)) setv('jdPositionClass','Permanent'); updateJobDataScheduleForClass(); });
+    $('jdReason').addEventListener('change',()=>{ const reason=v('jdReason'); if(/Casual/.test(reason)) setv('jdPositionClass','Casual'); else if(/Fixed-Term|Fixed Term Contract/.test(reason)) setv('jdPositionClass','Fixed-Term'); else if(reason==='Permanency Confirmed' || /Permanent/.test(reason)) setv('jdPositionClass','Permanent'); updateJobDataScheduleForClass(); });
     $('jdPositionClass').addEventListener('change',updateJobDataScheduleForClass);
+    $('jdRosterPattern').addEventListener('change',updateJobDataScheduleForClass);
     $('jdPositionNumber').addEventListener('change',()=>populateJobDataPosition(v('jdPositionNumber')));
     $('jdPositionLookup').addEventListener('click',openJobDataPositionLookup);
-    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun'].forEach(id=>$(id).addEventListener('input',updateJobDataWeeklyHours));
+    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun','jd2Mon','jd2Tue','jd2Wed','jd2Thu','jd2Fri','jd2Sat','jd2Sun'].forEach(id=>$(id).addEventListener('input',updateJobDataWeeklyHours));
     $('saveJobData').addEventListener('click',saveJobDataRow);
   }
   function setScheduleInputs(prefix,map){ ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d,i)=>{ const key=[1,2,3,4,5,6,0][i]; if($(prefix+d)) setv(prefix+d, Number((map||{})[key]||0)); }); }
-  function updateJobDataWeeklyHours(){ if($('jdWeeklyHours')) h('jdWeeklyHours', `Total Weekly Hours: ${weeklyHours(getSchedule('jd')).toFixed(2)}`); }
+  function updateJobDataWeeklyHours(){
+    if(!$('jdWeeklyHours')) return;
+    const casual=v('jdPositionClass')==='Casual';
+    if(casual) return h('jdWeeklyHours','Total Scheduled Hours: 0.00 — Casual employees do not have a regular work schedule.');
+    const pattern=rosterPatternFromForm();
+    const w1=weeklyHours(getSchedule('jd'));
+    if(pattern==='2-week'){
+      const w2=weeklyHours(getSchedule('jd2'));
+      h('jdWeeklyHours',`Week 1 (Pay Week): ${w1.toFixed(2)} hours · Week 2 (Pay Close Week): ${w2.toFixed(2)} hours · Fortnight: ${(w1+w2).toFixed(2)} hours`);
+    }else h('jdWeeklyHours',`Total Weekly Hours: ${w1.toFixed(2)}`);
+  }
   function updateJobDataScheduleForClass(){
     const casual=v('jdPositionClass')==='Casual';
-    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun'].forEach(id=>{ const el=$(id); if(!el) return; if(casual) el.value='0'; el.disabled=casual; });
-    if($('jdWeeklyHours')) h('jdWeeklyHours',casual?'Total Weekly Hours: 0.00 — Casual employees do not have a regular work schedule.':`Total Weekly Hours: ${weeklyHours(getSchedule('jd')).toFixed(2)}`);
+    const pattern=casual?'1-week':rosterPatternFromForm();
+    if($('jdRosterPattern')){ if(casual) $('jdRosterPattern').value='1-week'; $('jdRosterPattern').disabled=casual; }
+    ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun','jd2Mon','jd2Tue','jd2Wed','jd2Thu','jd2Fri','jd2Sat','jd2Sun'].forEach(id=>{ const el=$(id); if(!el) return; if(casual) el.value='0'; el.disabled=casual; });
+    if($('jdWeek2Schedule')) $('jdWeek2Schedule').style.display=!casual&&pattern==='2-week'?'block':'none';
+    if($('jdWeek1Title')) h('jdWeek1Title',pattern==='2-week'?'Week 1 — Pay Week':'Regular Week');
+    updateJobDataWeeklyHours();
   }
   function populateJobDataPosition(num){
     const p=positionByNumber(num); if(!p){ setv('jdPositionName',''); setv('jdDepartment',''); setv('jdHourlyRate',''); setv('jdReportsTo',''); h('jdReportsToName',''); return; }
@@ -736,9 +772,11 @@
     const pos=positionByNumber(v('jdPositionNumber'));
     const reportsTo=pos ? (pos.reportsTo||'') : '';
     const existing = selectedJobDataDraft || (jobDataDisplayRows(selectedJobDataEmp)[selectedJobDataRowIndex]||{});
-    const positionClass=v('jdPositionClass');
-    const hoursByDay=positionClass==='Casual'?{0:0,1:0,2:0,3:0,4:0,5:0,6:0}:getSchedule('jd');
-    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason:v('jdReason'), positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass, hoursByDay, saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
+    let positionClass=v('jdPositionClass');
+    const reason=v('jdReason');
+    if(reason==='Permanency Confirmed') positionClass='Permanent';
+    const roster=rosterHoursFromForm(positionClass);
+    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason, positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass, rosterPattern:roster.rosterPattern, hoursByDay:roster.hoursByDay, hoursByDayWeek1:roster.hoursByDayWeek1, hoursByDayWeek2:roster.hoursByDayWeek2, saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
   }
   function flagLeaveAfterTermination(empId,terminationEffectiveDate){
     const e=emp(empId); if(!e || !terminationEffectiveDate) return [];
@@ -761,7 +799,7 @@
     if(!row.effectiveDate) return alert('Enter an effective date.');
     if(!row.reason) return alert('Select a reason.');
     if(row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
-    if(row.action!=='Termination' && row.positionClass!=='Casual' && weeklyHours(row.hoursByDay)<=0) return alert('Enter a work schedule.');
+    if(row.action!=='Termination' && row.positionClass!=='Casual' && rosterTotalHours(row)<=0) return alert('Enter a work schedule.');
     const existing=(state.jobDataRows||[]).find(r=>r.id===row.id);
     const appliedRow = existing ? Object.assign(existing,row) : row;
     if(!existing) state.jobDataRows.push(row);
@@ -790,6 +828,7 @@
     const isNewHire=/^New Hire\b/.test(row.reason||'');
     const isNewFixedTermContract=row.reason==='New Fixed Term Contract';
     if(isNewFixedTermContract){ e.type='Fixed Term'; e.contractEndDate=''; e.autoTerminate=false; e.terminationDate=''; e.terminationReason=''; e.status='Active'; }
+    if(row.action==='Variation' && row.reason==='Permanency Confirmed'){ row.positionClass='Permanent'; e.type='Permanent'; e.contractEndDate=''; e.autoTerminate=false; if(e.terminationReason==='Expiry of Fixed Term'){ e.terminationDate=''; e.terminationReason=''; } }
     if(isRehire || isNewHire || !e.startDate){
       if(!e.employmentSegments.some(seg=>seg.startDate===row.effectiveDate)) e.employmentSegments.push({id:uid('segment'),startDate:row.effectiveDate,endDate:'',inclusiveEnd:false,terminationReason:'',source:'jobData'});
       e.startDate=row.effectiveDate;
@@ -816,9 +855,9 @@
     if(existingRate) Object.assign(existingRate,rateRow); else state.payRates.push(rateRow);
     const schedId=row.scheduleId||uid('schedule'); row.scheduleId=schedId;
     const existingSched=(state.schedules||[]).find(r=>r.id===schedId);
-    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,hoursByDay:row.hoursByDay,jobDataId:row.id};
+    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,rosterPattern:row.rosterPattern||'1-week',hoursByDay:row.hoursByDay,hoursByDayWeek1:row.hoursByDayWeek1||row.hoursByDay,hoursByDayWeek2:row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay,jobDataId:row.id};
     if(existingSched) Object.assign(existingSched,schedRow); else state.schedules.push(schedRow);
-    addJobEvent(e.id,'Job Data',row.effectiveDate,`${row.action} — ${row.reason} — ${row.positionName} — ${weeklyHours(row.hoursByDay).toFixed(2)} hours/week`,'jobData',row.id);
+    addJobEvent(e.id,'Job Data',row.effectiveDate,`${row.action} — ${row.reason} — ${row.positionName} — ${row.rosterPattern==='2-week'?`${weeklyHours(row.hoursByDayWeek1||row.hoursByDay).toFixed(2)} hours Week 1 / ${weeklyHours(row.hoursByDayWeek2||row.hoursByDay).toFixed(2)} hours Week 2`:`${weeklyHours(row.hoursByDay).toFixed(2)} hours/week`}`,'jobData',row.id);
   }
   function removeJobDataRow(row){
     if(!row) return;
@@ -1106,7 +1145,7 @@
     $('bookLeaveBtn').addEventListener('click',openLeaveModal); $('absenceCalendarBtn').addEventListener('click',openCalendarSelect); $('cashOutLeaveBtn').addEventListener('click',openCashOutLeave); $('filterLeaveBtn').addEventListener('click',openLeaveFilter); $('prevMonth').addEventListener('click',()=>{leaveMonthOffset--;renderLeave();}); $('nextMonth').addEventListener('click',()=>{leaveMonthOffset++;renderLeave();}); document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this leave entry','Yes',()=>deleteLeaveEntry(b.dataset.delLeave)))); document.querySelectorAll('[data-leave-status]').forEach(el=>el.addEventListener('change',()=>setLeaveStatus(el.dataset.leaveStatus,el.value)));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option><option>Absent Without Leave</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
     ['leaveEmp','leaveType','leaveStart','parentalPayOption'].forEach(id=>{
       $(id).addEventListener('change',()=>{
         if(E.isParentalLeaveType(v('leaveType'))){
@@ -1126,7 +1165,7 @@
     const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence,payOption:v('parentalPayOption')||'Full Pay'});
     const duration=$('leaveDuration');
     const single=v('leaveStart') && v('leaveStart')===v('leaveEnd');
-    const editable=single && ['Annual Leave','Personal Leave','LWOP','Family and Domestic Violence Leave'].includes(v('leaveType')) && basic.partialAllowed;
+    const editable=single && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave','Family and Domestic Violence Leave'].includes(v('leaveType')) && basic.partialAllowed;
     duration.readOnly=!editable;
     duration.disabled=!editable && v('leaveType')==='Long Service Leave';
     duration.max=basic.maxHours || '';
@@ -1555,7 +1594,7 @@
     });
   }
   function statementLeaveWithoutPayRows(e,asAt,serviceRows){
-    return (state.leaveBookings||[]).filter(l=>l.empId===e.id&&l.type==='LWOP'&&l.startDate&&E.compare(l.startDate,asAt)<=0).map(l=>{
+    return (state.leaveBookings||[]).filter(l=>l.empId===e.id&&['LWOP','Absent Without Leave'].includes(l.type)&&l.startDate&&E.compare(l.startDate,asAt)<=0).map(l=>{
       const prior=[...serviceRows].filter(r=>E.compare(r.date,l.startDate)<=0).sort((a,b)=>E.compare(b.date,a.date))[0];
       return {job:(prior&&prior.job)||1,begin:l.startDate,end:E.compare(l.endDate,asAt)>0?asAt:l.endDate};
     });
@@ -1705,6 +1744,16 @@
     save(); closeModal(); renderSettings(); toast(isCreate?'Position added':'Position saved');
   }
 
+  function leaveErrorValidationWindow(l){
+    if(!l || l.status==='Denied') return null;
+    const finalisedEnds=E.PAY_CYCLES.filter(pc=>E.isFinalised(state,pc)).map(pc=>pc.end).sort(E.compare);
+    const lastFinalisedEnd=finalisedEnds.length?finalisedEnds[finalisedEnds.length-1]:'';
+    if(lastFinalisedEnd && E.compare(l.endDate,lastFinalisedEnd)<=0) return null;
+    const startDate=lastFinalisedEnd && E.compare(l.startDate,lastFinalisedEnd)<=0 ? E.addDays(lastFinalisedEnd,1) : l.startDate;
+    if(E.compare(startDate,l.endDate)>0) return null;
+    return {startDate,endDate:l.endDate,lastFinalisedEnd};
+  }
+
   function checkForErrors(){
     calculateAllForCurrent();
     const c=currentCycle();
@@ -1723,16 +1772,21 @@
       const leaveNegativeLimit=E.leaveNegativeLimitHours(state,e,c.end);
       const forecastAnnualUsed=E.forecastApprovedAnnualLeaveHoursUsed(state,e,c.end);
       if((bal.annual < -leaveNegativeLimit-0.0001 && forecastAnnualUsed<=0.0001) || bal.personal < -leaveNegativeLimit-0.0001 || bal.lslAccrued<0) warnings.push(`${E.employeeName(e)} has a leave balance beyond the permitted limit.`);
-      const isFixed=(activeJob&&activeJob.positionClass==='Fixed-Term') || e.type==='Fixed Term';
+      const isFixed=employmentTypeFor(e,c.end)==='Fixed Term';
       const hasTermRow=(state.jobDataRows||[]).some(r=>r.empId===e.id && r.action==='Termination');
       if(isFixed && !hasTermRow) warnings.push(`${E.employeeName(e)} is fixed-term but does not have a Termination row in Job Data.`);
     });
     (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>warnings.push(`${E.employeeName(emp(a.empId)||{})} has unsaved Additional Earnings.`));
     results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
-      if(l.status==='Denied') return;
+      const window=leaveErrorValidationWindow(l); if(!window) return;
       const e=emp(l.empId); if(!e) return;
-      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,l.startDate,l.endDate,l.requestedHours!==undefined?l.requestedHours:(l.startDate===l.endDate?l.hours:undefined),l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay',forecastApproved:l.forecastApproved===true});
+      // Do not re-book/re-deduct historical leave that has already been processed in a
+      // finalised pay. The committed balance already includes it. Only the unprocessed
+      // portion of current/future leave is subject to today's entitlement/forecast check.
+      const validationStart=window.startDate;
+      const requestedHours=(validationStart===l.startDate && l.startDate===l.endDate) ? (l.requestedHours!==undefined?l.requestedHours:l.hours) : undefined;
+      const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,validationStart,l.endDate,requestedHours,l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay',forecastApproved:l.forecastApproved===true});
       if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
     });
     const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
@@ -1741,6 +1795,14 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.33',notes:[
+      'Separated the post-login landing page from Payroll Management, centred the fixed-position Payroll/ESS/MSS tiles, removed payroll metrics from the landing view and improved the Home icon.',
+      'Corrected Variation - Permanency Confirmed so effective employment becomes Permanent and obsolete fixed-term expiry state no longer causes false errors or auto-termination.',
+      'Stopped Check for Errors from revalidating already-finalised historical Annual Leave bookings and double-counting their balance impact.',
+      'Added optional effective-dated 2-week Job Data rosters: Week 1 is Pay Week and Week 2 is Pay Close Week, while the existing 1-week roster remains the default.',
+      'Added Acting Lower Level as a Movement reason and Deceased, Misconduct and Abandonment as Termination reasons with resignation-equivalent accrued leave payouts.',
+      'Added Absent Without Leave with LWOP payroll/LSL treatment while displaying it under the existing LWOP calendar key.'
+    ]},
     {version:'v1.1.32',notes:[
       'Added active-employee user login selection with per-user credentials defaulting to 1234 and a role-aware application landing page.',
       'Added Payroll Management, Employee Self-Service and Manager Self Service landing tiles; Payroll/MSS visibility follows effective Position Data access flags while ESS/MSS are Coming Soon.',
@@ -1992,5 +2054,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();

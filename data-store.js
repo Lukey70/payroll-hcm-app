@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.32';
+  const APP_VERSION = '1.1.33';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -146,7 +146,7 @@
       if(!existing || typeof existing!=='object') state.loginCredentials[e.id]={password:'1234'};
       else if(existing.password===undefined || existing.password===null || existing.password==='') existing.password='1234';
     });
-    state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; });
+    state.schedules.forEach(s=>{ if(!s.id) s.id = uid('schedule'); if(!s.hoursByDay) s.hoursByDay = {}; if(!s.rosterPattern) s.rosterPattern='1-week'; if(!s.hoursByDayWeek1) s.hoursByDayWeek1=clone(s.hoursByDay||{}); if(!s.hoursByDayWeek2) s.hoursByDayWeek2=clone(s.hoursByDayWeek1||s.hoursByDay||{}); });
     state.payRates.forEach(r=>{ if(!r.id) r.id = uid('rate'); if(!r.changeType && r.type) r.changeType = r.type; if(!r.changeType) r.changeType = 'Permanent'; });
     state.leaveBookings.forEach(l=>{ if(!l.id) l.id = uid('leave'); if(!l.status) l.status = 'Approved'; if(!Array.isArray(l.statusHistory)) l.statusHistory=[]; if(l.evidenceProvided===undefined) l.evidenceProvided=false; if(l.confidential===undefined) l.confidential=(l.type==='Family and Domestic Violence Leave'); if(l.type==='Parental Leave - Paid' && !l.payOption) l.payOption='Full Pay'; if(l.forecastApproved===undefined) l.forecastApproved=false; if(l.forecastBalanceBefore===undefined) l.forecastBalanceBefore=''; if(l.forecastBalanceAfter===undefined) l.forecastBalanceAfter=''; if(l.forecastApprovedAtCycleId===undefined) l.forecastApprovedAtCycleId=''; });
     state.additionalEarnings.forEach(a=>{
@@ -166,7 +166,20 @@
     });
     state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; if(d.endDate === undefined || d.endDate === null) d.endDate=''; if(d.deductionType==='Union Fees') d.percentage=''; });
     state.positions.forEach(pos=>{ if(!pos.id) pos.id = uid('pos'); if(!pos.positionNumber) pos.positionNumber = String(Math.floor(1000 + Math.random()*9000)); if(pos.active === undefined) pos.active = true; if(pos.hourlyRate === undefined) pos.hourlyRate = 0; if(!Array.isArray(pos.rateHistory)) pos.rateHistory=[]; if(pos.accessManagerSelfService === undefined) pos.accessManagerSelfService=false; if(pos.accessPayrollManagement === undefined) pos.accessPayrollManagement=false; });
-    state.jobDataRows.forEach(j=>{ if(!j.id) j.id = uid('jobdata'); if(j.effectiveSequence === undefined) j.effectiveSequence = 0; if(!j.action) j.action = 'Commencement'; if(!j.reason) j.reason = ''; if(!j.hoursByDay) j.hoursByDay = {}; });
+    state.jobDataRows.forEach(j=>{ if(!j.id) j.id = uid('jobdata'); if(j.effectiveSequence === undefined) j.effectiveSequence = 0; if(!j.action) j.action = 'Commencement'; if(!j.reason) j.reason = ''; if(!j.hoursByDay) j.hoursByDay = {}; if(!j.rosterPattern) j.rosterPattern='1-week'; if(!j.hoursByDayWeek1) j.hoursByDayWeek1=clone(j.hoursByDay||{}); if(!j.hoursByDayWeek2) j.hoursByDayWeek2=clone(j.hoursByDayWeek1||j.hoursByDay||{}); if(j.action==='Variation' && j.reason==='Permanency Confirmed') j.positionClass='Permanent'; });
+    // Repair v1.1.32 records created after a Permanency Confirmed row inherited the
+    // stale Fixed-Term class. Permanency remains effective until an explicit later
+    // employment-type transition is recorded.
+    state.employees.forEach(e=>{
+      let permanentActive=false;
+      (state.jobDataRows||[]).filter(j=>j.empId===e.id&&j.saved!==false).slice().sort((a,b)=>String(a.effectiveDate||'').localeCompare(String(b.effectiveDate||''))||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0)).forEach(j=>{
+        if(j.action==='Variation'&&j.reason==='Permanency Confirmed'){ j.positionClass='Permanent'; permanentActive=true; return; }
+        const explicitFixed=/Fixed-Term|Fixed Term Contract/.test(String(j.reason||'')) || j.reason==='Permanency Removed';
+        const explicitCasual=/Casual/.test(String(j.reason||''));
+        if(explicitFixed||explicitCasual){ permanentActive=false; return; }
+        if(permanentActive&&j.action!=='Termination') j.positionClass='Permanent';
+      });
+    });
     state.cashOutRequests.forEach(c=>{ if(!c.id) c.id = uid('cash'); if(c.saved === undefined) c.saved = true; if(c.deleted === undefined) c.deleted = false; c.hours = Number(c.hours||0); });
     state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });
     state.alerts.forEach(a=>{ if(!a.id) a.id = uid('alert'); if(a.read === undefined) a.read = false; if(a.message === undefined) a.message = ''; });

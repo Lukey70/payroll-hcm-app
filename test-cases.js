@@ -36,8 +36,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.32'), 'sidebar/version label must show v1.1.32');
-  assert(data.includes("APP_VERSION = '1.1.32'"), 'data-store version must be 1.1.32');
+  assert(html.includes('v1.1.33'), 'sidebar/version label must show v1.1.33');
+  assert(data.includes("APP_VERSION = '1.1.33'"), 'data-store version must be 1.1.33');
 })();
 
 (function testAnchorPayCycle(){
@@ -2220,11 +2220,121 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
 
 (function testV132CasualJobDataZeroScheduleAndLandingUiStrings(){
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8'); const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
-  assert(app.includes("row.positionClass!=='Casual' && weeklyHours(row.hoursByDay)<=0"),'Casual Job Data must not require a regular work schedule');
-  assert(app.includes("positionClass==='Casual'?{0:0,1:0,2:0,3:0,4:0,5:0,6:0}:getSchedule('jd')"),'Casual Job Data must save a zero regular schedule');
+  assert(app.includes("row.positionClass!=='Casual' && rosterTotalHours(row)<=0"),'Casual Job Data must not require a regular work schedule');
+  assert(app.includes("if(positionClass==='Casual')")&&app.includes("rosterPattern:'1-week'"),'Casual Job Data must save a zero regular schedule');
   assert(html.includes('id="landingScreen"')&&html.includes('id="homeButton"'),'v1.1.32 must include the landing page and Home button');
   assert(app.includes('Employee Self-Service')&&app.includes('Manager Self Service')&&app.includes('Coming Soon'),'ESS/MSS landing tiles must be present as Coming Soon areas');
 })();
+
+
+(function testV133LandingIsSeparateCentredAndFixedSlots(){
+  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+  const css=fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const landing=html.slice(html.indexOf('id="landingScreen"'),html.indexOf('id="processingScreen"'));
+  assert(!landing.includes('metricEmployees')&&!landing.includes('metricGross'),'Payroll summary metrics must not be part of the landing page');
+  assert(css.includes('.landing-screen{position:fixed;inset:0')&&css.includes('.app-shell[hidden]{display:none!important}'),'Landing page must be an isolated full-screen view and hidden Payroll Management must remain hidden');
+  assert(app.includes('landing-slot-payroll')&&app.includes('landing-slot-ess')&&app.includes('landing-slot-mss'),'Landing page must preserve fixed left/centre/right tile slots');
+  assert(app.includes("document.body.classList.add('landing-active')")&&app.includes("document.body.classList.remove('landing-active')"),'Landing navigation must switch explicit page/view state');
+  assert(html.includes('id="homeButton"')&&html.includes('<svg viewBox="0 0 24 24"'),'Home navigation must use the improved house SVG icon');
+})();
+
+(function testV133PermanencyConfirmedBecomesPermanentAndIgnoresOldExpiry(){
+  const state=DataStore.migrate(Object.assign(baseState(),{
+    employees:[{id:'perm133',firstName:'Pat',lastName:'Permanent',name:'Pat Permanent',status:'Active',type:'Fixed Term',startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',contractEndDate:'2026-12-31',autoTerminate:false,employmentSegments:[{id:'seg133',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]}],
+    jobDataRows:[
+      {id:'start133',empId:'perm133',effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Fixed-Term',positionClass:'Fixed-Term',positionNumber:'P1',saved:true},
+      {id:'permrow133',empId:'perm133',effectiveDate:'2026-09-01',effectiveSequence:0,action:'Variation',reason:'Permanency Confirmed',positionClass:'Fixed-Term',positionNumber:'P1',saved:true},
+      {id:'paychange133',empId:'perm133',effectiveDate:'2026-10-01',effectiveSequence:0,action:'Variation',reason:'Pay Rate Change',positionClass:'Fixed-Term',positionNumber:'P1',saved:true},
+      {id:'expiry133',empId:'perm133',effectiveDate:'2027-01-01',effectiveSequence:0,action:'Termination',reason:'Expiry of Fixed Term',saved:true}
+    ]
+  }));
+  const permRow=state.jobDataRows.find(r=>r.id==='permrow133');
+  assert.strictEqual(permRow.positionClass,'Permanent','Migration must repair legacy Permanency Confirmed rows to Permanent');
+  assert.strictEqual(state.jobDataRows.find(r=>r.id==='paychange133').positionClass,'Permanent','Later variation rows inherited from the old fixed-term bug must remain Permanent until an explicit new employment-type transition');
+  const e=state.employees[0]; E.reconcileEmploymentFromJobData(state,e);
+  assert.strictEqual(E.activeEmploymentType(state,e,'2026-10-03'),'Permanent');
+  assert.strictEqual(e.type,'Permanent');
+  assert.strictEqual(e.contractEndDate,'','Permanency Confirmed must clear stale fixed-term contract end state');
+  assert.strictEqual(e.terminationDate,'','A future fixed-term expiry that became obsolete after permanency must be ignored');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("reason==='Permanency Confirmed' || /Permanent/.test(reason)"),'Permanency Confirmed must automatically select Permanent in Job Data');
+  assert(app.includes("const isFixed=employmentTypeFor(e,c.end)==='Fixed Term'"),'Check for Errors must use effective employment type rather than stale master fixed-term state');
+})();
+
+(function testV133HistoricalFinalisedAnnualLeaveIsNotRevalidatedByErrorCheck(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const st=context.window.PayrollApp.getState();
+  st.finalisedCycles={'1':{finalised:true}};
+  const historical={id:'hist133',empId:'x',type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'};
+  const future={id:'future133',empId:'x',type:'Annual Leave',startDate:'2026-06-08',endDate:'2026-06-08',hours:7.5,status:'Approved'};
+  assert.strictEqual(context.window.PayrollApp.leaveErrorValidationWindow(historical),null,'Fully finalised historical Annual Leave must not be re-tested for credits');
+  assert.strictEqual(context.window.PayrollApp.leaveErrorValidationWindow(future).startDate,'2026-06-08','Unprocessed future leave must still be validated');
+})();
+
+(function testV133TwoWeekRosterUsesPayWeekAndPayCloseWeek(){
+  const state=baseState(); const e=addEmployee(state,{id:'rost133'}); addRate(state,e.id);
+  state.schedules.push({id:'tw133',empId:e.id,effectiveDate:'2026-05-22',rosterPattern:'2-week',hoursByDayWeek1:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},hoursByDayWeek2:{1:4,2:4,3:4,4:4,5:4,6:0,0:0},hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
+  assert.strictEqual(E.rosterWeekForDate('2026-05-25'),1,'First seven days of the anchored pay cycle must be Week 1 / pay week');
+  assert.strictEqual(E.rosterWeekForDate('2026-06-01'),2,'Final seven days of the anchored pay cycle must be Week 2 / pay-close week');
+  assert.strictEqual(E.activeSchedule(state,e.id,'2026-05-25').hoursByDay[1],7.5);
+  assert.strictEqual(E.activeSchedule(state,e.id,'2026-06-01').hoursByDay[1],4);
+  assert.strictEqual(E.weeklyHoursFromSchedule(E.activeSchedule(state,e.id,'2026-06-01')),28.75,'Weekly-equivalent calculations such as LSL must use the average of both roster weeks');
+  const leave=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-06-02','2026-06-02');
+  assert.strictEqual(leave.hours,4,'Leave booking must use the Week 2 schedule when the date is in pay-close week');
+  const pays=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(totalUnitsByDesc(pays,'Public Holiday'),4,'Rostered public holiday must use the applicable Week 2 roster hours');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('Roster Pattern')&&app.includes('Week 1 — Pay Week')&&app.includes('Week 2 — Pay Close Week'),'Job Data must expose the two-week roster UI with the requested week labels');
+})();
+
+(function testV133ActingLowerLevelMovementUsesSelectedPositionRate(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes("'Acting Lower Level'"),'Job Data movement reasons must include Acting Lower Level');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const st=context.window.PayrollApp.getState();
+  st.employees.push({id:'low133',firstName:'Low',lastName:'Actor',name:'Low Actor',type:'Permanent',startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',hourlyRate:50,employmentSegments:[{id:'ls',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}],status:'Active'});
+  st.positions.push({id:'lp133',positionNumber:'LOW133',positionName:'Lower Position',department:'Operations',hourlyRate:30,active:true});
+  context.window.PayrollApp.applyJobDataToEmployee({id:'move133',empId:'low133',effectiveDate:'2026-05-25',effectiveSequence:0,action:'Movement',reason:'Acting Lower Level',positionNumber:'LOW133',positionName:'Lower Position',department:'Operations',hourlyRate:30,positionClass:'Permanent',rosterPattern:'1-week',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},hoursByDayWeek1:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},hoursByDayWeek2:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},saved:true});
+  assert.strictEqual(E.activePayRate(st,'low133','2026-05-26').hourlyRate,30,'Acting Lower Level must use the selected lower position pay rate from its effective date');
+})();
+
+(function testV133NewTerminationReasonsUseResignationPayoutTreatment(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  ['Deceased','Misconduct','Abandonment'].forEach(reason=>assert(app.includes(`'${reason}'`),`${reason} must be available as a termination reason`));
+  ['Deceased','Misconduct','Abandonment'].forEach((reason,index)=>{
+    const state=baseState(); const e=addEmployee(state,{id:`term133${index}`,startDate:'2019-05-22',originalStartDate:'2019-05-22',lslServiceDate:'2019-05-22',terminationDate:'2026-05-29',terminationReason:reason,annualLeaveBalance:15,employmentSegments:[{id:`seg${index}`,startDate:'2019-05-22',endDate:'2026-05-29',inclusiveEnd:false,terminationReason:reason}]}); addSchedule(state,e.id,'2026-05-22'); addRate(state,e.id,'2026-05-22');
+    const pays=E.calculateEmployee(state,e.id,1,false); const rows=pays.flatMap(p=>p.rows);
+    assert(rows.some(r=>r.description==='Annual Leave Payout'),`${reason} must pay accrued Annual Leave`);
+    assert(rows.some(r=>r.description==='Long Service Leave Payout'),`${reason} must pay accrued LSL`);
+    assert(!rows.some(r=>r.description==='Pro-rata LSL Payout'),`${reason} must not pay pro-rata LSL`);
+  });
+})();
+
+(function testV133AbsentWithoutLeaveUsesLwopPayrollAndCalendarRules(){
+  const state=baseState(); const e=addEmployee(state,{id:'awol133'}); addSchedule(state,e.id); addRate(state,e.id);
+  state.leaveBookings.push({id:'awolDay133',empId:e.id,type:'Absent Without Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  const pays=E.calculateEmployee(state,e.id,1,false); const awol=pays.flatMap(p=>p.rows).find(r=>r.description==='Absent Without Leave');
+  assert(awol&&awol.units===7.5&&awol.amount===0,'Absent Without Leave must be unpaid and remove Regular Pay for the scheduled hours');
+  const cal=E.absenceCalendarStatus(state,e,'2026-05-25');
+  assert.strictEqual(cal.cssClass,'lwop'); assert.strictEqual(cal.label,'LWOP','Absent Without Leave must use the existing LWOP calendar key/colour');
+  state.leaveBookings.push({id:'awolLong133',empId:e.id,type:'Absent Without Leave',startDate:'2026-06-10',endDate:'2026-06-24',hours:0,status:'Approved'});
+  const nonContrib=E.lslNonContributoryRanges(state,e,'2026-05-22','2026-06-30');
+  assert(nonContrib.some(r=>r.start==='2026-06-10'&&r.end==='2026-06-24'),'Absent Without Leave over 14 calendar days must follow the LWOP non-contributory LSL rule');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('<option>Absent Without Leave</option>'),'Leave booking UI must include Absent Without Leave');
+})();
+
+console.log('PASS: v1.1.33 isolated landing page, fixed tile positions, improved Home icon and access navigation are verified.');
+console.log('PASS: v1.1.33 Permanency Confirmed and historical Annual Leave error-check fixes are verified.');
+console.log('PASS: v1.1.33 two-week roster, Acting Lower Level, new termination reasons and Absent Without Leave are verified.');
 
 console.log('PASS: v1.1.32 consolidated leave ranges, denied-calendar exclusion and casual zero-schedule behavior are verified.');
 console.log('PASS: v1.1.32 Casual Earnings single-payslip grouping and active-user login/access landing rules are verified.');

@@ -1,12 +1,12 @@
-Payroll/HCM App v1.1.32 — Test Results
+Payroll/HCM App v1.1.33 — Test Results
 Date: 03 October 2026
 
 AUTOMATED REGRESSION SUITE
 Command: node test-cases.js
 Result: PASS (exit code 0)
-Test blocks: 148
-assert/assert.* call sites: 656
-Runtime PASS summaries: 67
+Test blocks: 155
+assert/assert.* call sites: 690
+Runtime PASS summaries: 70
 
 JAVASCRIPT SYNTAX
 node --check data-store.js: PASS
@@ -14,22 +14,21 @@ node --check payroll-engine.js: PASS
 node --check app.js: PASS
 node --check test-cases.js: PASS
 
-V1.1.32-SPECIFIC COVERAGE
-- Login screen includes active-employee user selection and default per-user password migration.
-- Terminated employees are excluded from login eligibility.
-- Effective Position Data access flags control Payroll Management and MSS landing availability; ESS remains available to active users.
-- Landing page/Home workflow source and role logic are present.
-- Single leave bookings consolidate to one payslip display line across intervening weekends/non-rostered days while preserving scheduled leave units.
-- Denied leave is hidden from calendar display while Awaiting Manager Approval remains visible/pending.
-- Casual Job Data allows/saves a zero regular schedule and non-casual schedule validation remains intact.
-- Casual Earnings for different selected positions in one pay period remain on one payslip with distinct position lines.
+V1.1.33-SPECIFIC COVERAGE
+- Landing page is isolated from Payroll Management, suppresses payroll dashboard metrics, uses fixed semantic tile positions, and includes the improved Home SVG control.
+- Variation — Permanency Confirmed changes effective employment class to Permanent, repairs inherited stale Fixed-Term rows, and ignores obsolete fixed-term expiry state.
+- Check for Errors skips fully finalised historical Annual Leave when validating credits while continuing to validate future/unprocessed leave.
+- Two-week roster Week 1/Week 2 alignment follows the configured fortnightly pay-cycle anchor and feeds active schedule, leave and public-holiday calculations.
+- Acting Lower Level uses the selected lower-level position/rate through the existing movement framework.
+- Deceased, Misconduct and Abandonment terminations receive resignation-equivalent accrued AL/LSL payouts without pro-rata LSL.
+- Absent Without Leave receives LWOP-equivalent unpaid and LSL non-contributory treatment while using the existing LWOP calendar legend/display.
 
 EXISTING REGRESSION COVERAGE
-The suite continues to cover open-cycle anchoring, retro cut-off/settlement, effective-dated Job Data, terminations/rehire/contract extensions, leave balances and forecast Annual Leave, 7-year/65-day LSL, non-contributory service, deductions, Union Fees, STSL/tax/super, public holidays, parental leave, certification, payslips, reports, Statement of Service and import/export compatibility.
+The suite continues to cover login/access, configured open-cycle anchoring, retro cut-off/settlement, effective-dated Job Data, termination/rehire/contract extensions, leave balances and forecast Annual Leave, 7-year/65-day LSL, non-contributory service, casual employment/Casual Earnings, deductions/Union Fees, STSL/tax/super, public holidays, parental leave, certification, payslips, reports, Statement of Service and import/export compatibility.
 
 HTTP / BROWSER CHECK
 Local HTTP server: PASS (HTTP 200 for index.html).
 Chromium headless: ATTEMPTED. The environment timed out before returning a rendered DOM; no successful real-browser interaction pass is claimed.
 
 PACKAGE VERIFICATION
-Exact final ZIP fresh-extraction verification: PASS. The packaged archive was extracted to a clean directory; node test-cases.js again exited 0 with 148 test blocks / 656 assertion call sites / 67 PASS summaries, all four JavaScript syntax checks passed, and ZIP integrity was clean.
+Exact final ZIP fresh-extraction verification: PASS. The packaged archive was extracted to a clean directory; node test-cases.js again exited 0 with 155 test blocks / 690 assertion call sites / 70 PASS summaries, all four JavaScript syntax checks passed, and ZIP integrity was clean.

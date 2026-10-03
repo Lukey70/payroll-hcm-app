@@ -1,20 +1,18 @@
-Payroll/HCM App v1.1.32
+Payroll/HCM App v1.1.33
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.32 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.33 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
 
 IMPORTANT BEFORE UPDATE
-Ensure at least one active employee's current Position Data record has "Access to Payroll Management" enabled. v1.1.32 now uses that effective position flag to decide whether the Payroll Management landing tile is visible.
+Ensure at least one active employee's current Position Data record has "Access to Payroll Management" enabled. Payroll Management tile visibility continues to follow that effective position flag.
 
-LOGIN
-- Select an active employee at login.
-- Default password is 1234 for migrated/current employees unless a stored credential already exists.
-- Employee Self-Service is shown for active users but is Coming Soon.
-- Manager Self Service is shown only for MSS-enabled positions and is Coming Soon.
-- Payroll Management opens the existing payroll application and is shown only for Payroll Management-enabled positions.
+V1.1.33 NOTES
+- The landing page is now an isolated full-screen application-area page; Payroll Management cannot be reached by scrolling from it.
+- Existing 1-week rosters migrate unchanged. A 2-week roster can now be selected in Job Data. Week 1 is Pay Week; Week 2 is Pay Close Week.
+- Existing Job Data rows with Variation - Permanency Confirmed are migrated to Permanent and later inherited rows are repaired until an explicit employment-type transition occurs.
+- Absent Without Leave is stored distinctly but follows LWOP payroll/LSL rules and the existing LWOP calendar colour/key.
 
 DATA
-- Existing employees, Job Data, Position Data, payroll history, finalised payslips, leave, balances, deductions, Additional Earnings, certifications and alerts are preserved.
-- loginCredentials is added to stored/exported data for future ESS password-change support.
+Existing employees, Job Data, schedules, Position Data, payroll history, finalised payslips, leave, balances, deductions, Additional Earnings, certifications, alerts and login credentials are preserved.
 
-See RELEASE-NOTES-v1.1.32.txt and test-results.txt for release details and actual verification results.
+See RELEASE-NOTES-v1.1.33.txt and test-results.txt for release details and actual verification results.

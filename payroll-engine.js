@@ -153,9 +153,9 @@
     let title=hrs<=0?'Non Rostered Day':'';
     let label=hrs<=0?'NRD':'';
     if(leave && hrs>0 && (!isPH || isParentalLeaveType(leave.type))){
-      cssClass=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':leave.type==='LWOP'?'lwop':'otherleave';
-      title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':leave.type==='LWOP'?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave');
-      label=leave.type==='Annual Leave'?'AL':leave.type==='Personal Leave'?'PL':leave.type==='Long Service Leave'?'LSL':leave.type==='LWOP'?'LWOP':'OL';
+      cssClass=leave.type==='Annual Leave'?'annual':leave.type==='Personal Leave'?'personal':leave.type==='Long Service Leave'?'lsl':['LWOP','Absent Without Leave'].includes(leave.type)?'lwop':'otherleave';
+      title=leave.type==='Family and Domestic Violence Leave'?'Private Leave':['LWOP','Absent Without Leave'].includes(leave.type)?'Leave Without Pay':(['Annual Leave','Personal Leave','Long Service Leave'].includes(leave.type)?leave.type:'Other Leave');
+      label=leave.type==='Annual Leave'?'AL':leave.type==='Personal Leave'?'PL':leave.type==='Long Service Leave'?'LSL':['LWOP','Absent Without Leave'].includes(leave.type)?'LWOP':'OL';
     }
     if(isPH && !(leave && isParentalLeaveType(leave.type))){ cssClass='publicholiday'; title=publicHolidayName(dateIso)+(leave?` — ${leave.type} booking excluded from leave credits`:'' ); label='PH'; }
     const pending=!!(leave&&leave.status&&leave.status!=='Approved');
@@ -165,12 +165,33 @@
   function hasSavedJobDataAsAt(state, empId, onDate){
     return (state.jobDataRows||[]).some(r=>r.empId===empId && r.saved!==false && compare(r.effectiveDate,onDate)<=0);
   }
+  function rosterWeekForDate(dateIso){
+    // The original pay-cycle anchor defines the fortnight pattern. Week 1 is the
+    // first seven calendar days of the fortnight (pay week); Week 2 is the final
+    // seven calendar days (pay-close week). This also works for historical dates.
+    const offset=dateDiffDays(ANCHOR_CYCLE.start,dateIso);
+    const dayInFortnight=((offset%14)+14)%14;
+    return dayInFortnight<7 ? 1 : 2;
+  }
+  function scheduleHoursByDayForDate(schedule,dateIso){
+    if(!schedule) return {};
+    if(String(schedule.rosterPattern||'1-week')==='2-week'){
+      const week=rosterWeekForDate(dateIso);
+      return week===1
+        ? (schedule.hoursByDayWeek1||schedule.hoursByDay||{})
+        : (schedule.hoursByDayWeek2||schedule.hoursByDayWeek1||schedule.hoursByDay||{});
+    }
+    return schedule.hoursByDay||{};
+  }
   function activeSchedule(state, empId, onDate, excludeId){
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
     const rows = (state.schedules||[]).map((s,i)=>Object.assign({_sourceIndex:i},s))
       .filter(s=>s.empId===empId && s.id!==excludeId && compare(s.effectiveDate,onDate)<=0 && (!jobDataSource || !!s.jobDataId))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate) || Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0) || b._sourceIndex-a._sourceIndex);
-    return rows[0] || null;
+    const row=rows[0];
+    if(!row) return null;
+    if(String(row.rosterPattern||'1-week')!=='2-week') return row;
+    return Object.assign({},row,{hoursByDay:scheduleHoursByDayForDate(row,onDate),activeRosterWeek:rosterWeekForDate(onDate)});
   }
   function activePayRate(state, empId, onDate, excludeId){
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
@@ -230,7 +251,7 @@
       address:source.addressLine||source.address||''
     };
   }
-  function weeklyHoursFromSchedule(s){ return Object.values((s&&s.hoursByDay)||{}).reduce((sum,h)=>sum+Number(h||0),0); }
+  function weeklyHoursFromSchedule(s){ if(s&&String(s.rosterPattern||'1-week')==='2-week'){ const w1=Object.values(s.hoursByDayWeek1||s.hoursByDay||{}).reduce((sum,h)=>sum+Number(h||0),0); const w2=Object.values(s.hoursByDayWeek2||s.hoursByDayWeek1||s.hoursByDay||{}).reduce((sum,h)=>sum+Number(h||0),0); return (w1+w2)/2; } return Object.values((s&&s.hoursByDay)||{}).reduce((sum,h)=>sum+Number(h||0),0); }
   function reconcileEmploymentFromJobData(state,e){
     if(!state || !e || !Array.isArray(state.jobDataRows)) return e;
     const rows=state.jobDataRows.filter(r=>r && r.empId===e.id && r.saved!==false && r.effectiveDate)
@@ -239,7 +260,10 @@
     const commencementRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire|Rehire)\b/.test(String(r.reason||'')));
     const fixedTermContractRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire Fixed-Term|Rehire Fixed-Term|New Fixed Term Contract)$/.test(String(r.reason||'')));
     const terminationRows=rows.filter(r=>r.action==='Termination');
-    if(!commencementRows.length && !fixedTermContractRows.length && !terminationRows.length) return e;
+    const latestNonTermination=rows.filter(r=>r.action!=='Termination').slice(-1)[0]||null;
+    const currentEmploymentClass=normaliseEmploymentType((latestNonTermination&&latestNonTermination.positionClass)||e.type||'');
+    const permanencyRows=rows.filter(r=>r.action!=='Termination'&&normaliseEmploymentType(r.positionClass)==='Permanent');
+    if(!commencementRows.length && !fixedTermContractRows.length && !terminationRows.length && !permanencyRows.length) return e;
 
     const latestCommencement=commencementRows.length ? commencementRows[commencementRows.length-1] : null;
     const currentStart=(latestCommencement&&latestCommencement.effectiveDate) || e.startDate || e.originalStartDate || '';
@@ -247,8 +271,12 @@
 
     const latestFixedTermContract=fixedTermContractRows.length ? fixedTermContractRows[fixedTermContractRows.length-1] : null;
     const contractBoundaryStart=(latestFixedTermContract&&latestFixedTermContract.effectiveDate) || currentStart;
-    const explicitTermination=terminationRows.filter(r=>compare(r.effectiveDate,currentStart)>=0).slice(-1)[0] || null;
-    const explicitExpiry=terminationRows.filter(r=>r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,contractBoundaryStart)>=0).slice(-1)[0] || null;
+    const latestFixedStart=latestFixedTermContract?latestFixedTermContract.effectiveDate:'';
+    const permanentTransition=permanencyRows.find(r=>!latestFixedStart||compare(r.effectiveDate,latestFixedStart)>=0)||null;
+    const currentPermanent=currentEmploymentClass==='Permanent'&&!!permanentTransition;
+    const applicableTerminationRows=terminationRows.filter(r=>!(currentPermanent && r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,permanentTransition.effectiveDate)>=0));
+    const explicitTermination=applicableTerminationRows.filter(r=>compare(r.effectiveDate,currentStart)>=0).slice(-1)[0] || null;
+    const explicitExpiry=applicableTerminationRows.filter(r=>r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,contractBoundaryStart)>=0).slice(-1)[0] || null;
     let terminationDate=explicitTermination ? explicitTermination.effectiveDate : '';
     let terminationReason=explicitTermination ? String(explicitTermination.reason||'') : '';
 
@@ -257,7 +285,11 @@
     // new Expiry of Fixed Term row. A saved Expiry effective date is exclusive, so
     // contractEndDate is the previous calendar day. Do not keep a stale master end
     // date once Job Data contains a fixed-term contract sequence.
-    if(latestFixedTermContract){
+    if(currentPermanent){
+      e.type='Permanent';
+      e.autoTerminate=false;
+      e.contractEndDate='';
+    }else if(latestFixedTermContract){
       e.type='Fixed Term';
       e.autoTerminate=false;
       e.contractEndDate=explicitExpiry ? addDays(explicitExpiry.effectiveDate,-1) : '';
@@ -410,7 +442,7 @@
     return {start:(segments[0]&&segments[0].startDate)||eligibleStart,segments,shortBreaks,lastResetBreakDays};
   }
   function continuousLwopRanges(state,e){
-    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && l.type==='LWOP' && l.startDate && l.endDate)
+    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && ['LWOP','Absent Without Leave'].includes(l.type) && l.startDate && l.endDate)
       .map(l=>({start:l.startDate,end:l.endDate,reason:'Leave Without Pay'}));
     return mergeDateRanges(source).filter(r=>calendarDaysInclusive(r.start,r.end)>LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS);
   }
@@ -683,7 +715,7 @@
     return [PARENTAL_PAID_LEAVE_TYPE,PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(type);
   }
   function isUnpaidLeaveType(type){
-    return type==='LWOP' || type===PARENTAL_UNPAID_LEAVE_TYPE || type===PARENTAL_UNPAID_EXTENSION_TYPE;
+    return ['LWOP','Absent Without Leave'].includes(type) || type===PARENTAL_UNPAID_LEAVE_TYPE || type===PARENTAL_UNPAID_EXTENSION_TYPE;
   }
   function parentalLeaveUsage(state,e,excludeLeaveId){
     let paidCalendarDays=0, paidFullPayEquivalentDays=0, unpaidDays=0, extensionDays=0;
@@ -740,7 +772,7 @@
     return !!defaultValue;
   }
   function normaliseLeaveDescription(type){ if(type===FDV_LEAVE_TYPE) return 'Regular Pay'; return type === 'LWOP' ? 'Leave Without Pay' : (type || 'Leave'); }
-  function isLeaveWithoutPay(desc){ return ['LWOP','Leave Without Pay',PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(desc); }
+  function isLeaveWithoutPay(desc){ return ['LWOP','Leave Without Pay','Absent Without Leave',PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(desc); }
   function residentAnnualTax(annualIncome, claimTaxFreeThreshold=true){
     const x = Math.max(0, Number(annualIncome||0));
     if(!claimTaxFreeThreshold){
@@ -964,7 +996,7 @@
     const existingOverlap = (state.leaveBookings||[]).find(l=>l.empId===empId && l.id!==excludeLeaveId && l.status!=='Denied' && compare(l.startDate,endDate)<=0 && compare(startDate,l.endDate)<=0);
     if(existingOverlap) return { ok:false, hours:0, detail:[], partialAllowed:false, message:`Leave overlaps an existing ${existingOverlap.type || 'leave'} booking from ${fmtPay(existingOverlap.startDate)} to ${fmtPay(existingOverlap.endDate)}.` };
     const singleDay = startDate === endDate;
-    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP',FDV_LEAVE_TYPE].includes(leaveType);
+    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE].includes(leaveType);
     let hours = 0;
     const detail = [];
     daysBetween(startDate,endDate).forEach(d=>{
@@ -1011,7 +1043,7 @@
       if(requestedDays>availableDays+0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays, message:'Insufficient Family and Domestic Violence Leave balance.' };
       return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays:round4(availableDays-requestedDays), message:'OK' };
     }
-    if(leaveType && leaveType !== 'LWOP' && !isParentalLeaveType(leaveType)){
+    if(leaveType && !['LWOP','Absent Without Leave'].includes(leaveType) && !isParentalLeaveType(leaveType)){
       const cycle = currentCycle(state);
       const balances = projectedBalances(state, e, cycle);
       const available = leaveType === 'Annual Leave' ? balances.annual : leaveType === 'Personal Leave' ? balances.personal : leaveType === 'Long Service Leave' ? balances.lslAccrued : 999999;
@@ -1115,7 +1147,7 @@
       if(parentalLeave && isPublicHoliday(d)) return;
       if(leave){
         const paid = !isUnpaidLeaveType(leave.type);
-        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP',FDV_LEAVE_TYPE].includes(leave.type);
+        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE].includes(leave.type);
         const leaveUnits = Math.min(hours, partialSingleDay ? Number(leave.hours || hours) : hours);
         const regularRemainder = round4(Math.max(0, hours - leaveUnits));
         const parentalPayFactor = leave.type===PARENTAL_PAID_LEAVE_TYPE && String(leave.payOption||'Full Pay')==='Half Pay' ? 0.5 : 1;
@@ -1776,7 +1808,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
