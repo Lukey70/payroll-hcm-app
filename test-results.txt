@@ -1,21 +1,26 @@
-Payroll/HCM App v1.1.30 — Test Results
-Date: 18 September 2026
+Payroll/HCM App v1.1.31 — Test Results
+Date: 3 October 2026
 
-SUMMARY
+SUMMARY (PRE-PACKAGE SOURCE)
 - Full Node suite: PASS / exit code 0
-- Self-invoking test blocks: 130
-- assert/assert.* call sites: 580
-- Runtime PASS summaries: 61
+- Self-invoking test blocks: 142
+- assert/assert.* call sites: 635
+- Runtime PASS summaries: 65
 - JavaScript syntax checks: PASS for data-store.js, payroll-engine.js, app.js, test-cases.js
 - Local HTTP response: 200 OK
-- Chromium headless DOM attempt: TIMEOUT; no successful real-browser pass claimed
+- Chromium headless rendered-DOM attempt: TIMEOUT; no successful real-browser pass claimed
 
-V1.1.30-SPECIFIC COVERAGE
-- Annual Leave Overuse Recovery label and removal of the old user-facing label.
-- Retro amount-based Bonus keeps Units/Rate blank; previous-FY amount-based retro displays Retro PFY with blank Units/Rate.
-- Termination effective-date boundary flags future leave, preserves last-employed-day leave, writes notification and status history.
-- Awaiting Manager Approval and Denied leave are excluded from payroll processing until Approved.
-- Position Data MSS/Payroll Management access flags default/persist through migration/import-export.
+V1.1.31-SPECIFIC COVERAGE
+- Leave Status is a dropdown and Awaiting Manager Approval/Denied leave is excluded from payroll, balance deduction and payslip output.
+- Manual LSL Accrued/Pro-rata adjustments apply in the open-pay context and future accrual continues.
+- Finalised $0 Leave Without Pay Retro informational units settle once and do not repeat without a genuine new historical change.
+- Public holidays on non-rostered days generate no Public Holiday Paid earnings.
+- STSL Repayment Retro follows current effective open-pay Tax Details.
+- Overpayment Adjustment changes net without changing PAYG/STSL/super or leave accrual.
+- Future LSL non-contributory service affects entitlement dates only as qualifying days occur.
+- Retro Personal Leave preserves actual scheduled leave hours with separate Regular Pay reversal and Acting Higher Level movement segments.
+- Casual Earnings uses selected position rate + 25% loading, normal tax/super and no leave accrual.
+- Casual-only employees receive no automatic Regular Pay, no LSL entitlement, no leave-calendar presence, no leave payouts, and begin non-casual LSL service only from a later Permanent/Fixed-Term effective date.
 
 RUNTIME PASS OUTPUT
 PASS: Login button/password strings and app version are present
@@ -64,6 +69,10 @@ PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and mu
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
 PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
 PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: v1.1.31 leave-status dropdown and non-approved payslip exclusion are verified.
+PASS: v1.1.31 manual LSL adjustment, non-contributory timing, LWOP settlement and STSL retro fixes are verified.
+PASS: v1.1.31 public-holiday roster rule, non-taxable Overpayment Adjustment and retro movement/Personal Leave separation are verified.
+PASS: v1.1.31 Casual Earnings and casual-only employment rules are verified.
 PASS: v1.1.30 Annual Leave Overuse Recovery label is verified.
 PASS: v1.1.30 retro amount-based Additional Earnings keep Units and Rate blank.
 PASS: v1.1.30 termination/leave conflict notifications and interactive leave statuses are verified.

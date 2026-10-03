@@ -1,11 +1,16 @@
-Payroll/HCM App v1.1.30 — Code Review Notes
+Payroll/HCM App v1.1.31 — Code Review Notes
 
-- Source base: verified v1.1.29 release.
+- Source base: verified v1.1.30 release.
 - Payroll calculation remains in payroll-engine.js; browser/report presentation remains in app.js; persistence/migration remains in data-store.js.
-- `Annual Leave Overuse Recovery` is a label-only rename; existing full-deficit resignation recovery logic is preserved.
-- Retro comparison now explicitly recognises direct-dollar Additional Earnings (Overpayment Adjustment, Reimbursement, Travel Allowance and Bonus) as amount-only. Retro rows for those descriptions carry amountOnly=true with units/rate zero, avoiding the previous fallback to baseRate-derived Units/Rate.
-- Leave Status is stored on the leave booking. Payroll calculations use only Approved bookings; Absence Calendar may still display non-approved bookings with its existing pending marker semantics.
-- Saving a Termination Job Data row calls the termination/leave conflict helper after employment reconciliation. Any booking extending into the termination effective date or later is retained, set to Awaiting Manager Approval, status-history stamped and notified once per employee/effective date.
-- Position Data now persists `accessManagerSelfService` and `accessPayrollManagement`; migration defaults missing legacy values to false. No access enforcement is activated yet because ESS/MSS/role identity is not implemented.
+- Leave Status is now presented as a select/dropdown. The payroll engine continues to treat only Approved leave as actionable; Awaiting Manager Approval and Denied bookings remain stored but do not generate pay, deductions, balance usage or payslip leave lines.
+- Manual LSL Absence Balance Adjustment Job Summary events now use the configured open-cycle context instead of todayIso(), preventing an adjustment from being ignored merely because the real-world date is later than the demonstration's open pay cycle.
+- Retro settlement tracks finalised informational LWOP Retro units separately so the $0 visibility row settles once without changing the associated Regular Pay Retro financial correction.
+- STSL retro eligibility now comes from current effective open-pay Tax Details. Historical tax records remain available for historical/pay-period calculations.
+- Overpayment Adjustment is flagged nonTaxable and non-leave-accruing; it is excluded from taxable/STSL/super/leave bases while remaining a visible net-pay balancing earning.
+- LSL non-contributory service uses an as-of date and clips qualifying LWOP/Unpaid Parental Leave Extension days to days that have actually occurred by that calculation date.
+- Retro comparison preserves a dedicated segment key for leave-day Regular Pay reversals and incompatible movement/rate segments, preventing artificial fractional-unit display while retaining cumulative settlement/idempotence.
+- Casual Earnings stores the selected position, hours, base rate, 25% loading, loaded rate and amount. It is taxable and superable under normal app rules but has accruesLeave=false/serviceHours=0.
+- Casual employment uses effective-dated Position Class/Job Data. Active casual-only employment suppresses automatic Regular Pay and applicable leave/LSL/report behavior; transition to Permanent/Fixed-Term establishes a new non-casual LSL service start.
+- Existing Position Data MSS/Payroll Management flags remain stored metadata only; no role-access enforcement is activated in v1.1.31.
 - Full Node regression suite and all four JavaScript syntax checks pass before packaging.
-- Real Chromium DOM rendering was attempted over a successful local HTTP 200 response but timed out; no browser pass is claimed.
+- Local HTTP serving returned HTTP 200; Chromium headless DOM rendering timed out, so no successful real-browser interaction pass is claimed.

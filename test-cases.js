@@ -35,8 +35,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(app.includes("const PASSWORD = '1234'"), 'login password must be 1234');
-  assert(html.includes('v1.1.30'), 'sidebar/version label must show v1.1.30');
-  assert(data.includes("APP_VERSION = '1.1.30'"), 'data-store version must be 1.1.30');
+  assert(html.includes('v1.1.31'), 'sidebar/version label must show v1.1.31');
+  assert(data.includes("APP_VERSION = '1.1.31'"), 'data-store version must be 1.1.31');
 })();
 
 (function testAnchorPayCycle(){
@@ -486,7 +486,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(!html.includes('data-tab="changeCentre"'), 'Change Centre should be removed from the sidebar');
   assert(app.includes('Settings') && app.includes('Positions') && app.includes('Position Number'), 'Settings should include Positions management');
   assert(app.includes('JOB_REASON_OPTIONS') && app.includes('Position Refresh') && app.includes('Pay Rate Change'), 'Job Data variation reasons should include new reasons');
-  assert(app.includes("table(['ID','First Name','Last Name','Status','Actions']"), 'Employees table should be simplified');
+  assert(app.includes("table(['ID','First Name','Last Name','Employment Type','Status','Actions']"), 'Employees table should remain simplified while showing employment type');
   assert(app.includes('Job Summary is read-only') && app.includes("Effective Sequence','Action','Reason','Position Name','Weekly Hours"), 'Job Summary should be a read-only Job Data list');
   assert(data.includes('positions: []') && data.includes('jobDataRows: []'), 'State should include positions and jobDataRows');
 })();
@@ -1942,7 +1942,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert((state.alerts||[]).some(a=>/Taylor Worker has leave booked after their termination date/.test(a.message)&&/Awaiting Manager Approval/.test(a.message)),'Termination/leave conflict must create an employee notification');
   assert(app.leaveStatusButton({id:'x',status:'Awaiting Manager Approval'}).includes('badge-awaiting-manager-approval'),'Awaiting Manager Approval must use the yellow status class');
   assert(app.leaveStatusButton({id:'x',status:'Denied'}).includes('badge-denied'),'Denied must use the red status class');
-  assert(appSource.includes('data-leave-status')&&appSource.includes("setLeaveStatus(leaveId,'Approved')")&&appSource.includes("setLeaveStatus(leaveId,'Denied')"),'Leave status must be clickable and offer Approved/Awaiting/Denied choices');
+  assert(appSource.includes('data-leave-status')&&app.leaveStatusButton({id:'x',status:'Approved'}).includes('<select')&&app.leaveStatusButton({id:'x',status:'Approved'}).includes('Awaiting Manager Approval')&&app.leaveStatusButton({id:'x',status:'Approved'}).includes('Denied'),'Leave status must use a dropdown offering Approved/Awaiting/Denied choices');
   const css=fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
   assert(css.includes('.badge-awaiting-manager-approval')&&css.includes('.badge-denied'),'Awaiting Manager Approval and Denied must have dedicated yellow/red badge styling');
 })();
@@ -1972,6 +1972,166 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert(appSource.includes('Access to Manager Self Service')&&appSource.includes('posAccessManagerSelfService'),'Position Data UI must include the MSS access checkbox');
   assert(appSource.includes('Access to Payroll Management')&&appSource.includes('posAccessPayrollManagement'),'Position Data UI must include the Payroll Management access checkbox');
 })();
+
+
+
+(function testV131LeaveStatusDropdownAndPayslipExclusion(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes('<select class="badge badge-${cls} leave-status-select" data-leave-status='),'Leave status control must be a dropdown');
+  assert(appSource.includes("['Approved','Awaiting Manager Approval','Denied']"),'Leave status dropdown must include all three allowed statuses');
+  ['Awaiting Manager Approval','Denied'].forEach(status=>{
+    const state=baseState(); const e=addEmployee(state,{id:`ls131_${status.replace(/\W/g,'')}`}); addSchedule(state,e.id); addRate(state,e.id);
+    state.leaveBookings.push({id:'leave131',empId:e.id,type:'Annual Leave',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status});
+    const pays=E.calculateEmployee(state,e.id,1,false);
+    assert.strictEqual(totalUnitsByDesc(pays,'Annual Leave'),0,`${status} leave must not flow to the payslip`);
+    assert.strictEqual(E.projectedBalances(state,e,E.cycleById(1),true).annual>e.annualLeaveBalance,true,`${status} leave must not deduct Annual Leave; ordinary accrual should still apply`);
+  });
+})();
+
+(function testV131ManualLslAdjustmentUsesOpenCycleAndKeepsAccruing(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("addJobEvent(e.id,'Absence Balance Adjustment',currentCycle().end"),'Manual LSL adjustments must be effective in the current open pay context rather than today\'s later real-world date');
+  const state=baseState(); const e=addEmployee(state,{id:'lslmanual131',startDate:'2025-01-01',originalStartDate:'2025-01-01',lslServiceDate:'2025-01-01',lslAccruedBalance:0});
+  addSchedule(state,e.id,'2025-01-01');
+  const asOf=E.cycleById(1).end; const before=E.lslBalances(state,e,asOf);
+  state.jobEvents.push({id:'adj131',empId:e.id,type:'Absence Balance Adjustment',effectiveDate:asOf,description:`Balances adjusted. LSL Accrued ${before.accrued.toFixed(2)} → ${(before.accrued+5).toFixed(2)}, LSL Pro-rata ${before.proRata.toFixed(2)} → ${(before.proRata+10).toFixed(2)}.`});
+  const adjusted=E.lslBalances(state,e,asOf);
+  assert.strictEqual(adjusted.accrued,E.round4(before.accrued+5),'Manual accrued LSL adjustment must take effect in the open pay');
+  assert.strictEqual(adjusted.proRata,E.round4(before.proRata+10),'Manual pro-rata LSL adjustment must take effect in the open pay');
+  const later=E.lslBalances(state,e,E.cycleById(2).end);
+  assert(later.proRata>adjusted.proRata,'Normal LSL pro-rata must continue accumulating after a manual adjustment');
+})();
+
+(function testV131LwopRetroInformationalLineSettlesOnce(){
+  const state=baseState(); const e=addEmployee(state,{id:'lwopsettle131'}); addSchedule(state,e.id); addRate(state,e.id);
+  E.finaliseCurrentPay(state);
+  state.leaveBookings.push({id:'lw131',empId:e.id,type:'LWOP',startDate:'2026-05-27',endDate:'2026-05-27',hours:7.5,status:'Approved'});
+  const correction=E.calculateEmployee(state,e.id,2,false);
+  assert.strictEqual(totalUnitsByDesc(correction,'Leave Without Pay Retro'),7.5,'First correction pay must show the LWOP informational retro hours once');
+  assert.strictEqual(totalAmountByDesc(correction,'Leave Without Pay Retro'),0,'LWOP Retro informational line must remain $0');
+  assert.strictEqual(totalAmountByDesc(correction,'Regular Pay Retro'),-300,'Financial LWOP recovery must remain on Regular Pay Retro');
+  E.finaliseCurrentPay(state);
+  const following=E.calculateEmployee(state,e.id,3,false);
+  assert.strictEqual(totalUnitsByDesc(following,'Leave Without Pay Retro'),0,'Finalised LWOP informational retro must not repeat in the next pay');
+  assert.strictEqual(totalAmountByDesc(following,'Regular Pay Retro'),0,'Settled LWOP financial recovery must not repeat in the next pay');
+})();
+
+(function testV131PublicHolidayOnlyPaysRosteredDays(){
+  const state=baseState(); const e=addEmployee(state,{id:'ph131'});
+  addSchedule(state,e.id,'2026-05-22',{1:0,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}); addRate(state,e.id);
+  const pays=E.calculateEmployee(state,e.id,1,false);
+  assert.strictEqual(totalUnitsByDesc(pays,'Public Holiday'),0,'A public holiday on a non-rostered Monday must not generate Public Holiday Paid earnings');
+})();
+
+(function testV131StslRetroUsesCurrentTaxDetails(){
+  function scenario(historicalStsl,currentStsl){
+    const state=baseState(); const e=addEmployee(state,{id:`stsl131_${historicalStsl}_${currentStsl}`,hourlyRate:80}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',80);
+    state.taxDetails.push({id:'taxOld',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:historicalStsl});
+    E.finaliseCurrentPay(state);
+    state.taxDetails.push({id:'taxCurrent',empId:e.id,effectiveDate:E.cycleById(2).start,taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:currentStsl});
+    state.payRates.push({id:'retroRate',empId:e.id,effectiveDate:'2026-05-22',position:'Officer',hourlyRate:90,changeType:'Permanent'});
+    return E.calculateEmployee(state,e.id,2,false)[0];
+  }
+  assert.strictEqual(scenario(true,false).stslRetro,0,'Historical STSL Yes must not create STSL Retro when current effective Tax Details is No');
+  assert(scenario(false,true).stslRetro>0,'Current STSL Yes may create STSL Retro even when the historical record was No');
+})();
+
+(function testV131OverpaymentAdjustmentIsNonTaxableAndNonAccruing(){
+  const state=baseState(); const e=addEmployee(state,{id:'opa131',hourlyRate:80}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',80);
+  state.taxDetails.push({id:'taxopa',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:true});
+  const base=E.calculateEmployee(state,e.id,1,false)[0];
+  state.additionalEarnings.push({id:'opa',empId:e.id,cycleId:1,earningType:'Overpayment Adjustment',amount:500,startDate:E.ANCHOR_CYCLE.start,endDate:E.ANCHOR_CYCLE.end,saved:true});
+  const adjusted=E.calculateEmployee(state,e.id,1,false)[0];
+  assert.strictEqual(E.round2(adjusted.gross-base.gross),500,'Overpayment Adjustment should increase displayed gross/net balancing value by the entered amount');
+  assert.strictEqual(adjusted.marginalTax,base.marginalTax,'Overpayment Adjustment must not increase PAYG');
+  assert.strictEqual(adjusted.stsl,base.stsl,'Overpayment Adjustment must not increase STSL');
+  assert.strictEqual(adjusted.superAmt,base.superAmt,'Overpayment Adjustment must not increase super');
+  assert.strictEqual(adjusted.annualAccrual,base.annualAccrual,'Overpayment Adjustment must not increase Annual Leave accrual');
+  assert.strictEqual(adjusted.personalAccrual,base.personalAccrual,'Overpayment Adjustment must not increase Personal Leave accrual');
+  assert.strictEqual(E.round2(adjusted.net-base.net),500,'Overpayment Adjustment must increase net by exactly the entered amount');
+})();
+
+(function testV131FutureNonContributoryLslIsAppliedOnlyAsItOccurs(){
+  const state=baseState(); const e=addEmployee(state,{id:'noncontrib131',startDate:'2020-01-01',originalStartDate:'2020-01-01',lslServiceDate:'2020-01-01'}); addSchedule(state,e.id,'2020-01-01');
+  state.leaveBookings.push({id:'futurelwop131',empId:e.id,type:'LWOP',startDate:'2026-10-01',endDate:'2026-10-20',status:'Approved'});
+  assert.strictEqual(E.lslServiceProfile(state,e,'2026-09-30').nextEntitlementDate,'2027-01-01','Future booked non-contributory LWOP must not pre-push LSL entitlement');
+  assert.strictEqual(E.lslServiceProfile(state,e,'2026-10-05').nextEntitlementDate,'2027-01-06','Only non-contributory days that have occurred should push the entitlement date');
+  assert.strictEqual(E.lslServiceProfile(state,e,'2026-10-20').nextEntitlementDate,'2027-01-21','The full qualifying LWOP period should be reflected once it has occurred');
+})();
+
+(function testV131RetroPersonalLeaveAndMovementStaySeparate(){
+  const state=baseState(); const e=addEmployee(state,{id:'movementpl131',annualLeaveBalance:100,personalLeaveBalance:100}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  const original=E.calculateEmployee(state,e.id,1,true).map(p=>Object.assign({},p,{finalised:true})); state.payslips.push(...original); state.finalisedCycles['1']={id:1}; state.currentCycleId=2;
+  state.payRates.push({id:'acting131',empId:e.id,effectiveDate:'2026-05-28',position:'Acting Manager',hourlyRate:50,changeType:'Permanent'});
+  state.leaveBookings.push({id:'pl131',empId:e.id,type:'Personal Leave',startDate:'2026-05-27',endDate:'2026-05-27',hours:7.5,status:'Approved'});
+  const rows=E.calculateEmployee(state,e.id,2,false).flatMap(p=>p.rows).filter(r=>r.kind==='retro');
+  const pl=rows.find(r=>r.description==='Personal Leave Retro');
+  assert(pl&&pl.units===7.5&&pl.balanceUnits===7.5&&pl.rate===40,'Retro Personal Leave must show the actual scheduled 7.5 hours at the rate applicable on the leave date');
+  const leaveReversal=rows.find(r=>r.description==='Regular Pay Retro'&&r.startDate==='2026-05-27'&&r.endDate==='2026-05-27'&&r.units===-7.5);
+  assert(leaveReversal&&leaveReversal.amount===-300,'The Regular Pay reversal for the retro leave day must be a separate full-day component');
+  const acting=rows.find(r=>r.description==='Regular Pay Retro'&&r.position==='Acting Manager'&&r.rate===50&&r.units===37.5);
+  assert(acting&&acting.amount===1875,'Acting Higher Level reissue must remain a separate higher-position/rate retro component');
+  assert(!rows.some(r=>r.description==='Personal Leave Retro'&&Math.abs(r.units)<1),'Personal Leave Retro must never be reduced to a misleading fractional residual unit');
+})();
+
+(function testV131CasualEarningsAndCasualOnlyRules(){
+  const state=baseState(); const e=addEmployee(state,{id:'casual131',type:'Casual',annualLeaveBalance:99,personalLeaveBalance:88,lslAccruedBalance:77}); addSchedule(state,e.id); addRate(state,e.id);
+  state.positions.push({id:'posc131',positionNumber:'C100',positionName:'Casual Crew',department:'Operations',hourlyRate:50,active:true});
+  state.taxDetails.push({id:'tc131',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  state.additionalEarnings.push({id:'ce131',empId:e.id,cycleId:1,earningType:'Casual Earnings',positionNumber:'C100',positionName:'Casual Crew',casualBaseRate:50,casualLoadingRate:0.25,casualLoadedRate:62.5,startDate:'2026-05-25',endDate:'2026-05-25',hours:10,amount:625,saved:true});
+  const pays=E.calculateEmployee(state,e.id,1,false); const row=pays.flatMap(p=>p.rows).find(r=>r.description==='Casual Earnings - Casual Crew');
+  assert(row&&row.units===10&&row.casualBaseRate===50&&row.casualLoadingRate===0.25&&row.rate===62.5&&row.amount===625,'Casual Earnings must pay hours x selected position base rate x 1.25 and retain the position/rate/loading detail');
+  assert.strictEqual(totalUnitsByDesc(pays,'Regular Pay'),0,'Casual-only employees must not receive automatic roster-based Regular Pay');
+  assert.strictEqual(pays[0].taxableCurrentGross,625,'Casual Earnings must be normal taxable earnings');
+  assert.strictEqual(pays[0].superAmt,E.round2(625*E.SUPER_RATE),'Casual Earnings including the 25% loading must attract normal super');
+  assert.strictEqual(pays[0].annualAccrual,0,'Casual Earnings must not accrue Annual Leave');
+  assert.strictEqual(pays[0].personalAccrual,0,'Casual Earnings must not accrue Personal Leave');
+  const lsl=E.lslBalances(state,e,E.ANCHOR_CYCLE.end); assert.strictEqual(lsl.entitlementDate,'','Casual-only employees must not have an LSL entitlement date'); assert.strictEqual(lsl.proRata,0,'Casual-only employees must not accrue pro-rata LSL');
+  const cal=E.absenceCalendarStatus(state,e,'2026-05-25'); assert.strictEqual(cal.label,'','Casual-only service must be blank on leave calendars');
+  const migrated=DataStore.migrate(JSON.parse(DataStore.exportJson(state))); const ce=migrated.additionalEarnings.find(x=>x.id==='ce131');
+  assert.strictEqual(ce.positionNumber,'C100'); assert.strictEqual(ce.casualBaseRate,50); assert.strictEqual(ce.casualLoadingRate,0.25); assert.strictEqual(ce.casualLoadedRate,62.5);
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}}; const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const html=context.window.PayrollApp.payslipHtml(pays[0]);
+  assert(html.includes('Casual Earnings - Casual Crew'),'Casual Earnings payslip description must include the selected position name');
+  assert(!html.includes('<div class="section-title">Leave Balance</div>'),'Casual-only payslips must omit the Leave Balance section');
+})();
+
+(function testV131CasualToPermanentStartsLslAtNonCasualContract(){
+  const state=baseState(); const e=addEmployee(state,{id:'convert131',type:'Casual',startDate:'2025-01-01',originalStartDate:'2025-01-01',lslServiceDate:'2025-01-01',employmentSegments:[{id:'seg131',startDate:'2025-01-01',endDate:'',inclusiveEnd:false}]});
+  state.jobDataRows.push(
+    {id:'jc1',empId:e.id,effectiveDate:'2025-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionClass:'Casual',positionName:'Casual Crew',saved:true},
+    {id:'jp1',empId:e.id,effectiveDate:'2026-07-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionClass:'Permanent',positionName:'Officer',saved:true}
+  );
+  state.schedules.push({id:'sCas',empId:e.id,effectiveDate:'2025-01-01',jobDataId:'jc1',hoursByDay:{1:0,2:0,3:0,4:0,5:0,6:0,0:0}},{id:'sPerm',empId:e.id,effectiveDate:'2026-07-01',jobDataId:'jp1',hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
+  state.payRates.push({id:'rCas',empId:e.id,effectiveDate:'2025-01-01',jobDataId:'jc1',position:'Casual Crew',hourlyRate:30,changeType:'Permanent'},{id:'rPerm',empId:e.id,effectiveDate:'2026-07-01',jobDataId:'jp1',position:'Officer',hourlyRate:40,changeType:'Permanent'});
+  assert.strictEqual(E.lslBalances(state,e,'2026-06-30').entitlementDate,'','Prior casual service must not create an LSL entitlement date');
+  assert.strictEqual(E.lslBalances(state,e,'2026-07-01').entitlementDate,'2033-07-01','LSL must start from the Permanent/Fixed Term contract effective date, excluding prior casual service');
+})();
+
+(function testV131CasualTerminationHasNoLeavePayoutsAndUiHidesLeave(){
+  const state=baseState(); const e=addEmployee(state,{id:'cterm131',type:'Casual',annualLeaveBalance:50,personalLeaveBalance:50,lslAccruedBalance:50,terminationDate:'2026-05-27',terminationReason:'Voluntary Resignation',employmentSegments:[{id:'seg',startDate:'2026-05-22',endDate:'2026-05-27',inclusiveEnd:false}]}); addSchedule(state,e.id); addRate(state,e.id);
+  const pays=E.calculateEmployee(state,e.id,1,false); const rows=pays.flatMap(p=>p.rows);
+  assert(!rows.some(r=>/Leave Payout|LSL Payout/.test(r.description)),'Casual-only termination must not manufacture Annual Leave or LSL payouts');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes('Casual-only employee.')&&appSource.includes("(p.employmentType||e.type)==='Casual'"),'Casual-only leave balances must be hidden in Absence Balance and payslip UI');
+  assert(appSource.includes("filter(e=>employmentTypeFor(e,currentCycle().end)!=='Casual')"),'Casual-only employees must be excluded from the existing Absence Calendar selector');
+  assert(appSource.includes("employmentTypeFor(e,date)!=='Casual'"),'Monthly Absence Calendar must exclude casual-only service');
+  assert(appSource.includes('reportEmploymentTypeFilter')&&appSource.includes('employeeTypeFilter'),'Employee/report screens must include employment-type filters');
+})();
+
+(function testV131JobDataCasualEmploymentTypeSupport(){
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes('New Hire Casual')&&app.includes('Rehire Casual'),'Job Data must include explicit casual commencement/rehire reasons');
+  assert(app.includes("<option ${row.positionClass==='Casual'?'selected':''}>Casual</option>"),'Job Data Position Class must include Casual');
+  assert(app.includes("if(/Casual/.test(reason)) setv('jdPositionClass','Casual')"),'Casual commencement/rehire reasons should automatically align Position Class to Casual');
+})();
+
+console.log('PASS: v1.1.31 leave-status dropdown and non-approved payslip exclusion are verified.');
+console.log('PASS: v1.1.31 manual LSL adjustment, non-contributory timing, LWOP settlement and STSL retro fixes are verified.');
+console.log('PASS: v1.1.31 public-holiday roster rule, non-taxable Overpayment Adjustment and retro movement/Personal Leave separation are verified.');
+console.log('PASS: v1.1.31 Casual Earnings and casual-only employment rules are verified.');
 
 console.log('PASS: v1.1.30 Annual Leave Overuse Recovery label is verified.');
 console.log('PASS: v1.1.30 retro amount-based Additional Earnings keep Units and Rate blank.');

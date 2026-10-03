@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.30';
+  const APP_VERSION = '1.1.31';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -150,9 +150,16 @@
       if(a.saved === undefined) a.saved = true;
       if(a.amount === undefined) a.amount = 0;
       if(['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus','Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType)) a.hours = 0;
+      if(a.earningType==='Casual Earnings'){
+        if(a.positionNumber===undefined) a.positionNumber='';
+        if(a.positionName===undefined) a.positionName='';
+        if(a.casualBaseRate===undefined) a.casualBaseRate='';
+        if(a.casualLoadingRate===undefined) a.casualLoadingRate=0.25;
+        if(a.casualLoadedRate===undefined) a.casualLoadedRate='';
+      }
     });
     state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; if(d.endDate === undefined || d.endDate === null) d.endDate=''; if(d.deductionType==='Union Fees') d.percentage=''; });
-    state.positions.forEach(pos=>{ if(!pos.id) pos.id = uid('pos'); if(!pos.positionNumber) pos.positionNumber = String(Math.floor(1000 + Math.random()*9000)); if(pos.active === undefined) pos.active = true; if(pos.hourlyRate === undefined) pos.hourlyRate = 0; if(pos.accessManagerSelfService === undefined) pos.accessManagerSelfService=false; if(pos.accessPayrollManagement === undefined) pos.accessPayrollManagement=false; });
+    state.positions.forEach(pos=>{ if(!pos.id) pos.id = uid('pos'); if(!pos.positionNumber) pos.positionNumber = String(Math.floor(1000 + Math.random()*9000)); if(pos.active === undefined) pos.active = true; if(pos.hourlyRate === undefined) pos.hourlyRate = 0; if(!Array.isArray(pos.rateHistory)) pos.rateHistory=[]; if(pos.accessManagerSelfService === undefined) pos.accessManagerSelfService=false; if(pos.accessPayrollManagement === undefined) pos.accessPayrollManagement=false; });
     state.jobDataRows.forEach(j=>{ if(!j.id) j.id = uid('jobdata'); if(j.effectiveSequence === undefined) j.effectiveSequence = 0; if(!j.action) j.action = 'Commencement'; if(!j.reason) j.reason = ''; if(!j.hoursByDay) j.hoursByDay = {}; });
     state.cashOutRequests.forEach(c=>{ if(!c.id) c.id = uid('cash'); if(c.saved === undefined) c.saved = true; if(c.deleted === undefined) c.deleted = false; c.hours = Number(c.hours||0); });
     state.taxDetails.forEach(t=>{ if(!t.id) t.id = uid('tax'); if(t.claimTaxFreeThreshold === undefined) t.claimTaxFreeThreshold = true; if(t.stsl === undefined) t.stsl = false; if(t.taxFileNumber === undefined) t.taxFileNumber = ''; });

@@ -1,20 +1,28 @@
-Payroll/HCM App v1.1.30
+Payroll/HCM App v1.1.31
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.30 preserves the existing payrollAppData/localStorage schema and migrates saved data through DataStore.migrate().
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.31 preserves the existing payrollAppData/localStorage data model and migrates saved data through DataStore.migrate().
 
 IMPORTANT UPGRADE BEHAVIOUR
-- Existing leave bookings default to Approved if they do not already contain a status; a statusHistory array is added safely when missing.
-- Existing positions receive Access to Manager Self Service = false and Access to Payroll Management = false when those fields are absent.
-- Existing finalised payslips are not rewritten. Amount-based retro presentation is a display/calculation-row refinement for current/future retro processing.
-- Existing LSL reconciliation markers/history are preserved and the v1.1.26 one-time reconciliation does not rerun merely because v1.1.30 is opened.
+- Existing leave bookings retain their saved status; missing status still migrates safely to Approved. v1.1.31 presents status as a dropdown and excludes Awaiting Manager Approval/Denied leave from payroll/payslip processing.
+- Existing LSL manual balance-adjustment history is preserved. New manual LSL adjustments are effective in the configured open-pay context rather than being accidentally future-dated by the real-world calendar date.
+- Existing finalised LWOP retro corrections remain historical; v1.1.31 counts previously finalised informational LWOP Retro units as settled so they do not repeat without a genuine new historical change.
+- Existing tax history remains preserved; current effective Tax Details determines whether a new STSL Repayment Retro applies in the open pay.
+- Legacy employee/Job Data records continue to migrate. Casual employment uses the existing effective-dated Position Class/employment data and does not create a separate concurrent-position model.
+- Legacy positions can safely omit rateHistory; Casual Earnings falls back to the position's existing hourlyRate when no effective-dated position rate history is present.
+- Existing finalised payslips are not rewritten.
 
 MAJOR CHANGES
-- Annual Leave recovery label renamed to Annual Leave Overuse Recovery.
-- Retro amount-based Additional Earnings show no Units/Rate, including Retro PFY.
-- Leave Status can be Approved, Awaiting Manager Approval or Denied; pending/denied leave is not processed through payroll until Approved.
-- Saving a termination flags affected future leave, changes it to Awaiting Manager Approval and creates a notification.
-- Position Data adds future access-control flags for Manager Self Service and Payroll Management.
+- Leave Status dropdown with Approved-only payroll/payslip processing.
+- Manual LSL Accrued/Pro-rata adjustment save correction.
+- Once-only LWOP Retro informational settlement.
+- Public Holiday Paid only on rostered/scheduled days.
+- STSL Retro based on current effective Tax Details.
+- Overpayment Adjustment is non-taxable, non-STSL and non-leave-accruing.
+- Future LSL non-contributory service is applied only as the service occurs.
+- Personal Leave Retro and late movement/rate retro are kept as meaningful separate components.
+- Casual Earnings: selected position + hours at base rate plus 25% casual loading, taxable/superable normally, no leave accrual.
+- Casual-only employees: no automatic Regular Pay, no leave/LSL entitlement, no leave-calendar display, and non-casual service starts from the later Permanent/Fixed-Term effective date.
 
 PAYROLL CONTROLS PRESERVED
 - Persisted currentCycleId remains the authoritative open pay.
@@ -23,6 +31,6 @@ PAYROLL CONTROLS PRESERVED
 - Finalisation remains manual.
 
 TESTING
-See test-results.txt and RELEASE-NOTES-v1.1.30.txt for actual automated/static/browser-attempt results and known limitations.
+See test-results.txt and RELEASE-NOTES-v1.1.31.txt for actual automated/static/browser results and known limitations.
 
 This remains a client-side payroll demonstration and is not production payroll software.

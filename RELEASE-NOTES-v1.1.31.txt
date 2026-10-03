@@ -1,0 +1,113 @@
+Payroll/HCM App v1.1.31 — Release Notes
+Release date: 3 October 2026
+Source: verified v1.1.30 release
+
+SUMMARY
+v1.1.31 implements the accumulated requests after v1.1.30: Leave Status dropdown behavior, LSL balance-adjustment and non-contributory-service timing fixes, one-time LWOP retro settlement, current-tax-data STSL retro handling, public-holiday roster enforcement, non-taxable/non-accruing Overpayment Adjustment, clearer retro separation across leave and movements, and a full Casual employment/Casual Earnings model.
+
+CHANGES
+
+1. Leave Status dropdown and payroll/payslip exclusion
+- Leave Status is now changed using a dropdown with Approved, Awaiting Manager Approval and Denied.
+- Leave booked directly through Payroll Management defaults to Approved.
+- Awaiting Manager Approval and Denied leave remains stored for review but is excluded from payroll calculation, leave-balance deductions and payslip leave lines until Approved.
+- Status-history/audit information remains preserved.
+
+2. Manual LSL balance adjustments
+- Fixed a save-date defect where LSL Accrued or LSL Pro-rata adjustments could appear to do nothing when the real-world date was later than the configured open pay period.
+- Canonical LSL balance adjustments are now effective in the current open-pay context.
+- Saved manual adjustments survive recalculation/reload and future normal 7-year / 65-day LSL accrual continues rather than being frozen by the adjustment.
+
+3. Leave Without Pay Retro settlement
+- Preserved the existing design where Leave Without Pay Retro is a $0 informational row and the related financial recovery appears on Regular Pay Retro.
+- Finalised informational LWOP retro units are now counted as settled.
+- The same LWOP Retro line no longer reappears in every later pay after the correction has been finalised, unless there is a genuine new historical entitlement change.
+
+4. Public-holiday roster rule
+- Public Holiday Paid is generated only when the public holiday falls on a day the employee is rostered/scheduled to work under the applicable effective schedule.
+- A public holiday on a non-rostered day does not generate Public Holiday Paid earnings.
+
+5. STSL retro uses current effective Tax Details
+- STSL Repayment Retro now depends on the employee's current effective Tax Details in the open pay.
+- If current STSL is No, no STSL Repayment Retro is produced even where STSL was enabled in the historical period being corrected.
+- Historical tax records and the underlying retro gross/PAYG history remain preserved.
+
+6. Overpayment Adjustment treatment
+- Overpayment Adjustment is now a non-taxable balancing earning.
+- It does not attract PAYG withholding or STSL/HELP repayment calculations.
+- It does not attract superannuation and does not generate Annual Leave, Personal Leave or LSL accrual.
+- It remains separately identifiable as Overpayment Adjustment and increases net pay by the adjustment amount.
+
+7. LSL non-contributory service timing
+- Future booked non-contributory service no longer pushes the displayed/current LSL entitlement date before that service occurs.
+- Qualifying LWOP over 14 calendar days and Unpaid Parental Leave Extension now extend the entitlement date progressively only for non-contributory calendar days that have occurred by the calculation as-of/open-pay date.
+- Future cancelled/changed days therefore do not create an early entitlement-date adjustment.
+
+8. Retro Personal Leave and late movement separation
+- Retro comparison now keeps incompatible historical position/rate segments separate rather than converting their net dollar difference into artificial fractional units.
+- A retrospective Personal Leave day shows the actual scheduled Personal Leave Retro hours once.
+- The related Regular Pay reversal for that leave day remains separately identifiable from later Acting Higher Level/movement arrears and recoveries.
+- Different historical positions/rates remain separate where required, while cumulative retro settlement and the existing +8.29/-8.29 regression protections are preserved.
+
+9. Casual Earnings
+- Added Additional Earnings type Casual Earnings.
+- User selects a Position Data position and enters hours worked.
+- Payment uses the selected position's applicable effective-dated base hourly rate plus 25% casual loading: hours × base rate × 1.25.
+- Payslip description is `Casual Earnings - [Position Name]`.
+- Casual Earnings are taxable and attract super under the app's normal super rules, including the casual loading in the superable amount.
+- Casual Earnings do not generate Annual Leave, Personal Leave, accrued LSL or pro-rata LSL.
+- Selected position, hours, base rate, loading, loaded rate and amount are retained in the saved earning/audit data.
+- Casual Earnings are an Additional Earnings payment linked to a position; they do not create a second concurrent Job Data position.
+
+10. Casual employment model
+- Casual is treated as an explicit effective-dated Position Class/employment type alongside Permanent and Fixed-Term.
+- Casual-only employees do not receive automatic roster/schedule-driven Regular Pay.
+- Casual-only employees have no Annual Leave, Personal Leave or LSL accrual and no LSL entitlement date/pro-rata balance.
+- Casual-only employees are excluded from the existing Absence Calendar and Monthly Absence Calendar.
+- Casual-only employees do not receive Annual Leave/LSL termination payouts.
+- If an employee later becomes Permanent or Fixed-Term, ordinary leave accrual and 7-year LSL service begin from the effective date of that non-casual contract; prior casual service is not backdated into LSL.
+- Relevant employee/report screens include All / Permanent / Fixed Term / Casual employment-type filtering.
+- Casual leave-balance presentation is hidden where those entitlements are not applicable.
+
+PRESERVED FUNCTIONALITY
+- Half-pay parental leave remains full scheduled leave units at 50% of the applicable normal rate, with no duplicate Regular Pay for the same hours.
+- Persisted currentCycleId remains the authoritative open pay; no today-based cycle selection.
+- PPE 04/06/2026 anchor, 03/05/2026 retro cut-off and manual finalisation remain unchanged.
+- Historical finalised payslips remain frozen.
+- 7-year / 65-day LSL entitlement cycles, break-in-service rules, reconciliation and notifications remain in place.
+- Annual Leave forecast, negative-balance recovery, fixed-term extension logic, contract-expiry notifications, Monthly Absence Calendar, deductions and existing Additional Earnings remain preserved.
+
+AUTOMATED / STATIC / SIMULATED TESTING
+- Full Node regression suite: PASS / exit code 0.
+- Self-invoking test blocks: 142.
+- assert/assert.* call sites: 635.
+- Runtime PASS summaries: 65.
+- `node --check data-store.js`: PASS.
+- `node --check payroll-engine.js`: PASS.
+- `node --check app.js`: PASS.
+- `node --check test-cases.js`: PASS.
+
+New regression coverage includes:
+- Leave Status dropdown plus complete payroll/payslip/balance exclusion for Awaiting Manager Approval and Denied leave.
+- Manual LSL Accrued/Pro-rata adjustments effective in the open-pay context with subsequent accrual continuing.
+- One-time LWOP Retro informational settlement after finalisation.
+- Non-rostered public holiday generating no Public Holiday Paid earnings.
+- Historical/current STSL changes with retro processed according to current effective Tax Details.
+- Overpayment Adjustment changing net without changing PAYG/STSL/super/leave accrual.
+- Progressive LSL entitlement-date adjustment as non-contributory service actually occurs.
+- Full Personal Leave Retro hours plus separate Regular Pay reversal and Acting Higher Level movement retro components.
+- Casual Earnings calculation, payslip description, tax/super treatment and zero leave accrual.
+- Casual-only Regular Pay suppression, LSL/leave/report exclusion, conversion to non-casual LSL start and termination behavior.
+
+REAL-BROWSER TESTING
+- Local HTTP serving returned HTTP 200 for index.html.
+- Chromium headless was attempted against the v1.1.31 source but timed out before returning a rendered DOM.
+- Therefore no successful real-browser interaction pass is claimed. Automated DOM/event simulations are not described as real-browser testing.
+
+KNOWN LIMITATIONS
+- Position Data MSS/Payroll Management access flags remain metadata only; ESS/MSS/current-user access enforcement is future work.
+- No packaged end-to-end browser automation framework is included.
+- Existing documented parental Unpaid Extension remains a fixed 730-day implementation.
+- Import/export is not fixture-tested against every historical app release.
+
+This remains a client-side payroll demonstration and is not production payroll software.
