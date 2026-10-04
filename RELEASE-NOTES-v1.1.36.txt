@@ -1,0 +1,71 @@
+Payroll/HCM App v1.1.36 — Release Notes
+Release date: 4 October 2026
+Source: verified v1.1.35 release
+
+SUMMARY
+v1.1.36 adds effective-dated Department handling for payslips, preserves historical Casual Earnings retro when future contracts exist, introduces a Position Structure Report, and introduces Higher Duties Allowance as both a manual Additional Earning and the pay-differential method for temporary acting movements. It also performs the requested one-time Acting Higher Level classification correction from 1 July 2026 without changing total pay or historical leave balances.
+
+IMPLEMENTED CHANGES
+
+1. Effective-dated payslip Department
+- Payslip Department is now derived from the employee's Job Data/position effective for the pay period, rather than a future-updated employee master value.
+- A casual employee currently in Operations with a future Fixed Term role in Human Resources continues to show Position = Casual and Department = Operations on pre-conversion payslips.
+- Future contract department/position details apply only from their effective date.
+
+2. Retro Casual Earnings with future contracts
+- Legitimate historical Casual Earnings retro is no longer suppressed by a future Permanent/Fixed Term Job Data row.
+- Retro preserves the historical selected casual position, hours, base rate, 25% loading/loaded rate and calculated amount.
+- Current-financial-year retro retains the Casual Earnings position description; previous-financial-year retro continues to use the existing Retro PFY payslip label while retaining internal source detail.
+
+3. Position Structure Report
+- Added a new Position Structure Report under Reports.
+- User can select an As Of date.
+- Shows active positions, occupants effective on that date, vacant positions, and each position's Reports To relationship.
+- Effective-dated Job Data/acting assignments determine occupants for the selected date.
+- Supports Print / Save PDF and Download HTML.
+
+4. Higher Duties Allowance — Additional Earnings
+- Added Higher Duties Allowance as a position-linked Additional Earnings type.
+- User selects the higher position and enters hours.
+- Allowance rate = selected higher-position rate minus employee substantive/normal rate.
+- Payment = hours × allowance rate.
+- Entry is prevented when the selected position does not have a higher rate.
+- Higher Duties Allowance does not generate additional Annual Leave, Personal Leave or LSL accrual.
+- Position, normal rate, higher rate, differential, hours and amount are retained in the earning/audit data.
+
+5. Higher Duties Allowance — temporary movements
+- Acting Higher Level: substantive Regular Pay plus positive Higher Duties Allowance.
+- Acting Lower Level: substantive Regular Pay plus negative Higher Duties Allowance.
+- Acting Same Level: no Higher Duties Allowance.
+- Permanent movements such as Promotion continue to use the new position/rate as ordinary Regular Pay and do not generate Higher Duties Allowance.
+- Chained acting assignments continue to use the employee's substantive Permanent rate as the allowance base, rather than a prior temporary acting rate.
+- Higher Duties Allowance continues on paid leave during an active acting period, including the same pay factor for paid parental leave at half pay.
+- No Higher Duties Allowance is paid for LWOP, Absent Without Leave, Unpaid Parental Leave or Unpaid Parental Leave Extension.
+- Allowance stops when Return from Temp Assignment becomes effective.
+- The allowance itself does not create additional leave accrual.
+
+6. One-time FY2026-27 Acting Higher Level classification correction
+- The app checks finalised Acting Higher Level payments from 01/07/2026 onward.
+- Where the acting differential was previously included entirely in Regular Pay, the current open pay reclassifies the historical amount into substantive Regular Pay plus Higher Duties Allowance using offsetting retro lines.
+- The reclassification is dollar-neutral: there is no change to total gross/net pay solely because of the classification correction.
+- Historical finalised payslips are not rewritten.
+- Historical leave balances are not adjusted as part of this one-time correction, per the agreed requirement.
+- A separate notification is created for each affected employee explaining that the payment was reclassified with no change to total pay.
+- Once finalised, the correction does not repeat.
+- Existing pre-upgrade Acting Lower/Same Level history is not included in this one-time historical reclassification; the new movement presentation applies from the upgrade's open cycle onward.
+
+DATA / UPGRADE COMPATIBILITY
+- Existing payrollAppData/localStorage data is migrated in place.
+- Existing finalised historical payslips remain preserved.
+- Existing current/open-cycle data, employee records, Job Data, Position Data, leave, deductions, Additional Earnings, alerts and credentials are preserved.
+- Migration records the open cycle at v1.1.36 upgrade so historical Acting Lower/Same Level payments are not unintentionally reclassified.
+
+TESTING
+- Full automated regression suite: PASS.
+- 166 self-invoking test blocks.
+- 746 assert/assert.* call sites.
+- 75 runtime PASS summaries.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- Local HTTP load returned HTTP 200.
+- Chromium headless was attempted but timed out before returning a rendered DOM; no successful real-browser interaction pass is claimed.
+- Final packaged ZIP is separately verified from a clean extraction before delivery.

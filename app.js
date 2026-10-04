@@ -25,6 +25,8 @@
   let statementPreviewHtml = '';
   let monthlyAbsenceMonth = '';
   let monthlyAbsencePreviewHtml = '';
+  let positionStructureAsOf = '';
+  let positionStructurePreviewHtml = '';
   let deductionDraftRows = [];
   let deductionDirty = false;
   let deductionDraftLoadedFor = '';
@@ -902,6 +904,12 @@
       const base=Number((a.casualBaseRate!==undefined&&a.casualBaseRate!==null&&String(a.casualBaseRate)!=='')?a.casualBaseRate:E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start));
       return E.round2(Number(a.hours||0)*base*1.25);
     }
+    if(a.earningType==='Higher Duties Allowance'){
+      const employee=emp(v('addEmp')||a.empId); if(!employee) return 0;
+      const normal=E.substantivePayRate(state,employee,a.startDate||c.start);
+      const higher=Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
+      return E.round2(Number(a.hours||0)*Math.max(0,higher-Number(normal.hourlyRate||0)));
+    }
     const rate=E.activePayRate(state,v('addEmp')||a.empId,a.startDate||c.start);
     const multiplier=a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1;
     return E.round2(Number(a.hours||0)*Number(rate.hourlyRate||0)*multiplier);
@@ -913,13 +921,15 @@
     const rows=additionalDraftRows.map((a,i)=>{
       const isOver=a.earningType==='Overpayment Adjustment';
       const isCasual=a.earningType==='Casual Earnings';
+      const isHigherDuties=a.earningType==='Higher Duties Allowance';
       const userAmount=['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType);
       const fixedAmount=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
       const isAmountOnly=userAmount||fixedAmount;
       const amount=additionalDraftAmount(a);
-      const options=['Additional Hours','Casual Earnings','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
-      const positionSelect=`<select data-add-field="${i}|positionNumber" ${isCasual?'':'disabled class="readonly"'}>${isCasual?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
-      return [`<select data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
+      const options=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
+      const positionBased=isCasual||isHigherDuties;
+      const positionSelect=`<select data-add-field="${i}|positionNumber" ${positionBased?'':'disabled class="readonly"'}>${positionBased?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
+      return [`<select data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
     h('addRows', table(['Earnings Type','Position','Start Date','End Date','Hours','Amount','Delete'], rows));
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
@@ -930,9 +940,13 @@
       if(field==='earningType' && ['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; row.positionNumber=''; }
       if(field==='earningType' && ['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.positionNumber=''; row.amount=additionalDraftAmount(row); }
       if(field==='earningType' && row.earningType==='Casual Earnings'){ row.positionNumber=''; row.positionName=''; row.casualBaseRate=''; row.casualLoadedRate=''; row.casualLoadingRate=0.25; row.startDate=row.startDate||c.start; row.endDate=row.startDate; row.amount=0; }
-      if(field==='earningType' && row.earningType!=='Casual Earnings'){ row.positionNumber=''; row.positionName=''; row.casualBaseRate=''; row.casualLoadedRate=''; row.casualLoadingRate=''; }
+      if(field==='earningType' && row.earningType==='Higher Duties Allowance'){ row.positionNumber=''; row.positionName=''; row.higherDutiesPositionRate=''; row.startDate=row.startDate||c.start; row.endDate=row.startDate; row.amount=0; }
+      if(field==='earningType' && !['Casual Earnings','Higher Duties Allowance'].includes(row.earningType)){ row.positionNumber=''; row.positionName=''; row.casualBaseRate=''; row.casualLoadedRate=''; row.casualLoadingRate=''; row.higherDutiesPositionRate=''; }
       if(field==='positionNumber' && row.earningType==='Casual Earnings'){
         const pos=positionByNumber(row.positionNumber); row.positionName=(pos&&pos.positionName)||''; row.casualBaseRate=''; row.casualLoadedRate='';
+      }
+      if(field==='positionNumber' && row.earningType==='Higher Duties Allowance'){
+        const pos=positionByNumber(row.positionNumber); row.positionName=(pos&&pos.positionName)||''; row.higherDutiesPositionRate='';
       }
       if(field==='startDate' && row.earningType!=='Overpayment Adjustment') row.endDate=el.value;
       if(!['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)) row.amount=additionalDraftAmount(row);
@@ -953,6 +967,12 @@
         if(Number(a.hours||0)<=0) return alert('Enter the hours worked for Casual Earnings.');
         if(Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0)<=0 && !(Number(a.casualBaseRate||0)>0)) return alert('The selected position does not have a valid hourly rate.');
       }
+      if(a.earningType==='Higher Duties Allowance'){
+        const pos=positionByNumber(a.positionNumber); if(!pos) return alert('Select a Position for Higher Duties Allowance.');
+        if(Number(a.hours||0)<=0) return alert('Enter the hours for Higher Duties Allowance.');
+        const employee=emp(empId); const normal=E.substantivePayRate(state,employee,a.startDate||c.start); const higher=Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
+        if(higher<=Number(normal.hourlyRate||0)) return alert("The selected position rate must be higher than the employee's normal rate.");
+      }
     }
     loadingModal('Saving Additional Earnings','Save Successful',()=>{
       state.additionalEarnings=state.additionalEarnings.filter(a=>!(a.empId===empId&&Number(a.cycleId)===Number(c.id)));
@@ -964,6 +984,9 @@
         else if(row.earningType==='Casual Earnings'){
           const pos=positionByNumber(row.positionNumber); const base=Number((row.casualBaseRate!==undefined&&row.casualBaseRate!==null&&String(row.casualBaseRate)!=='')?row.casualBaseRate:E.positionHourlyRate(state,row.positionNumber,row.startDate||c.start));
           row.positionName=(pos&&pos.positionName)||row.positionName||''; row.casualBaseRate=base; row.casualLoadingRate=0.25; row.casualLoadedRate=E.round4(base*1.25); row.endDate=row.startDate; row.amount=E.round2(Number(row.hours||0)*row.casualLoadedRate);
+        }else if(row.earningType==='Higher Duties Allowance'){
+          const pos=positionByNumber(row.positionNumber); const employee=emp(empId); const normal=E.substantivePayRate(state,employee,row.startDate||c.start); const higher=Number(E.positionHourlyRate(state,row.positionNumber,row.startDate||c.start)||0);
+          row.positionName=(pos&&pos.positionName)||row.positionName||''; row.higherDutiesNormalRate=Number(normal.hourlyRate||0); row.higherDutiesPositionRate=higher; row.higherDutiesDifference=E.round4(higher-row.higherDutiesNormalRate); row.endDate=row.startDate; row.amount=E.round2(Number(row.hours||0)*row.higherDutiesDifference);
         }else row.amount=additionalDraftAmount(row);
         state.additionalEarnings.push(row);
       });
@@ -1469,7 +1492,7 @@
     const country=esc(e.country||'');
     const employeeBlock = `<div class="payslip-address"><strong>${esc(E.employeeName(e))}</strong><br>${addressLine}<br>${locality}<br>${country}</div>`;
     const detailRows = [
-      ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(e.department||'')], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
+      ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(p.department!==undefined?p.department:(e.department||''))], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
     ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
     const displayRows=consolidatePayslipDisplayRows(p.rows||[]);
     const rows=displayRows.map(r=>{ const amountOnly=isAmountOnlyPayslipRow(r); const description=payslipDisplayDescription(r,p.cycle&&p.cycle.paymentDate); return `<tr><td>${esc(description)}</td><td class="right">${amountOnly?'':Number(r.units||0).toFixed(2)}</td><td class="right">${amountOnly?'':(r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):'')}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`; }).join('');
@@ -1633,6 +1656,24 @@
     }).join('');
     return `<article class="monthly-absence-report"><div class="monthly-absence-title"><h1>Monthly Absence Calendar</h1><strong>${esc(monthLabel)}</strong></div>${absenceLegendHtml()}<div class="monthly-absence-wrap"><table class="monthly-absence-table"><thead><tr><th class="monthly-employee">Employee</th>${headers}</tr></thead><tbody>${rows||`<tr><td colspan="${days+1}">No employees found.</td></tr>`}</tbody></table></div><p class="small-note monthly-pending-note">* indicates a leave booking that is not yet Approved, where applicable.</p></article>`;
   }
+  function positionStructureReportHtml(asOf){
+    const date=asOf||currentCycle().end;
+    E.reconcileAllEmploymentFromJobData(state);
+    const positions=(state.positions||[]).filter(p=>p.active!==false).slice().sort((a,b)=>String(a.positionName||'').localeCompare(String(b.positionName||''))||String(a.positionNumber||'').localeCompare(String(b.positionNumber||'')));
+    const rows=positions.map(pos=>{
+      const occupants=(state.employees||[]).filter(e=>E.isEmployedOn(e,date)).filter(e=>{ const row=E.activeJobDataRow(state,e,date); return row&&String(row.positionNumber||'')===String(pos.positionNumber||''); }).sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
+      const reportsTo=pos.reportsTo?positionByNumber(pos.reportsTo):null;
+      const employeeText=occupants.length?occupants.map(e=>esc(E.employeeName(e))).join('<br>'):'<span class="small-note">Vacant</span>';
+      const reportsToText=reportsTo?`${esc(reportsTo.positionName||'')} (${esc(reportsTo.positionNumber||'')})`:(pos.reportsTo?esc(pos.reportsTo):'—');
+      return [esc(pos.positionNumber||''),esc(pos.positionName||''),esc(pos.department||''),employeeText,reportsToText];
+    });
+    return `<article class="position-structure-report"><div class="report-heading"><h1>Position Structure Report</h1><p>As of ${esc(E.fmtPay(date))}</p></div>${table(['Position Number','Position','Department','Employee(s)','Reports To'],rows.length?rows:[['','','','No active positions found.','']])}</article>`;
+  }
+  function positionStructureStandaloneHtml(reportHtml){
+    const css=`*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:18px;color:#172033}.report-heading{display:flex;justify-content:space-between;align-items:end;margin-bottom:12px}.report-heading h1{margin:0;font-size:22px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:left;font-size:11px;vertical-align:top}th{background:#f1f5f9}.small-note{color:#64748b}@page{size:A4 landscape;margin:10mm}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}tr{break-inside:avoid;page-break-inside:avoid}}`;
+    return `<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><title>Position Structure Report</title><style>${css}</style></head><body>${reportHtml}</body></html>`;
+  }
+
   function monthlyAbsenceStandaloneHtml(reportHtml){
     const css=`:root{--annual:#dbeafe;--personal:#ffedd5;--lsl:#ede9fe;--lwop:#7f1d1d;--nonrostered:#e5e7eb;--publicholiday:#111827}*{box-sizing:border-box}body{font-family:Arial,sans-serif;margin:0;padding:12px;color:#172033}.legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.legend span{padding:5px 8px;border-radius:999px;font-size:10px;font-weight:bold}.legend .annual{background:var(--annual);color:#1e40af}.legend .personal{background:var(--personal);color:#9a3412}.legend .lsl{background:var(--lsl);color:#5b21b6}.legend .lwop{background:var(--lwop);color:#fff}.legend .otherleave{background:#14532d;color:#fff}.legend .publicholiday{background:var(--publicholiday);color:#fff}.legend .nonrostered{background:var(--nonrostered);color:#374151}.monthly-absence-title{display:flex;justify-content:space-between;align-items:end}.monthly-absence-title h1{font-size:20px;margin:0}.monthly-absence-wrap{overflow:visible}.monthly-absence-table{width:100%;border-collapse:collapse;table-layout:fixed}.monthly-absence-table th,.monthly-absence-table td{border:1px solid #9ca3af;text-align:center;padding:2px;font-size:8px;height:24px}.monthly-absence-table .monthly-employee{width:130px;min-width:130px;text-align:left;font-size:9px;background:#fff}.monthly-day-head small{display:block;font-size:7px}.monthly-absence-cell.annual{background:var(--annual)}.monthly-absence-cell.personal{background:var(--personal)}.monthly-absence-cell.lsl{background:var(--lsl)}.monthly-absence-cell.lwop{background:var(--lwop);color:#fff}.monthly-absence-cell.otherleave{background:#14532d;color:#fff}.monthly-absence-cell.publicholiday{background:var(--publicholiday);color:#fff}.monthly-absence-cell.nonrostered{background:var(--nonrostered);color:#6b7280}.monthly-absence-cell.pending{outline:2px dashed #ca8a04;outline-offset:-2px}.small-note{font-size:9px;color:#64748b}@page{size:A4 landscape;margin:7mm}@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.monthly-absence-table tr{break-inside:avoid;page-break-inside:avoid}}`;
     return `<!doctype html><html lang="en-AU"><head><meta charset="utf-8"><title>Monthly Absence Calendar</title><style>${css}</style></head><body>${reportHtml}</body></html>`;
@@ -1646,7 +1687,9 @@
     if(!monthlyAbsenceMonth) monthlyAbsenceMonth=monthStartIso(currentCycle().start);
     monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth);
     const monthLabel=E.parseDate(monthlyAbsenceMonth).toLocaleDateString('en-AU',{month:'long',year:'numeric'});
-    h('reports', `<h2>Reports</h2><p class="small-note">Generate payroll and employment reports.</p><div class="report-controls"><h3>Statement of Service</h3><div class="grid form-grid"><div><label>Employment Type</label><select id="reportEmploymentTypeFilter">${reportTypeOptions}</select></div><div><label>Employee</label><select id="reportEmp">${employeeOptions(list)}</select></div><div><label>As at date</label><input id="reportAsAt" type="date" value="${esc(todayIso())}"></div><div><label>Reference number</label><input id="reportReference" placeholder="Auto-generated if blank"></div><div><label>Signatory name</label><input id="reportSignatory"></div><div><label>Signatory position</label><input id="reportSignatoryPosition" value="PAYROLL OFFICER"></div><div><label>Contact email</label><input id="reportContact" value="HR@mcdonaldscf.com"></div></div><div class="controls" style="margin-top:14px"><button id="previewStatement">Generate Preview</button><button id="printStatement" class="secondary" ${statementPreviewHtml?'':'disabled'}>Print / Save PDF</button><button id="downloadStatement" class="success" ${statementPreviewHtml?'':'disabled'}>Download HTML</button></div></div><div id="reportPreview" class="report-preview">${statementPreviewHtml||'<p class="small-note">Select an employee and generate the Statement of Service.</p>'}</div><div class="report-controls monthly-absence-controls"><h3>Monthly Absence Calendar</h3><div class="controls"><button id="monthlyAbsencePrev" class="secondary" title="Previous month">←</button><strong id="monthlyAbsenceMonthLabel">${esc(monthLabel)}</strong><button id="monthlyAbsenceNext" class="secondary" title="Next month">→</button><button id="printMonthlyAbsence" class="secondary">Print / Save PDF</button><button id="downloadMonthlyAbsence" class="success">Download HTML</button></div><p class="small-note">Shows all employees one month at a time using the same leave key and colours as the existing Absence Calendar.</p></div><div id="monthlyAbsencePreview" class="report-preview">${monthlyAbsencePreviewHtml}</div>`);
+    if(!positionStructureAsOf) positionStructureAsOf=currentCycle().end;
+    positionStructurePreviewHtml=positionStructureReportHtml(positionStructureAsOf);
+    h('reports', `<h2>Reports</h2><p class="small-note">Generate payroll and employment reports.</p><div class="report-controls"><h3>Statement of Service</h3><div class="grid form-grid"><div><label>Employment Type</label><select id="reportEmploymentTypeFilter">${reportTypeOptions}</select></div><div><label>Employee</label><select id="reportEmp">${employeeOptions(list)}</select></div><div><label>As at date</label><input id="reportAsAt" type="date" value="${esc(todayIso())}"></div><div><label>Reference number</label><input id="reportReference" placeholder="Auto-generated if blank"></div><div><label>Signatory name</label><input id="reportSignatory"></div><div><label>Signatory position</label><input id="reportSignatoryPosition" value="PAYROLL OFFICER"></div><div><label>Contact email</label><input id="reportContact" value="HR@mcdonaldscf.com"></div></div><div class="controls" style="margin-top:14px"><button id="previewStatement">Generate Preview</button><button id="printStatement" class="secondary" ${statementPreviewHtml?'':'disabled'}>Print / Save PDF</button><button id="downloadStatement" class="success" ${statementPreviewHtml?'':'disabled'}>Download HTML</button></div></div><div id="reportPreview" class="report-preview">${statementPreviewHtml||'<p class="small-note">Select an employee and generate the Statement of Service.</p>'}</div><div class="report-controls monthly-absence-controls"><h3>Monthly Absence Calendar</h3><div class="controls"><button id="monthlyAbsencePrev" class="secondary" title="Previous month">←</button><strong id="monthlyAbsenceMonthLabel">${esc(monthLabel)}</strong><button id="monthlyAbsenceNext" class="secondary" title="Next month">→</button><button id="printMonthlyAbsence" class="secondary">Print / Save PDF</button><button id="downloadMonthlyAbsence" class="success">Download HTML</button></div><p class="small-note">Shows all employees one month at a time using the same leave key and colours as the existing Absence Calendar.</p></div><div id="monthlyAbsencePreview" class="report-preview">${monthlyAbsencePreviewHtml}</div><div class="report-controls"><h3>Position Structure Report</h3><div class="grid form-grid"><div><label>As Of Date</label><input id="positionStructureAsOf" type="date" value="${esc(positionStructureAsOf)}"></div></div><div class="controls" style="margin-top:14px"><button id="refreshPositionStructure">Generate / Refresh</button><button id="printPositionStructure" class="secondary">Print / Save PDF</button><button id="downloadPositionStructure" class="success">Download HTML</button></div><p class="small-note">Shows active positions, occupants and the existing Position Data Reports To relationship as at the selected date. Vacant active positions are included.</p></div><div id="positionStructurePreview" class="report-preview">${positionStructurePreviewHtml}</div>`);
     if(selected) setv('reportEmp',selected);
     $('reportEmploymentTypeFilter').addEventListener('change',()=>{ reportEmploymentTypeFilter=v('reportEmploymentTypeFilter'); selectedReportEmp=''; statementPreviewHtml=''; renderReports(); });
     $('reportEmp').addEventListener('change',()=>{selectedReportEmp=v('reportEmp');});
@@ -1671,6 +1714,9 @@
     $('monthlyAbsenceNext').addEventListener('click',()=>{ monthlyAbsenceMonth=shiftMonthIso(monthlyAbsenceMonth,1); refreshMonthly(); });
     $('printMonthlyAbsence').addEventListener('click',()=>{ monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth); h('printArea',monthlyAbsencePreviewHtml); setTimeout(()=>window.print(),0); });
     $('downloadMonthlyAbsence').addEventListener('click',()=>{ monthlyAbsencePreviewHtml=monthlyAbsenceCalendarHtml(monthlyAbsenceMonth); const d=E.parseDate(monthlyAbsenceMonth); const filename=`Monthly-Absence-Calendar-${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}.html`; const blob=new Blob([monthlyAbsenceStandaloneHtml(monthlyAbsencePreviewHtml)],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500); });
+    $('refreshPositionStructure').addEventListener('click',()=>{ positionStructureAsOf=v('positionStructureAsOf')||currentCycle().end; positionStructurePreviewHtml=positionStructureReportHtml(positionStructureAsOf); h('positionStructurePreview',positionStructurePreviewHtml); });
+    $('printPositionStructure').addEventListener('click',()=>{ positionStructureAsOf=v('positionStructureAsOf')||positionStructureAsOf||currentCycle().end; positionStructurePreviewHtml=positionStructureReportHtml(positionStructureAsOf); h('printArea',positionStructurePreviewHtml); setTimeout(()=>window.print(),0); });
+    $('downloadPositionStructure').addEventListener('click',()=>{ positionStructureAsOf=v('positionStructureAsOf')||positionStructureAsOf||currentCycle().end; positionStructurePreviewHtml=positionStructureReportHtml(positionStructureAsOf); const blob=new Blob([positionStructureStandaloneHtml(positionStructurePreviewHtml)],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Position-Structure-${positionStructureAsOf}.html`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500); });
   }
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
@@ -1795,6 +1841,14 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.36',notes:[
+      'Made payslip Department effective-dated so future contract departments do not appear on earlier payslips; historical retro Casual Earnings remain tied to their original casual position/rate.',
+      'Added the Position Structure Report with an As Of date, active/vacant positions, occupants, Reports To relationships, acting assignments, print and HTML download.',
+      'Added Higher Duties Allowance Additional Earnings using hours × the difference between the employee normal rate and selected higher-position rate, without additional leave accrual.',
+      'Changed temporary Acting Higher/Lower Level movement pay to substantive Regular Pay plus positive/negative Higher Duties Allowance; Acting Same Level has no allowance and permanent movements continue to use ordinary Regular Pay.',
+      'Higher Duties Allowance continues during paid leave within the acting period, is excluded from unpaid leave, and stops on Return from Temp Assignment.',
+      'Added a one-time FY2026-27 Acting Higher Level classification correction from 01/07/2026 that reclassifies historical acting differentials from Regular Pay to Higher Duties Allowance with no change to total pay and creates a notification for each affected employee.'
+    ]},
     {version:'v1.1.35',notes:[
       'Corrected the 2-week roster anchor so Week 1 / Pay Week is 29/05/2026-04/06/2026 for the original PPE anchor and Week 2 / Pay Close Week is 22/05/2026-28/05/2026, alternating consistently across all schedule-dependent features.',
       'Prevented future Fixed Term Job Data from changing an earlier casual payslip header; pre-conversion casual payslips now show position Casual while preserving position-specific Casual Earnings lines.',
@@ -2062,5 +2116,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();

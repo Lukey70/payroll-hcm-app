@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.35';
+  const APP_VERSION = '1.1.36';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -59,11 +59,18 @@
   }
 
   function migrate(state){
+    const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
     ['employees','schedules','payRates','leaveBookings','additionalEarnings','deductions','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
+    // v1.1.36 changes temporary-movement pay presentation to substantive Regular Pay
+    // plus Higher Duties Allowance. Only Acting Higher Level is intentionally
+    // reclassified historically back to 01/07/2026. Existing Acting Lower/Same
+    // history remains as finalised before the upgrade; the new presentation starts
+    // with the open cycle at upgrade.
+    if(!state.repairs.higherDutiesMovementStartCycleId && sourceVersion && sourceVersion!=='1.1.36') state.repairs.higherDutiesMovementStartCycleId=state.currentCycleId;
 
     state.employees.forEach(e=>{
       if(!e.id) e.id = String(Date.now());
@@ -162,6 +169,13 @@
         if(a.casualBaseRate===undefined) a.casualBaseRate='';
         if(a.casualLoadingRate===undefined) a.casualLoadingRate=0.25;
         if(a.casualLoadedRate===undefined) a.casualLoadedRate='';
+      }
+      if(a.earningType==='Higher Duties Allowance'){
+        if(a.positionNumber===undefined) a.positionNumber='';
+        if(a.positionName===undefined) a.positionName='';
+        if(a.higherDutiesNormalRate===undefined) a.higherDutiesNormalRate='';
+        if(a.higherDutiesPositionRate===undefined) a.higherDutiesPositionRate='';
+        if(a.higherDutiesDifference===undefined) a.higherDutiesDifference='';
       }
     });
     state.deductions.forEach(d=>{ if(!d.id) d.id = uid('ded'); if(!d.deductionType) d.deductionType = 'Pre-tax Super Deduction'; if(d.saved === undefined) d.saved = true; if(d.deleted === undefined) d.deleted = false; if(d.amount === undefined || d.amount === null) d.amount = ''; if(d.percentage === undefined || d.percentage === null) d.percentage = ''; if(d.endDate === undefined || d.endDate === null) d.endDate=''; if(d.deductionType==='Union Fees') d.percentage=''; });

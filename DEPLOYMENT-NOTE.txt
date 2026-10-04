@@ -1,17 +1,21 @@
-Payroll/HCM App v1.1.35
+Payroll/HCM App v1.1.36
 
 DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.35 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
+Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.36 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
 
 IMPORTANT BEFORE UPDATE
 Ensure at least one active employee's current Position Data record has "Access to Payroll Management" enabled. Payroll Management tile visibility continues to follow that effective position flag.
 
-V1.1.35 NOTES
-- Corrected two-week roster mapping: Week 1 / Pay Week = 29/05/2026–04/06/2026 at the original PPE anchor; Week 2 / Pay Close Week = 22/05/2026–28/05/2026.
-- Current casual payslips now show position Casual even when a future Fixed Term position has already been entered in Job Data.
-- Termination Annual Leave payout now uses the post-retro leave balance when a current final pay includes retro corrections such as LWOP.
+V1.1.36 NOTES
+- Payslip Department now uses the effective-dated Job Data assignment; future contract departments no longer bleed backward.
+- Historical Casual Earnings retro remains payable when a future non-casual contract is already recorded.
+- Added Position Structure Report with As Of date, occupants, vacancies, Reports To, print and HTML download.
+- Added Higher Duties Allowance as a manual Additional Earning and as the differential-pay method for temporary acting movements.
+- Acting Higher Level uses positive HDA, Acting Lower Level negative HDA, Acting Same Level no HDA, and permanent movements no HDA.
+- Paid leave within an acting period continues HDA; unpaid leave does not.
+- One-time Acting Higher Level classification correction applies from 01/07/2026, keeps total pay unchanged, leaves historical leave balances unchanged, and creates a notification for each affected employee.
 
 DATA
 Existing employees, Job Data, schedules, Position Data, payroll history, finalised payslips, leave, balances, deductions, Additional Earnings, certifications, alerts and login credentials are preserved.
 
-See RELEASE-NOTES-v1.1.35.txt and test-results.txt for release details and actual verification results.
+See RELEASE-NOTES-v1.1.36.txt and test-results.txt for release details and verification results.

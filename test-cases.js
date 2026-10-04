@@ -36,8 +36,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.35'), 'sidebar/version label must show v1.1.35');
-  assert(data.includes("APP_VERSION = '1.1.35'"), 'data-store version must be 1.1.35');
+  assert(html.includes('v1.1.36'), 'sidebar/version label must show v1.1.36');
+  assert(data.includes("APP_VERSION = '1.1.36'"), 'data-store version must be 1.1.36');
 })();
 
 (function testAnchorPayCycle(){
@@ -2418,6 +2418,145 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(state.positions[0].department,'Customer Services','Migration/import must preserve the Customer Services department value');
 })();
 
+
+(function testV136EffectiveDepartmentAndRetroCasualWithFutureContract(){
+  const state=baseState(); state.currentCycleId=11;
+  const e=addEmployee(state,{id:'cas136',type:'Casual',position:'Casual',department:'Operations',hourlyRate:0,startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',employmentSegments:[{id:'seg136',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
+  state.positions.push(
+    {id:'caspos136',positionNumber:'CAS136',positionName:'Casual Shift',department:'Operations',hourlyRate:30,active:true},
+    {id:'finpos136',positionNumber:'FIN136',positionName:'Finance Officer',department:'Human Resources',hourlyRate:45,active:true}
+  );
+  state.jobDataRows.push(
+    {id:'casjd136',empId:e.id,effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionNumber:'CAS136',positionName:'Casual',department:'Operations',hourlyRate:0,positionClass:'Casual',saved:true},
+    {id:'fixjd136',empId:e.id,effectiveDate:'2027-01-04',effectiveSequence:0,action:'Commencement',reason:'New Fixed Term Contract',positionNumber:'FIN136',positionName:'Finance Officer',department:'Human Resources',hourlyRate:45,positionClass:'Fixed-Term',saved:true}
+  );
+  state.schedules.push({id:'sc136',empId:e.id,jobDataId:'casjd136',effectiveDate:'2026-01-01',hoursByDay:{1:0,2:0,3:0,4:0,5:0,6:0,0:0}});
+  state.payRates.push({id:'rc136',empId:e.id,jobDataId:'casjd136',effectiveDate:'2026-01-01',position:'Casual',hourlyRate:0,changeType:'Permanent'});
+  state.finalisedCycles['10']=true;
+  state.additionalEarnings.push({id:'lateCas136',empId:e.id,cycleId:10,earningType:'Casual Earnings',positionNumber:'CAS136',positionName:'Casual Shift',casualBaseRate:30,startDate:'2026-10-01',endDate:'2026-10-01',hours:8,saved:true});
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1,'Late Casual Earnings should still create a current payslip even with a future Fixed Term contract');
+  assert.strictEqual(pays[0].position,'Casual','Pre-conversion payslip position must remain Casual');
+  assert.strictEqual(pays[0].department,'Operations','Pre-conversion payslip Department must come from the effective casual Job Data row, not the future contract');
+  const retro=pays[0].rows.find(r=>r.description==='Casual Earnings - Casual Shift Retro');
+  assert(retro&&retro.units===8&&retro.amount===300,'Future Fixed Term Job Data must not suppress legitimate retro Casual Earnings');
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(appSource.includes("p.department!==undefined?p.department"),'Payslip HTML must render the effective payslip-specific Department');
+})();
+
+(function testV136ManualHigherDutiesAdditionalEarning(){
+  const state=baseState(); const e=addEmployee(state,{id:'manualhda136'}); addSchedule(state,e.id); addRate(state,e.id,'2026-05-22','Officer',40);
+  state.positions.push({id:'hp136',positionNumber:'H136',positionName:'Senior Officer',department:'Operations',hourlyRate:50,active:true});
+  state.additionalEarnings.push({id:'hda136',empId:e.id,cycleId:1,earningType:'Higher Duties Allowance',positionNumber:'H136',positionName:'Senior Officer',startDate:'2026-05-25',endDate:'2026-05-25',hours:5,saved:true});
+  const pays=E.calculateEmployee(state,e.id,1,false); const row=pays.flatMap(p=>p.rows).find(r=>r.description==='Higher Duties Allowance - Senior Officer');
+  assert(row&&row.units===5&&row.rate===10&&row.amount===50,'Manual Higher Duties Allowance must pay hours x selected-position rate differential');
+  assert.strictEqual(row.accruesLeave,false,'Higher Duties Allowance must not accrue additional leave');
+  assert.strictEqual(E.ordinaryHours([row]),0,'Higher Duties Allowance hours must not feed leave-accrual ordinary hours');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("'Higher Duties Allowance'"),'Additional Earnings UI must include Higher Duties Allowance');
+})();
+
+(function testV136MovementHigherLowerSameAndPaidUnpaidLeave(){
+  function movementState(reason,targetRate,leaveType){
+    const state=baseState(); const c=E.cycleById(10); state.currentCycleId=c.id;
+    const e=addEmployee(state,{id:`mv-${reason}-${leaveType||'work'}`,startDate:c.start,originalStartDate:c.start,lslServiceDate:c.start,position:'Officer',hourlyRate:40,employmentSegments:[{id:'seg',startDate:c.start,endDate:'',inclusiveEnd:false}]});
+    state.positions.push({id:'base',positionNumber:'B136',positionName:'Officer',department:'Operations',hourlyRate:40,active:true},{id:'target',positionNumber:'T136',positionName:'Acting Position',department:'Operations',hourlyRate:targetRate,active:true});
+    state.jobDataRows.push(
+      {id:'jb',empId:e.id,effectiveDate:c.start,effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'B136',positionName:'Officer',department:'Operations',hourlyRate:40,positionClass:'Permanent',saved:true},
+      {id:'jm',empId:e.id,effectiveDate:'2026-09-28',effectiveSequence:0,action:'Movement',reason,positionNumber:'T136',positionName:'Acting Position',department:'Operations',hourlyRate:targetRate,positionClass:'Permanent',saved:true}
+    );
+    const hours={1:0,2:0,3:0,4:7.5,5:0,6:0,0:0};
+    state.schedules.push({id:'sb',empId:e.id,jobDataId:'jb',effectiveDate:c.start,hoursByDay:hours},{id:'sm',empId:e.id,jobDataId:'jm',effectiveDate:'2026-09-28',hoursByDay:hours});
+    state.payRates.push({id:'rb',empId:e.id,jobDataId:'jb',effectiveDate:c.start,position:'Officer',hourlyRate:40,changeType:'Permanent'},{id:'rm',empId:e.id,jobDataId:'jm',effectiveDate:'2026-09-28',position:'Acting Position',hourlyRate:targetRate,changeType:'Temporary'});
+    if(leaveType) state.leaveBookings.push({id:'l',empId:e.id,type:leaveType,startDate:'2026-10-01',endDate:'2026-10-01',hours:7.5,status:'Approved'});
+    return {state,e,c};
+  }
+  let x=movementState('Acting Higher Level',50,'Annual Leave'); let rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
+  let hda=rows.find(r=>r.description==='Higher Duties Allowance'); assert(hda&&hda.units===7.5&&hda.rate===10&&hda.amount===75,'Paid leave during Acting Higher Level must continue the positive Higher Duties Allowance');
+  assert(rows.some(r=>r.description==='Annual Leave'&&r.rate===40),'Paid leave base earning must remain at the substantive rate when HDA is separated');
+  x=movementState('Acting Higher Level',50,'LWOP'); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
+  assert(!rows.some(r=>r.description==='Higher Duties Allowance' && r.startDate==='2026-10-01'),'Unpaid leave date must not receive Higher Duties Allowance');
+  x=movementState('Acting Lower Level',30,null); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows); hda=rows.find(r=>r.description==='Higher Duties Allowance');
+  assert(hda&&hda.rate===-10&&hda.amount<0,'Acting Lower Level must create a negative Higher Duties Allowance differential');
+  x=movementState('Acting Same Level',40,null); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
+  assert(!rows.some(r=>r.description==='Higher Duties Allowance'),'Acting Same Level must not create Higher Duties Allowance');
+  x=movementState('Promotion',50,null); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
+  assert(!rows.some(r=>r.description==='Higher Duties Allowance'),'Permanent Promotion must not create Higher Duties Allowance');
+  assert(rows.some(r=>r.description==='Regular Pay'&&r.rate===50),'Permanent Promotion must use the new position rate as ordinary Regular Pay');
+})();
+
+(function testV136OneTimeHigherDutiesReclassificationIsPayNeutralAndSettles(){
+  const state=baseState(); state.currentCycleId=5;
+  const e=addEmployee(state,{id:'reclass136',position:'Officer',department:'Operations',hourlyRate:40,employmentSegments:[{id:'seg136',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  state.positions.push({id:'b136',positionNumber:'B136',positionName:'Officer',department:'Operations',hourlyRate:40,active:true},{id:'m136',positionNumber:'M136',positionName:'Manager',department:'Operations',hourlyRate:50,active:true});
+  state.jobDataRows.push({id:'jb136',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'B136',positionName:'Officer',department:'Operations',hourlyRate:40,positionClass:'Permanent',saved:true},{id:'ja136',empId:e.id,effectiveDate:'2026-07-03',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'M136',positionName:'Manager',department:'Operations',hourlyRate:50,positionClass:'Permanent',saved:true});
+  const hours={1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0};
+  state.schedules.push({id:'sb136',empId:e.id,jobDataId:'jb136',effectiveDate:'2026-05-22',hoursByDay:hours},{id:'sa136',empId:e.id,jobDataId:'ja136',effectiveDate:'2026-07-03',hoursByDay:hours});
+  state.payRates.push({id:'rb136',empId:e.id,jobDataId:'jb136',effectiveDate:'2026-05-22',position:'Officer',hourlyRate:40,changeType:'Permanent'},{id:'ra136',empId:e.id,jobDataId:'ja136',effectiveDate:'2026-07-03',position:'Manager',hourlyRate:50,changeType:'Temporary'});
+  const c4=E.cycleById(4); state.finalisedCycles['4']=true;
+  state.payslips.push({id:'old136',empId:e.id,employeeName:E.employeeName(e),employeeSnapshot:JSON.parse(JSON.stringify(e)),cycleId:4,cycle:c4,position:'Manager',department:'Operations',rate:50,rows:[{description:'Regular Pay',units:75,amount:3750,startDate:c4.start,endDate:c4.end,rate:50,baseRate:50,position:'Manager',kind:'regular',ote:true}],gross:3750,tax:0,net:3750,finalised:true});
+  const results=E.calculateAll(state,5,false); const rows=results.filter(p=>p.empId===e.id).flatMap(p=>p.rows).filter(r=>r.kind==='retro');
+  assert.strictEqual(E.round2(rows.reduce((sum,r)=>sum+Number(r.amount||0),0)),0,'One-time Acting Higher Level classification correction must be dollar-neutral');
+  assert(rows.some(r=>r.description==='Higher Duties Allowance Retro'&&r.amount===750),'Correction must reclassify the acting differential to Higher Duties Allowance');
+  assert(rows.some(r=>r.description==='Regular Pay Retro'&&r.amount===3000)&&rows.some(r=>r.description==='Regular Pay Retro'&&r.amount===-3750),'Correction must offset the historical Regular Pay classification without changing total pay');
+  assert.strictEqual(E.round4(rows.reduce((sum,r)=>sum+Number(r.accrualUnits||0),0)),0,'One-time classification correction must not alter historical leave accrual');
+  assert(state.alerts.some(a=>a.key===`hda-reclass-fy2627-${e.id}`&&/no change to total pay/i.test(a.message)),'Each affected employee must receive a Higher Duties reclassification notification');
+  E.finaliseCurrentPay(state);
+  const later=E.calculateAll(state,6,false).filter(p=>p.empId===e.id).flatMap(p=>p.rows).filter(r=>r.kind==='retro'&&/Higher Duties Allowance|Regular Pay/.test(r.description));
+  assert.strictEqual(later.length,0,'Finalised one-time Higher Duties reclassification must not repeat in the next pay');
+})();
+
+(function testV136PositionStructureReportAsOf(){
+  const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{appendChild:()=>{}}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  vm.runInNewContext(appSource,context,{filename:'app.js'}); const st=context.window.PayrollApp.getState();
+  Object.assign(st,baseState()); st.positions=[{id:'mgr',positionNumber:'MGR',positionName:'Manager',department:'Operations',hourlyRate:60,reportsTo:'',active:true},{id:'off',positionNumber:'OFF',positionName:'Officer',department:'Operations',hourlyRate:40,reportsTo:'MGR',active:true},{id:'vac',positionNumber:'VAC',positionName:'Vacant Role',department:'Customer Services',hourlyRate:35,reportsTo:'MGR',active:true}];
+  const e=addEmployee(st,{id:'struct136',position:'Officer',department:'Operations',employmentSegments:[{id:'seg',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
+  st.jobDataRows.push({id:'joff',empId:e.id,effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'OFF',positionName:'Officer',department:'Operations',hourlyRate:40,positionClass:'Permanent',saved:true},{id:'jmgr',empId:e.id,effectiveDate:'2026-11-01',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'MGR',positionName:'Manager',department:'Operations',hourlyRate:60,positionClass:'Permanent',saved:true});
+  const before=context.window.PayrollApp.positionStructureReportHtml('2026-10-01');
+  assert(before.includes('Position Structure Report')&&before.includes('Vacant Role')&&before.includes('Vacant'),'Report must show all active positions including vacancies');
+  assert(before.includes('Test Employee')&&before.includes('Manager (MGR)'),'As-of report must show occupant and Reports To relationship');
+  const after=context.window.PayrollApp.positionStructureReportHtml('2026-11-05');
+  const managerSlice=after.slice(after.indexOf('Manager'),after.indexOf('Officer'));
+  assert(after.includes('Test Employee'),'Future As Of date must show effective-dated acting assignment in the structure report');
+  assert(appSource.includes('printPositionStructure')&&appSource.includes('downloadPositionStructure'),'Position Structure Report must support print and download');
+})();
+
+
+(function testV136HigherDutiesUsesSubstantiveRateAndDoesNotHistoricallyReclassLegacyLowerSame(){
+  const migrated=DataStore.migrate(Object.assign(baseState(),{version:'1.1.35',currentCycleId:11}));
+  assert.strictEqual(Number(migrated.repairs.higherDutiesMovementStartCycleId),11,'Upgrade must remember the open cycle where new Lower/Same HDA presentation starts');
+
+  const state=baseState(); state.currentCycleId=11;
+  const e=addEmployee(state,{id:'chain136',position:'Officer',hourlyRate:40,employmentSegments:[{id:'seg',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  state.positions.push(
+    {id:'p40',positionNumber:'P40',positionName:'Officer',department:'Operations',hourlyRate:40,active:true},
+    {id:'p45',positionNumber:'P45',positionName:'Senior Officer',department:'Operations',hourlyRate:45,active:true},
+    {id:'p55',positionNumber:'P55',positionName:'Manager',department:'Operations',hourlyRate:55,active:true}
+  );
+  state.jobDataRows.push(
+    {id:'j0',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'P40',positionName:'Officer',department:'Operations',hourlyRate:40,positionClass:'Permanent',saved:true},
+    {id:'j1',empId:e.id,effectiveDate:'2026-09-01',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'P45',positionName:'Senior Officer',department:'Operations',hourlyRate:45,positionClass:'Permanent',saved:true},
+    {id:'j2',empId:e.id,effectiveDate:'2026-10-01',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'P55',positionName:'Manager',department:'Operations',hourlyRate:55,positionClass:'Permanent',saved:true}
+  );
+  state.payRates.push(
+    {id:'r0',empId:e.id,jobDataId:'j0',effectiveDate:'2026-05-22',position:'Officer',hourlyRate:40,changeType:'Permanent'},
+    {id:'r1',empId:e.id,jobDataId:'j1',effectiveDate:'2026-09-01',position:'Senior Officer',hourlyRate:45,changeType:'Temporary'},
+    {id:'r2',empId:e.id,jobDataId:'j2',effectiveDate:'2026-10-01',position:'Manager',hourlyRate:55,changeType:'Temporary'}
+  );
+  const acting=E.activeActingAssignment(state,e,'2026-10-02');
+  assert.strictEqual(acting.normalRate,40,'Chained acting assignments must continue to use the substantive Permanent rate as the HDA base');
+  assert.strictEqual(acting.difference,15,'Higher Duties differential must be target rate minus substantive rate, not prior temporary acting rate');
+
+  const legacy=DataStore.migrate(Object.assign(baseState(),{version:'1.1.35',currentCycleId:11}));
+  const le=addEmployee(legacy,{id:'legacyLower136',position:'Officer',hourlyRate:40,employmentSegments:[{id:'lseg',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  legacy.jobDataRows.push({id:'lj',empId:le.id,effectiveDate:'2026-09-01',effectiveSequence:0,action:'Movement',reason:'Acting Lower Level',positionNumber:'LOW',positionName:'Lower Role',department:'Operations',hourlyRate:30,positionClass:'Permanent',saved:true});
+  legacy.payRates.push({id:'lr0',empId:le.id,jobDataId:'base',effectiveDate:'2026-05-22',position:'Officer',hourlyRate:40,changeType:'Permanent'},{id:'lr1',empId:le.id,jobDataId:'lj',effectiveDate:'2026-09-01',position:'Lower Role',hourlyRate:30,changeType:'Temporary'});
+  assert.strictEqual(E.activeActingAssignment(legacy,le,'2026-09-15'),null,'Existing pre-upgrade Acting Lower history must not be retrospectively reclassified by the one-time Higher Level correction');
+})();
+
 console.log('PASS: v1.1.35 corrected two-week roster anchor and Leave Calendar week mapping are verified.');
 console.log('PASS: v1.1.35 future fixed-term Job Data does not bleed backward into current casual payslip position.');
 console.log('PASS: v1.1.35 termination Annual Leave payout uses post-retro LWOP balances and does not reverse accrual twice.');
@@ -2454,3 +2593,5 @@ console.log('PASS: v1.1.27 Annual Leave forecast approval, schedule-change grand
 
 console.log('PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.');
 console.log('PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.');
+
+console.log('PASS: v1.1.36 effective Department, retro Casual Earnings, Position Structure Report and Higher Duties Allowance workflows are verified.');
