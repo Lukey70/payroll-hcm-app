@@ -1795,6 +1795,11 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.35',notes:[
+      'Corrected the 2-week roster anchor so Week 1 / Pay Week is 29/05/2026-04/06/2026 for the original PPE anchor and Week 2 / Pay Close Week is 22/05/2026-28/05/2026, alternating consistently across all schedule-dependent features.',
+      'Prevented future Fixed Term Job Data from changing an earlier casual payslip header; pre-conversion casual payslips now show position Casual while preserving position-specific Casual Earnings lines.',
+      'Corrected termination Annual Leave payout ordering so current-pay retro corrections such as late LWOP reverse the relevant leave accrual before the final payout is calculated, without double-applying already-settled retro.'
+    ]},
     {version:'v1.1.34',notes:[
       'Added Customer Services as a selectable Department in Position Data; existing departments and department values remain unchanged.'
     ]},

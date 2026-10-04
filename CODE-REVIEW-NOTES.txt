@@ -1,14 +1,18 @@
-Payroll/HCM App v1.1.34 — Code Review Notes
+Payroll/HCM App v1.1.35 — Code Review Notes
 
-Baseline
-- Built from verified v1.1.33.
-- Existing payroll, retro, LSL, leave, casual-employment, login/access, roster, Job Data and finalised-history behaviour is preserved.
+Scope reviewed for this release
+- Two-week roster anchor and schedule resolver.
+- Leave/Absence Calendar schedule usage.
+- Payslip grouping/header position for casual employees with future Job Data.
+- Termination leave payout ordering relative to retro calculations.
+- Regression compatibility with existing retro settlement, finalisation and leave balance rules.
 
-Observed implementation change
-- Position Data Department dropdown now includes Customer Services alongside Operations, ICT and Human Resources.
-- Department continues to be stored as a normal position.department string, so existing Job Data inheritance, filtering/report data and import/export compatibility require no schema migration.
+Findings / implemented corrections
+1. v1.1.34 anchored Week 1 to the first seven days of PPE 04/06/2026. This was reversed. v1.1.35 anchors Week 1 / Pay Week to 29/05/2026–04/06/2026 and Week 2 / Pay Close Week to 22/05/2026–28/05/2026, alternating in seven-day blocks.
+2. Casual Earnings payslip grouping used the employee master position as a fallback. Saving a future Fixed Term Job Data row can update that master position, causing an earlier casual payslip to show the future position. v1.1.35 derives the payslip header from effective-dated employment/Job Data for the pay period and explicitly shows Casual while casual.
+3. Termination Annual Leave Payout was created before current-pay retro rows were appended. A new retro LWOP could therefore reverse historical leave accrual only after the payout had already been calculated. v1.1.35 supplies the complete pre-payout current+retro row set to projected balance calculation before creating termination payouts.
 
-Compatibility / risk notes
-- No state schema change is required.
-- Existing departments and custom stored department values are not rewritten.
-- Historical finalised payslips are not changed.
+Verification
+- Full automated suite passes: 160 test blocks / 716 assertion call sites / 74 PASS summaries.
+- All four JavaScript files pass node --check.
+- Final ZIP verification is performed again from a clean extraction.

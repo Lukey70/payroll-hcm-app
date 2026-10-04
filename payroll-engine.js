@@ -166,10 +166,12 @@
     return (state.jobDataRows||[]).some(r=>r.empId===empId && r.saved!==false && compare(r.effectiveDate,onDate)<=0);
   }
   function rosterWeekForDate(dateIso){
-    // The original pay-cycle anchor defines the fortnight pattern. Week 1 is the
-    // first seven calendar days of the fortnight (pay week); Week 2 is the final
-    // seven calendar days (pay-close week). This also works for historical dates.
-    const offset=dateDiffDays(ANCHOR_CYCLE.start,dateIso);
+    // The original pay-cycle anchor defines the fortnight pattern used by Job Data.
+    // Week 1 is Pay Week: 29/05/2026-04/06/2026 for PPE 04/06/2026.
+    // Week 2 is Pay Close Week: 22/05/2026-28/05/2026. Alternate that pattern
+    // consistently backward and forward through the calendar.
+    const week1AnchorStart=addDays(ANCHOR_CYCLE.start,7);
+    const offset=dateDiffDays(week1AnchorStart,dateIso);
     const dayInFortnight=((offset%14)+14)%14;
     return dayInFortnight<7 ? 1 : 2;
   }
@@ -1225,7 +1227,12 @@
       const payoutDate=end ? (hasInclusiveEmploymentEnd(e)?end:addDays(end,-1)) : '';
       if(payoutDate && between(payoutDate,c.start,c.end) && !isCasualOnly(state,e,payoutDate)){
         const rate = activePayRate(state,e.id,payoutDate);
-        const payoutBaseRows = rows.filter(r=>!(r.kind==='payout'));
+        // For a final pay, calculate leave payouts from the final projected balance
+        // after all current-pay balance-affecting corrections (including retro rows)
+        // have been applied. Callers can provide the complete pre-payout row set.
+        const payoutBaseRows = Array.isArray(options.payoutBalanceRows)
+          ? options.payoutBalanceRows
+          : rows.filter(r=>!(r.kind==='payout'));
         const balances = projectedBalances(state,e,c,true,payoutBaseRows);
         if(balances.annual > 0) rows.push({ description:'Annual Leave Payout', units:balances.annual, amount:round2(balances.annual*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/resign/i.test(String(e.terminationReason||'')) && balances.annual < -0.0001){
@@ -1583,6 +1590,10 @@
     rows=consolidatePayslipRetroRows(rows);
     const mainRows=rows.filter(r=>r.kind!=='retro');
     const retro=rows.filter(r=>r.kind==='retro');
+    const effectiveEmploymentType=activeEmploymentType(state,e,c.end);
+    const currentJobRow=(state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,c.end)<=0)
+      .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
+    const effectivePosition=effectiveEmploymentType==='Casual'?'Casual':((currentJobRow&&currentJobRow.positionName)||activePayRate(state,e.id,c.end).position||e.position||'');
     const groups=[];
     mainRows.forEach(r=>{
       // Additional earnings and Annual Leave Loading belong to the same payslip as
@@ -1590,12 +1601,12 @@
       // not create a second payslip for the same position and pay period.
       const groupingRate=['additional','leaveLoading'].includes(r.kind)?(r.baseRate||r.rate||0):(r.rate||0);
       const casualGroup=r.casualEarnings===true;
-      const key=casualGroup?'__casual_earnings__':`${r.position||e.position}|${groupingRate}`;
+      const key=casualGroup?'__casual_earnings__':`${r.position||effectivePosition}|${groupingRate}`;
       let group=groups.find(x=>x.key===key);
-      if(!group){ group={key,position:casualGroup?(e.position||'Casual'):r.position||e.position,rate:casualGroup?0:groupingRate,rows:[]}; groups.push(group); }
+      if(!group){ group={key,position:casualGroup?effectivePosition:(r.position||effectivePosition),rate:casualGroup?0:groupingRate,rows:[]}; groups.push(group); }
       group.rows.push(r);
     });
-    if(!groups.length&&retro.length) groups.push({key:'retro',position:e.position,rate:e.hourlyRate,rows:[]});
+    if(!groups.length&&retro.length) groups.push({key:'retro',position:effectivePosition,rate:activePayRate(state,e.id,c.end).hourlyRate||e.hourlyRate,rows:[]});
     if(groups.length) groups[0].rows.push(...retro);
     if(!groups.length) return [];
     const whole=wholePayFinancials(state,e,c,rows);
@@ -1619,7 +1630,11 @@
     if(!e) return [];
     reconcileEmploymentFromJobData(state,e);
     const c = cycleById(cycleId || state.currentCycleId || 1);
-    const rows = [...earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true}), ...retroRows(state,e,c)];
+    const currentWithoutTerminationPayouts=earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:false});
+    const retro=retroRows(state,e,c);
+    const prePayoutRows=[...currentWithoutTerminationPayouts,...lateFixedTermPayoutRecoveryRows(state,e,c),...retro];
+    const current=earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true,payoutBalanceRows:prePayoutRows});
+    const rows=[...current,...retro];
     return splitIntoPayslips(state,e,c,rows,finalised || isFinalised(state,c));
   }
   function calculateAll(state, cycleId, finalised=false){

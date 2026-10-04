@@ -1,30 +1,28 @@
-Payroll/HCM App v1.1.34 — Test Results
+Payroll/HCM App v1.1.35 — Test Results
 Release date: 03 October 2026
 
-AUTOMATED REGRESSION SUITE
+AUTOMATED REGRESSION
 Command: node test-cases.js
-Result: PASS (exit code 0)
-Self-invoking test blocks: 156
-assert/assert.* call sites: 693
-Runtime PASS summaries: 71
+Result: PASS — exit code 0
+Test blocks: 160
+Assertion call sites: 716
+Runtime PASS summaries: 74
 
-V1.1.34 FOCUSED COVERAGE
-- Customer Services is present in the Position Data Department selector.
-- Editing a Customer Services position retains/reselects the department.
-- Migration/import preserves positions whose department is Customer Services.
-- All prior v1.1.33 regression coverage remains passing.
+JAVASCRIPT SYNTAX
+- node --check data-store.js — PASS
+- node --check payroll-engine.js — PASS
+- node --check app.js — PASS
+- node --check test-cases.js — PASS
 
-SYNTAX CHECKS
-- node --check data-store.js: PASS
-- node --check payroll-engine.js: PASS
-- node --check app.js: PASS
-- node --check test-cases.js: PASS
+V1.1.35 FOCUSED COVERAGE
+- Correct Week 1 / Pay Week and Week 2 / Pay Close Week mapping at the original PPE anchor and forward/backward alternation.
+- Absence Calendar uses the corrected two-week schedule on the relevant dates.
+- Casual employee with a future Fixed Term Finance Officer row keeps payslip position Casual before the conversion effective date.
+- Position-specific Casual Earnings description remains intact.
+- Termination Annual Leave payout uses the projected balance after a newly generated retro LWOP accrual reversal.
+- A previously finalised LWOP retro correction is not applied again to a later termination payout.
 
-HTTP / BROWSER
-- Local HTTP load: HTTP 200.
-- Chromium headless render attempt: timed out before returning a DOM. No successful real-browser interaction test is claimed.
-
-FULL RUNTIME OUTPUT
+FULL SUITE OUTPUT
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -71,6 +69,9 @@ PASS: Union Fees are fixed-amount post-tax deductions, may be open-ended, and mu
 PASS: Job Data effective dates use first-day-of-new-status boundaries for terminations and movements.
 PASS: Annual and Personal Leave support a one-scheduled-workday negative limit and preserve permitted negative balances.
 PASS: Payslip date-range filtering defaults to the 10 most recent payslips and can expand/narrow the range.
+PASS: v1.1.35 corrected two-week roster anchor and Leave Calendar week mapping are verified.
+PASS: v1.1.35 future fixed-term Job Data does not bleed backward into current casual payslip position.
+PASS: v1.1.35 termination Annual Leave payout uses post-retro LWOP balances and does not reverse accrual twice.
 PASS: v1.1.34 Customer Services department availability and compatibility are verified.
 PASS: v1.1.33 isolated landing page, fixed tile positions, improved Home icon and access navigation are verified.
 PASS: v1.1.33 Permanency Confirmed and historical Annual Leave error-check fixes are verified.
@@ -96,4 +97,3 @@ PASS: v1.1.27 deduction Save validation, Special Responsibility Allowance and fi
 PASS: v1.1.27 Annual Leave forecast approval, schedule-change grandfathering and resignation recovery are verified.
 PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, non-contributory service and notifications are verified.
 PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.
-

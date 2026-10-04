@@ -1,0 +1,40 @@
+Payroll/HCM App v1.1.35 — Release Notes
+Release date: 03 October 2026
+
+SUMMARY
+v1.1.35 corrects the two-week roster anchor, prevents future fixed-term Job Data from changing earlier casual payslip headers, and fixes termination Annual Leave payouts when the final pay also contains retro corrections such as late LWOP. All verified v1.1.34 behaviour is preserved.
+
+2-WEEK ROSTER ANCHOR
+- Corrected the original PPE 04/06/2026 roster mapping.
+- Week 1 / Pay Week is 29/05/2026–04/06/2026.
+- Week 2 / Pay Close Week is 22/05/2026–28/05/2026.
+- The pattern alternates consistently backward and forward in seven-day blocks.
+- The corrected mapping flows through schedule-dependent payroll and leave functions, including Leave/Absence Calendar display, Monthly Absence Calendar, Regular Pay, leave hours, Annual Leave forecasts, public-holiday eligibility, negative-leave limits, payslip units and retro calculations.
+
+EFFECTIVE-DATED PAYSLIP POSITION
+- A future Fixed Term contract/position no longer changes an earlier casual payslip header.
+- While the employee is casual in the relevant pay period, the payslip position is shown as “Casual”.
+- Position-specific Casual Earnings lines remain identifiable as “Casual Earnings - [Position Name]”.
+- From the later Fixed Term effective date, the applicable non-casual position can be shown normally.
+
+TERMINATION ANNUAL LEAVE PAYOUT + RETRO LWOP
+- Termination leave payout balances are now determined after current-pay balance-affecting retro corrections have been included.
+- A late LWOP correction can reverse Annual Leave/Personal Leave accrual originally earned on Regular Pay hours that should have been unpaid before the Annual Leave payout is calculated.
+- Previously finalised/settled retro corrections are not applied a second time in a later termination pay.
+- Existing separate Leave Without Pay Retro informational and Regular Pay Retro financial lines are preserved.
+- Finalised historical payslips remain preserved.
+
+COMPATIBILITY
+- v1.1.35 preserves the existing payrollAppData/localStorage/import-export structure.
+- No release-wide destructive data migration is introduced.
+
+TESTING
+- Full automated Node regression suite passes: 160 self-invoking test blocks, 716 assert/assert.* call sites and 74 runtime PASS summaries.
+- Dedicated v1.1.35 regressions cover the corrected roster anchor/calendar mapping, future casual-to-fixed-term payslip position, termination payout with new retro LWOP, and termination after an already-settled LWOP correction.
+- data-store.js, payroll-engine.js, app.js and test-cases.js pass node --check.
+- The final packaged ZIP is freshly extracted and the full regression/syntax suite is rerun from that clean copy before release.
+
+KNOWN LIMITATIONS
+- ESS and MSS remain Coming Soon landing destinations.
+- Login/password protection remains client-side demonstration functionality rather than production-grade authentication.
+- Real-browser interaction testing is reported separately from automated Node/syntax verification and is never inferred from those checks.

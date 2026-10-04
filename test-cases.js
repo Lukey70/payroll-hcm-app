@@ -36,8 +36,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.34'), 'sidebar/version label must show v1.1.34');
-  assert(data.includes("APP_VERSION = '1.1.34'"), 'data-store version must be 1.1.34');
+  assert(html.includes('v1.1.35'), 'sidebar/version label must show v1.1.35');
+  assert(data.includes("APP_VERSION = '1.1.35'"), 'data-store version must be 1.1.35');
 })();
 
 (function testAnchorPayCycle(){
@@ -2279,15 +2279,15 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
 (function testV133TwoWeekRosterUsesPayWeekAndPayCloseWeek(){
   const state=baseState(); const e=addEmployee(state,{id:'rost133'}); addRate(state,e.id);
   state.schedules.push({id:'tw133',empId:e.id,effectiveDate:'2026-05-22',rosterPattern:'2-week',hoursByDayWeek1:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},hoursByDayWeek2:{1:4,2:4,3:4,4:4,5:4,6:0,0:0},hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
-  assert.strictEqual(E.rosterWeekForDate('2026-05-25'),1,'First seven days of the anchored pay cycle must be Week 1 / pay week');
-  assert.strictEqual(E.rosterWeekForDate('2026-06-01'),2,'Final seven days of the anchored pay cycle must be Week 2 / pay-close week');
-  assert.strictEqual(E.activeSchedule(state,e.id,'2026-05-25').hoursByDay[1],7.5);
-  assert.strictEqual(E.activeSchedule(state,e.id,'2026-06-01').hoursByDay[1],4);
+  assert.strictEqual(E.rosterWeekForDate('2026-05-25'),2,'22/05/2026-28/05/2026 must be Week 2 / pay-close week');
+  assert.strictEqual(E.rosterWeekForDate('2026-06-01'),1,'29/05/2026-04/06/2026 must be Week 1 / pay week');
+  assert.strictEqual(E.activeSchedule(state,e.id,'2026-05-25').hoursByDay[1],4);
+  assert.strictEqual(E.activeSchedule(state,e.id,'2026-06-01').hoursByDay[1],7.5);
   assert.strictEqual(E.weeklyHoursFromSchedule(E.activeSchedule(state,e.id,'2026-06-01')),28.75,'Weekly-equivalent calculations such as LSL must use the average of both roster weeks');
   const leave=E.validateLeaveBooking(state,e.id,'Personal Leave','2026-06-02','2026-06-02');
-  assert.strictEqual(leave.hours,4,'Leave booking must use the Week 2 schedule when the date is in pay-close week');
+  assert.strictEqual(leave.hours,7.5,'Leave booking must use the Week 1 schedule when the date is in pay week');
   const pays=E.calculateEmployee(state,e.id,1,false);
-  assert.strictEqual(totalUnitsByDesc(pays,'Public Holiday'),4,'Rostered public holiday must use the applicable Week 2 roster hours');
+  assert.strictEqual(totalUnitsByDesc(pays,'Public Holiday'),7.5,'Rostered public holiday must use the applicable Week 1 roster hours');
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes('Roster Pattern')&&app.includes('Week 1 — Pay Week')&&app.includes('Week 2 — Pay Close Week'),'Job Data must expose the two-week roster UI with the requested week labels');
 })();
@@ -2332,6 +2332,84 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert(app.includes('<option>Absent Without Leave</option>'),'Leave booking UI must include Absent Without Leave');
 })();
 
+
+(function testV135TwoWeekRosterCalendarAnchorIsNotReversed(){
+  const state=baseState(); const e=addEmployee(state,{id:'rost135'}); addRate(state,e.id);
+  state.schedules.push({id:'tw135',empId:e.id,effectiveDate:'2026-05-22',rosterPattern:'2-week',hoursByDayWeek1:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0},hoursByDayWeek2:{1:0,2:4,3:4,4:4,5:4,6:0,0:0},hoursByDay:{1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0}});
+  assert.strictEqual(E.rosterWeekForDate('2026-05-25'),2,'Monday 25/05/2026 must use Week 2 / pay-close week');
+  assert.strictEqual(E.rosterWeekForDate('2026-06-01'),1,'Monday 01/06/2026 must use Week 1 / pay week');
+  const may25=E.absenceCalendarStatus(state,e,'2026-05-25');
+  assert.strictEqual(may25.hours,0,'Leave/absence calendar must use Week 2 hours for 25/05/2026');
+  assert.strictEqual(may25.label,'NRD','A Week 2 non-rostered day must display as NRD');
+  const june1=E.absenceCalendarStatus(state,e,'2026-06-01');
+  assert.strictEqual(june1.hours,7.5,'Leave/absence calendar must use Week 1 hours for 01/06/2026');
+  assert.strictEqual(june1.label,'PH','Rostered WA Day in Week 1 must display as a public holiday');
+  assert.strictEqual(E.rosterWeekForDate('2026-06-08'),2,'The corrected Week 1/Week 2 pattern must continue alternating forward');
+  assert.strictEqual(E.rosterWeekForDate('2026-05-18'),1,'The corrected Week 1/Week 2 pattern must continue alternating backward');
+})();
+
+(function testV135FutureFixedTermPositionDoesNotBleedIntoCasualPayslip(){
+  const state=baseState();
+  const c=E.cycleForDate('2026-10-22');
+  assert(c,'PPE 22/10/2026 must exist');
+  state.currentCycleId=c.id;
+  const e=addEmployee(state,{id:'cas135',firstName:'Casey',lastName:'Casual',type:'Fixed Term',position:'Finance Officer',hourlyRate:45,startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'',annualLeaveBalance:0,personalLeaveBalance:0});
+  e.employmentSegments=[{id:'cas135seg',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}];
+  state.positions.push({id:'caspos135',positionNumber:'CAS135',positionName:'Casual Shift',department:'Customer Services',hourlyRate:30,active:true});
+  state.jobDataRows.push(
+    {id:'casjd135',empId:e.id,effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionNumber:'CASUAL',positionName:'Casual',positionClass:'Casual',saved:true},
+    {id:'fixjd135',empId:e.id,effectiveDate:'2027-01-04',effectiveSequence:0,action:'Commencement',reason:'New Fixed Term Contract',positionNumber:'FIN135',positionName:'Finance Officer',positionClass:'Fixed-Term',saved:true}
+  );
+  state.additionalEarnings.push({id:'ce135',empId:e.id,cycleId:c.id,earningType:'Casual Earnings',positionNumber:'CAS135',positionName:'Casual Shift',casualBaseRate:30,startDate:c.start,endDate:c.start,hours:8,saved:true});
+  const pays=E.calculateEmployee(state,e.id,c.id,false);
+  assert.strictEqual(pays.length,1,'Casual Earnings should produce one payslip');
+  assert.strictEqual(pays[0].employmentType,'Casual','Pre-conversion payslip must use the employment type effective in the pay period');
+  assert.strictEqual(pays[0].position,'Casual','Pre-conversion casual payslip header must say Casual, not the future Finance Officer position');
+  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Casual Shift'),'Underlying Casual Earnings line must still retain the selected earning position name');
+})();
+
+(function testV135TerminationAnnualLeavePayoutUsesPostRetroLwopBalance(){
+  const state=baseState(); const e=addEmployee(state,{id:'termretro135',annualLeaveBalance:0,personalLeaveBalance:0}); addSchedule(state,e.id); addRate(state,e.id);
+  E.finaliseCurrentPay(state); // Cycle 1 commits the original full-pay accrual.
+  const balanceAfterOriginalPay=Number(e.annualLeaveBalance||0);
+  state.leaveBookings.push({id:'lateLwop135',empId:e.id,type:'LWOP',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  e.terminationDate='2026-06-12'; e.terminationReason='Voluntary Resignation';
+  e.employmentSegments=[{id:'termretroseg135',startDate:'2026-05-22',endDate:'2026-06-12',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}];
+  const c=E.cycleById(2);
+  const withoutPayout=E.earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:false});
+  const retro=E.retroRows(state,e,c);
+  const retroRegular=retro.filter(r=>r.description==='Regular Pay Retro').reduce((sum,r)=>sum+Number(r.accrualUnits||0),0);
+  assert(retroRegular<0,'Late LWOP must reverse previously credited ordinary/accrual units');
+  const postRetroExpected=E.projectedBalances(state,e,c,true,[...withoutPayout,...retro]).annual;
+  const preRetroExpected=E.projectedBalances(state,e,c,true,withoutPayout).annual;
+  assert(postRetroExpected<preRetroExpected,'Retro LWOP must reduce the Annual Leave balance before termination payout');
+  const pays=E.calculateEmployee(state,e.id,c.id,false);
+  const payout=pays.flatMap(p=>p.rows).find(r=>r.description==='Annual Leave Payout');
+  assert(payout,'Termination pay must include Annual Leave Payout');
+  assert.strictEqual(E.round4(payout.units),E.round4(postRetroExpected),'Annual Leave Payout must use the post-retro projected Annual Leave balance');
+  assert.strictEqual(E.round4(preRetroExpected-payout.units),E.round4(E.leaveAccrualForOrdinaryHours(e,7.5).annual),'One retro LWOP day must reverse the leave accrual originally earned on those hours before payout');
+  assert(balanceAfterOriginalPay>0,'Test setup must include committed Annual Leave from the original finalised pay');
+})();
+
+(function testV135PreviouslySettledLwopRetroDoesNotReduceLaterTerminationPayoutTwice(){
+  const state=baseState(); const e=addEmployee(state,{id:'settledterm135',annualLeaveBalance:0,personalLeaveBalance:0}); addSchedule(state,e.id); addRate(state,e.id);
+  E.finaliseCurrentPay(state);
+  state.leaveBookings.push({id:'settledLwop135',empId:e.id,type:'LWOP',startDate:'2026-05-25',endDate:'2026-05-25',hours:7.5,status:'Approved'});
+  E.finaliseCurrentPay(state); // Cycle 2 settles the retro LWOP and commits its accrual reversal.
+  const correctedCommitted=Number(e.annualLeaveBalance||0);
+  e.terminationDate='2026-06-26'; e.terminationReason='Voluntary Resignation';
+  e.employmentSegments=[{id:'settledseg135',startDate:'2026-05-22',endDate:'2026-06-26',inclusiveEnd:false,terminationReason:'Voluntary Resignation'}];
+  const c=E.cycleById(3);
+  const pays=E.calculateEmployee(state,e.id,c.id,false);
+  assert.strictEqual(totalAmountByDesc(pays,'Regular Pay Retro'),0,'Previously settled LWOP retro must not be generated again in the later final pay');
+  const base=E.earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:false});
+  const expected=E.projectedBalances(state,e,c,true,base).annual;
+  const payout=pays.flatMap(p=>p.rows).find(r=>r.description==='Annual Leave Payout');
+  assert(payout,'Later final pay must still pay the remaining corrected Annual Leave balance');
+  assert.strictEqual(E.round4(payout.units),E.round4(expected),'A previously settled LWOP accrual reversal must not reduce the termination payout a second time');
+  assert(correctedCommitted>=0,'Corrected committed Annual Leave balance should remain valid after the settled retro correction');
+})();
+
 (function testV134CustomerServicesDepartment(){
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes(">Customer Services</option>"),'Position Data Department list must include Customer Services');
@@ -2339,6 +2417,10 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const state=DataStore.migrate(Object.assign(baseState(),{positions:[{id:'cs134',positionNumber:'CS134',positionName:'Customer Service Officer',department:'Customer Services',hourlyRate:35,active:true}]}));
   assert.strictEqual(state.positions[0].department,'Customer Services','Migration/import must preserve the Customer Services department value');
 })();
+
+console.log('PASS: v1.1.35 corrected two-week roster anchor and Leave Calendar week mapping are verified.');
+console.log('PASS: v1.1.35 future fixed-term Job Data does not bleed backward into current casual payslip position.');
+console.log('PASS: v1.1.35 termination Annual Leave payout uses post-retro LWOP balances and does not reverse accrual twice.');
 
 console.log('PASS: v1.1.34 Customer Services department availability and compatibility are verified.');
 
