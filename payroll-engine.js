@@ -199,7 +199,7 @@
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
     const rows = (state.payRates||[]).map((p,i)=>Object.assign({_sourceIndex:i},p))
       .filter(p=>p.empId===empId && p.id!==excludeId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && (p.changeType==='Permanent' || !p.endDate || compare(onDate,p.endDate)<=0))
-      .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate) || ((b.changeType==='Temporary')-(a.changeType==='Temporary')) || Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0) || b._sourceIndex-a._sourceIndex);
+      .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate) || Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0) || ((b.changeType==='Temporary')-(a.changeType==='Temporary')) || b._sourceIndex-a._sourceIndex);
     const e = (state.employees||[]).find(x=>x.id===empId) || {};
     return rows[0] || { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
   }
@@ -236,37 +236,58 @@
     if(row&&row.positionNumber){ const pos=positionByNumber(state,row.positionNumber); if(pos&&pos.department) return String(pos.department); }
     return String((e&&e.department)||'');
   }
+  const ACTING_REASONS = ['Acting Higher Level','Acting Lower Level','Acting Same Level'];
+  function assignmentEvent(state,empId,onDate,sequence=Infinity){
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
+      (compare(r.effectiveDate,onDate)<0 || (compare(r.effectiveDate,onDate)===0&&Number(r.effectiveSequence||0)<=sequence)))
+      .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
+  }
+  function isActingJobDataRow(state,row){
+    if(!row || row.saved===false) return false;
+    if(row.action==='Movement') return ACTING_REASONS.includes(String(row.reason||''));
+    if(row.action!=='Variation') return false;
+    const movement=assignmentEvent(state,row.empId,row.effectiveDate,Number(row.effectiveSequence||0));
+    return !!(movement&&movement.action==='Movement'&&ACTING_REASONS.includes(String(movement.reason||''))&&
+      (row.positionNumber ? String(row.positionNumber)===String(movement.positionNumber) : row.positionName===movement.positionName));
+  }
   function activePermanentPayRate(state, empId, onDate){
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
-    const actingJobIds=new Set((state.jobDataRows||[])
-      .filter(j=>j&&j.empId===empId&&j.saved!==false&&j.action==='Movement'&&['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(String(j.reason||'')))
-      .map(j=>String(j.id||'')));
+    const actingRows=(state.jobDataRows||[]).filter(j=>j&&j.empId===empId&&isActingJobDataRow(state,j));
+    const actingJobIds=new Set(actingRows.map(j=>String(j.id||'')).filter(Boolean));
+    const actingRateIds=new Set(actingRows.map(j=>String(j.rateId||'')).filter(Boolean));
     const rows=(state.payRates||[]).map((p,i)=>Object.assign({_sourceIndex:i},p))
-      .filter(p=>p.empId===empId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && p.changeType==='Permanent' && !actingJobIds.has(String(p.jobDataId||'')))
+      .filter(p=>p.empId===empId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && p.changeType==='Permanent' && !actingJobIds.has(String(p.jobDataId||'')) && !actingRateIds.has(String(p.id||'')))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0)||b._sourceIndex-a._sourceIndex);
+    if(rows.length) return rows[0];
+    // Saved Job Data retains the substantive rate even when a legacy import has
+    // lost its derived pay-rate row. The employee snapshot may already be acting.
+    const job=(state.jobDataRows||[]).filter(j=>j&&j.empId===empId&&j.saved!==false&&j.action!=='Termination'&&j.effectiveDate&&compare(j.effectiveDate,onDate)<=0&&!isActingJobDataRow(state,j))
+      .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
+    if(job) return {id:job.rateId||'job-base',position:job.positionName||'',hourlyRate:Number(job.hourlyRate||0),effectiveDate:job.effectiveDate,changeType:'Permanent',jobDataId:job.id};
     const e=(state.employees||[]).find(x=>x.id===empId)||{};
-    return rows[0] || { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
+    return { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
   }
   function activeActingAssignment(state,e,onDate){
     if(!state||!e||!onDate||compare(onDate,HIGHER_DUTIES_TRANSITION_DATE)<0) return null;
-    const movement=(state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action==='Movement'&&r.effectiveDate&&compare(r.effectiveDate,onDate)<=0)
-      .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
+    const movement=assignmentEvent(state,e.id,onDate);
     const reason=String((movement&&movement.reason)||'');
-    if(!movement || !['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(reason)) return null;
+    if(!movement || movement.action!=='Movement' || !ACTING_REASONS.includes(reason)) return null;
     const movementRuleStartCycleId=Number((state.repairs&&state.repairs.higherDutiesMovementStartCycleId)||0);
     const onDateCycle=cycleForDate(onDate);
     if(reason!=='Acting Higher Level' && movementRuleStartCycleId && onDateCycle && Number(onDateCycle.id)<movementRuleStartCycleId) return null;
     const normal=activePermanentPayRate(state,e.id,onDate);
-    const targetRate=Number(movement.hourlyRate||positionHourlyRate(state,movement.positionNumber,onDate)||0);
-    const normalRate=Number((normal&&normal.hourlyRate)||e.hourlyRate||0);
-    const targetPosition=(movement.positionName||((positionByNumber(state,movement.positionNumber)||{}).positionName)||'');
+    const latest=activeJobDataRow(state,e,onDate);
+    const target=latest&&isActingJobDataRow(state,latest)?latest:movement;
+    const targetRate=Number(target.hourlyRate!==undefined?target.hourlyRate:positionHourlyRate(state,target.positionNumber,onDate));
+    const normalRate=Number(normal.hourlyRate||0);
+    const targetPosition=(target.positionName||((positionByNumber(state,target.positionNumber)||{}).positionName)||'');
     let difference=round4(targetRate-normalRate);
     if(reason==='Acting Same Level') difference=0;
     if(reason==='Acting Higher Level') difference=Math.max(0,difference);
     if(reason==='Acting Lower Level') difference=Math.min(0,difference);
     return {
       reason, effectiveDate:movement.effectiveDate, movementRowId:movement.id||'',
-      normalRate, normalPosition:(normal&&normal.position)||e.position||'', targetRate, targetPosition, positionNumber:movement.positionNumber||'',
+      normalRate, normalPosition:normal.position||e.position||'', targetRate, targetPosition, positionNumber:target.positionNumber||'',
       difference:round4(difference)
     };
   }
@@ -1152,7 +1173,7 @@
   function mergeRows(rows){
     const out = [];
     rows.forEach(row=>{
-      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||''].join('|');
+      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||'',row.payslipPosition||'',row.payslipPositionNumber||'',row.payslipDepartment||'',row.casualEarnings?row.positionNumber||'':''].join('|');
       const canCombineAnywhere = row.description === 'Regular Pay' && row.kind === 'regular';
       let target = canCombineAnywhere ? out.find(x=>x._key===key) : out[out.length-1];
       if(target && target._key === key && (canCombineAnywhere || addDays(target.endDate,1) === row.startDate)){
@@ -1262,7 +1283,7 @@
         // current/open cycleId even though the work date belongs to a finalised cycle.
         // Route it to the source pay period so the cumulative retro engine can create
         // the outstanding Casual Earnings Retro rather than silently dropping it.
-        const sourceStart=a.startDate||''; const sourceEnd=a.endDate||sourceStart;
+        const sourceStart=a.startDate||''; const sourceEnd=a.earningType==='Casual Earnings'?sourceStart:(a.endDate||sourceStart);
         if(sourceStart && sourceEnd) return compare(sourceEnd,c.start)>=0 && compare(sourceStart,c.end)<=0;
         return Number(a.cycleId)===Number(c.id);
       }).forEach(a=>{
@@ -1279,7 +1300,7 @@
         if(earningType==='Higher Duties Allowance'){
           const onDate=a.startDate||c.start;
           const pos=positionByNumber(state,a.positionNumber);
-          const posName=(pos&&pos.positionName)||a.positionName||'Position';
+          const posName=a.positionName||(pos&&pos.positionName)||'Position';
           const normal=substantivePayRate(state,e,onDate);
           const higherRate=Number(a.higherDutiesPositionRate||positionHourlyRate(state,a.positionNumber,onDate)||0);
           const difference=round4(higherRate-Number(normal.hourlyRate||0));
@@ -1289,11 +1310,11 @@
         }
         if(earningType==='Casual Earnings'){
           const pos=positionByNumber(state,a.positionNumber);
-          const posName=(pos&&pos.positionName)||a.positionName||'Position';
+          const posName=a.positionName||(pos&&pos.positionName)||'Position';
           const base=Number(a.casualBaseRate||positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
           const loaded=round4(base*1.25);
           const hours=Number(a.hours||0);
-          rows.push({ description:`Casual Earnings - ${posName}`, units:hours, amount:round2(hours*loaded), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:loaded, baseRate:base, position:posName, positionNumber:a.positionNumber||'', kind:'additional', ote:true, accruesLeave:false, serviceHours:0, casualEarnings:true, casualLoadingRate:0.25, casualBaseRate:base, casualLoadedRate:loaded });
+          rows.push({ description:`Casual Earnings - ${posName}`, units:hours, amount:round2(hours*loaded), startDate:a.startDate||c.start, endDate:a.startDate||c.start, rate:loaded, baseRate:base, position:posName, positionNumber:a.positionNumber||'', kind:'additional', ote:true, accruesLeave:false, serviceHours:0, casualEarnings:true, casualLoadingRate:0.25, casualBaseRate:base, casualLoadedRate:loaded, positionDepartment:a.positionDepartment||(pos&&pos.department)||activeDepartment(state,e,a.startDate||c.start) });
           return;
         }
         if(earningType==='Meal Allowance'){
@@ -1354,6 +1375,20 @@
         if(/retire/i.test(String(e.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
       }
     }
+    rows.forEach(row=>{
+      if(row.kind==='retro' || row.casualEarnings) return;
+      const job=activeJobDataRow(state,e,row.startDate||c.start);
+      const acting=activeActingAssignment(state,e,row.startDate||c.start);
+      if(acting){
+        row.payslipPosition=acting.targetPosition;
+        row.payslipPositionNumber=acting.positionNumber;
+        row.payslipDepartment=activeDepartment(state,e,row.startDate||c.start);
+      }else if(job){
+        row.payslipPosition=row.position||job.positionName||'';
+        row.payslipPositionNumber=job.positionNumber||'';
+        row.payslipDepartment=activeDepartment(state,e,row.startDate||c.start);
+      }
+    });
     return mergeRows(rows);
   }
   function isOTE(row){
@@ -1442,6 +1477,13 @@
 
   function retroRowsFromComparison(expectedRows, paidRows){
     const map = new Map();
+    const casualSignatures=new Map();
+    expectedRows.concat(paidRows).filter(isCasualEarningsRow).forEach(row=>{
+      const signature=[String(row.description||'').replace(/ Retro$/,''),row.position||'',round4(Number(row.rate||row.baseRate||0))].join('|');
+      let group=casualSignatures.get(signature);
+      if(!group){ group={ids:new Set(),legacy:false}; casualSignatures.set(signature,group); }
+      if(row.positionNumber) group.ids.add(String(row.positionNumber)); else group.legacy=true;
+    });
     function baseDescription(row){ return String(row.description||'Regular Pay').replace(/ Retro$/,''); }
     function amountOnly(row){ return !!row.amountOnly || amountOnlyAdditionalDescription(baseDescription(row)); }
     function ensure(row){
@@ -1453,13 +1495,17 @@
       // Keep genuinely different historical positions/rates separate. This prevents a
       // leave-day reversal and a late higher-level movement from being collapsed into
       // an artificial fractional unit figure such as -0.55 units.
-      const key=[description,row.ote===false?'nonote':'ote',row.nonTaxable===true?'nontax':'tax',isAmount?'amount':position,isAmount?'':String(round4(rate))].join('|');
+      const casual=isCasualEarningsRow(row);
+      const signature=casualSignatures.get([base,row.position||'',round4(rate)].join('|'));
+      const casualNumber=casual?(signature&&signature.legacy&&signature.ids.size>1?'':(row.positionNumber||(signature&&signature.ids.size===1?Array.from(signature.ids)[0]:''))):'';
+      const key=[description,row.ote===false?'nonote':'ote',row.nonTaxable===true?'nontax':'tax',isAmount?'amount':position,isAmount?'':String(round4(rate)),casualNumber].join('|');
       const existing=map.get(key) || {
-        description, expectedUnits:0, paidBaseUnits:0, paidRetroInformationalUnits:0,
+        description, expectedUnits:0, paidBaseUnits:0, paidRetroInformationalUnits:0, paidCasualRetroUnits:0,
         expectedAmount:0, paidAmount:0, expectedOrdinaryUnits:0, paidOrdinaryUnits:0,
         paidRetroAccrualUnits:0, expectedBalanceUnits:0, paidBalanceUnits:0,
         paidRetroBalanceUnits:0, startDate:'', endDate:'', position:position||row.position||'',
         kind:'retro', ote:row.ote!==false, amountOnly:isAmount, rate:round4(rate),
+        casualEarnings:isCasualEarningsRow(row),positionNumber:row.positionNumber||'',positionDepartment:row.positionDepartment||'',
         nonTaxable:row.nonTaxable===true, movementHigherDuties:row.movementHigherDuties===true,
         movementBasePay:row.movementBasePay===true, higherDutiesPosition:row.higherDutiesPosition||'', higherDutiesReason:row.higherDutiesReason||''
       };
@@ -1479,6 +1525,8 @@
       if(row.movementBasePay===true) g.movementBasePay=true;
       if(row.higherDutiesPosition) g.higherDutiesPosition=row.higherDutiesPosition;
       if(row.higherDutiesReason) g.higherDutiesReason=row.higherDutiesReason;
+      if(row.positionNumber) g.positionNumber=row.positionNumber;
+      if(row.positionDepartment) g.positionDepartment=row.positionDepartment;
       g.expectedOrdinaryUnits=round4(g.expectedOrdinaryUnits + ordinaryHours([row]));
       if(isBalanceLeave(desc)) g.expectedBalanceUnits=round4(g.expectedBalanceUnits+units);
       updateDates(g,row);
@@ -1487,6 +1535,7 @@
       const g=ensure(row); const desc=baseDescription(row); const units=Number(row.units||0); const amount=Number(row.amount||0);
       g.paidAmount=round2(g.paidAmount+amount);
       if(row.kind==='retro'){
+        if(isCasualEarningsRow(row)) g.paidCasualRetroUnits=round4(g.paidCasualRetroUnits+units);
         g.paidRetroAccrualUnits=round4(g.paidRetroAccrualUnits+Number(row.accrualUnits||0));
         g.paidRetroBalanceUnits=round4(g.paidRetroBalanceUnits+Number(row.balanceUnits||0));
         if(isLeaveWithoutPay(desc) && row.informational) g.paidRetroInformationalUnits=round4(g.paidRetroInformationalUnits+units);
@@ -1507,22 +1556,22 @@
       const balanceUnits=round4(g.expectedBalanceUnits-g.paidBalanceUnits-g.paidRetroBalanceUnits);
       const accrualUnits=round4(g.expectedOrdinaryUnits-g.paidOrdinaryUnits-g.paidRetroAccrualUnits);
       if(informationalUnpaid && Math.abs(amount)<0.01){
-        rows.push({ description:g.description, units:unitDiff, amount:0, startDate:g.startDate, endDate:g.endDate, rate:round2(g.rate||0), baseRate:round2(g.rate||0), position:g.position||'', kind:'retro', ote:false, balanceUnits:0, accrualUnits:0, informational:true, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'' });
+        rows.push({ description:g.description, units:unitDiff, amount:0, startDate:g.startDate, endDate:g.endDate, rate:round2(g.rate||0), baseRate:round2(g.rate||0), position:g.position||'', kind:'retro', ote:false, balanceUnits:0, accrualUnits:0, informational:true, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'',casualEarnings:g.casualEarnings,positionNumber:g.positionNumber||'',positionDepartment:g.positionDepartment||'' });
         return;
       }
       if(g.amountOnly){
-        rows.push({ description:g.description, units:0, amount, startDate:g.startDate, endDate:g.endDate, rate:0, baseRate:0, position:g.position||'', kind:'retro', ote:g.ote, balanceUnits, accrualUnits, amountOnly:true, nonTaxable:g.nonTaxable, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'' });
+        rows.push({ description:g.description, units:0, amount, startDate:g.startDate, endDate:g.endDate, rate:0, baseRate:0, position:g.position||'', kind:'retro', ote:g.ote, balanceUnits, accrualUnits, amountOnly:true, nonTaxable:g.nonTaxable, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'',casualEarnings:g.casualEarnings,positionNumber:g.positionNumber||'',positionDepartment:g.positionDepartment||'' });
         return;
       }
-      let rate=round2(g.rate||0);
-      let units=unitDiff;
-      if(Math.abs(rate)>0.0001 && Math.abs(amount)>0.004){
+      let rate=g.casualEarnings?round4(g.rate||0):round2(g.rate||0);
+      let units=g.casualEarnings?round4(unitDiff-g.paidCasualRetroUnits):unitDiff;
+      if(!g.casualEarnings && Math.abs(rate)>0.0001 && Math.abs(amount)>0.004){
         const amountUnits=round4(amount/rate);
         // Monetary difference is authoritative for ordinary earnings at this distinct
         // position/rate segment. For leave, retain the true scheduled balance units.
         units=isBalanceLeave(baseDesc)&&Math.abs(balanceUnits)>0.0001 ? balanceUnits : amountUnits;
       }
-      rows.push({ description:g.description, units, amount, startDate:g.startDate, endDate:g.endDate, rate, baseRate:Math.abs(rate)>0.0001?Math.abs(rate):0, position:g.position||'', kind:'retro', ote:g.ote, balanceUnits, accrualUnits, nonTaxable:g.nonTaxable, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'' });
+      rows.push({ description:g.description, units, amount, startDate:g.startDate, endDate:g.endDate, rate, baseRate:Math.abs(rate)>0.0001?Math.abs(rate):0, position:g.position||'', kind:'retro', ote:g.ote, balanceUnits, accrualUnits, nonTaxable:g.nonTaxable, movementHigherDuties:g.movementHigherDuties, movementBasePay:g.movementBasePay, higherDutiesPosition:g.higherDutiesPosition||'', higherDutiesReason:g.higherDutiesReason||'',casualEarnings:g.casualEarnings,positionNumber:g.positionNumber||'',positionDepartment:g.positionDepartment||'' });
     });
     // A pure backdated rate/position correction can create an equal-unit reissue at
     // the new rate and recovery at the old rate over the exact same source range.
@@ -1532,7 +1581,7 @@
     const consumed=new Set(); const collapsed=[];
     for(let i=0;i<rows.length;i++){
       if(consumed.has(i)) continue; const a=rows[i]; let paired=-1;
-      if(!isBalanceLeave(String(a.description||'').replace(/ Retro$/,'')) && !a.amountOnly && !a.informational && !a.movementBasePay){
+      if(!isBalanceLeave(String(a.description||'').replace(/ Retro$/,'')) && !a.amountOnly && !a.informational && !a.movementBasePay && !isCasualEarningsRow(a)){
         for(let j=i+1;j<rows.length;j++){
           if(consumed.has(j)) continue; const b=rows[j];
           if(a.description!==b.description || !!a.amountOnly!==!!b.amountOnly || !!a.informational!==!!b.informational || b.movementBasePay) continue;
@@ -1555,6 +1604,25 @@
     return mergeRows(separateRetroLeaveReversals(collapsed));
   }
 
+  function isCasualEarningsRow(row){
+    return !!(row&&(row.casualEarnings===true||String(row.description||'').startsWith('Casual Earnings - ')));
+  }
+  function casualRetroRows(state,e,c){
+    // Casual work is an explicit saved earning, payable across appointments and
+    // even when the source period has no finalised-cycle flag. Compare all saved
+    // historical work with all finalised casual payments/recoveries exactly once.
+    const sourceCycles=new Map();
+    (state.additionalEarnings||[]).filter(a=>a&&a.empId===e.id&&a.saved!==false&&a.earningType==='Casual Earnings').forEach(a=>{
+      const source=a.startDate?cycleForDate(a.startDate):cycleById(a.cycleId);
+      if(source&&source.id<c.id&&compare(source.end,RETRO_PROCESSING_START)>=0) sourceCycles.set(source.id,source);
+    });
+    const expected=[];
+    sourceCycles.forEach(source=>expected.push(...earningRowsForCycle(state,e,source,{includeAdditional:true,includePayouts:false}).filter(isCasualEarningsRow)));
+    const paid=(state.payslips||[]).filter(p=>p.empId===e.id&&p.finalised&&Number(p.cycleId)<Number(c.id))
+      .flatMap(p=>p.rows||[]).filter(isCasualEarningsRow)
+      .filter(r=>compare(r.endDate||r.startDate||RETRO_PROCESSING_START,RETRO_PROCESSING_START)>=0);
+    return retroRowsFromComparison(expected,paid);
+  }
   function retroRows(state,e,c){
     const rows = [];
     const segmentStart=currentEmploymentStart(e,c.end)||e.startDate||'';
@@ -1580,17 +1648,17 @@
         const retroPrev = Object.assign({}, prev, { start: compare(prev.start, RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : prev.start });
         if(!settlementStart || compare(retroPrev.start,settlementStart)<0) settlementStart=retroPrev.start;
         if(!settlementEnd || compare(retroPrev.end,settlementEnd)>0) settlementEnd=retroPrev.end;
-        expectedRows.push(...expectedGross(state,e,retroPrev).rows.filter(r=>!historicalPayout(r)));
+        expectedRows.push(...expectedGross(state,e,retroPrev).rows.filter(r=>!historicalPayout(r)&&!isCasualEarningsRow(r)));
         originalPaidRows.push(...(state.payslips||[])
           .filter(p=>p.empId===e.id && Number(p.cycleId)===Number(prev.id) && p.finalised)
           .flatMap(p=>p.rows||[])
-          .filter(r=>r.kind !== 'retro' && !historicalPayout(r))
+          .filter(r=>r.kind !== 'retro' && !historicalPayout(r) && !isCasualEarningsRow(r))
           .filter(r=>compare(r.endDate||retroPrev.end, retroPrev.start)>=0 && compare(r.startDate||retroPrev.start, retroPrev.end)<=0));
       });
       const settledRetroRows = (state.payslips||[])
         .filter(p=>p.empId===e.id && p.finalised && Number(p.cycleId)<Number(c.id))
         .flatMap(p=>p.rows||[])
-        .filter(r=>r.kind === 'retro' && !historicalPayout(r))
+        .filter(r=>r.kind === 'retro' && !historicalPayout(r) && !isCasualEarningsRow(r))
         .filter(r=>compare(r.endDate||settlementEnd, settlementStart)>=0 && compare(r.startDate||settlementStart, settlementEnd)<=0);
       rows.push(...retroRowsFromComparison(expectedRows, originalPaidRows.concat(settledRetroRows)));
     }
@@ -1601,7 +1669,7 @@
       const priorRows = [];
       const retroStart = compare(commencementStart,RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : commencementStart;
       daysBetween(retroStart,priorEnd).forEach(d=>{
-        if(!isEmployedOn(e,d)) return;
+        if(!isEmployedOn(e,d) || isCasualOnly(state,e,d)) return;
         const sched = activeSchedule(state,e.id,d);
         const hours = Number((sched && sched.hoursByDay && sched.hoursByDay[parseDate(d).getDay()]) || 0);
         if(hours <= 0) return;
@@ -1610,6 +1678,7 @@
       });
       rows.push(...mergeRows(priorRows));
     }
+    rows.push(...casualRetroRows(state,e,c));
     return mergeRows(rows);
   }
   function consolidatePayslipRetroRows(rows){
@@ -1619,7 +1688,7 @@
     const map = new Map();
     retro.forEach(r=>{
       const originalCycle = cycleForDate(r.startDate || r.endDate || ANCHOR_CYCLE.start) || { id:'unknown' };
-      const segmentKey=r.amountOnly?'amount':`${r.position||''}|${round4(Number(r.rate||r.baseRate||0))}`;
+      const segmentKey=r.amountOnly?'amount':`${r.position||''}|${round4(Number(r.rate||r.baseRate||0))}|${isCasualEarningsRow(r)?r.positionNumber||'':''}`;
       const key = [originalCycle.id,r.description||'',r.ote===false?'nonote':'ote',r.nonTaxable===true?'nontax':'tax',segmentKey,r.retroSegmentKey||''].join('|');
       let existing = map.get(key);
       if(!existing){
@@ -1637,7 +1706,8 @@
       map.set(key, existing);
     });
     const consolidated=[...map.values()].filter(r=>Math.abs(r.amount)>=0.01 || Math.abs(r.units)>=0.0001).map(r=>{
-      r.rate=!r._mixedDisplayRate&&Math.abs(Number(r._displayRate||0))>0.0001 ? round2(r._displayRate) : (Math.abs(Number(r.units||0))>0.0001 ? round2(Number(r.amount||0)/Number(r.units||1)) : Number(r.rate||0));
+      const displayRound=isCasualEarningsRow(r)?round4:round2;
+      r.rate=!r._mixedDisplayRate&&Math.abs(Number(r._displayRate||0))>0.0001 ? displayRound(r._displayRate) : (Math.abs(Number(r.units||0))>0.0001 ? displayRound(Number(r.amount||0)/Number(r.units||1)) : Number(r.rate||0));
       delete r._displayRate; delete r._mixedDisplayRate; return r;
     });
     return current.concat(consolidated);
@@ -1674,7 +1744,27 @@
     const deductions=calculateDeductions(state,e,c,deductionBaseGross,netAfterPreTax);
     return {gross,taxParts,deductions};
   }
+  function consolidateHigherDutiesRows(rows){
+    const output=[]; const grouped=new Map();
+    (rows||[]).forEach(row=>{
+      if(!String(row.description||'').startsWith('Higher Duties Allowance')){ output.push(Object.assign({},row)); return; }
+      const cycle=cycleForDate(row.startDate||row.endDate||'');
+      const key=[row.description,row.kind,row.rate,row.baseRate,row.payslipPosition||row.higherDutiesPosition||row.position||'',row.payslipPositionNumber||row.higherDutiesPositionNumber||'',row.ote===false?'nonote':'ote',row.kind==='retro'?(cycle&&cycle.id)||'':'' ].join('|');
+      let target=grouped.get(key);
+      if(!target){ target=Object.assign({},row); grouped.set(key,target); output.push(target); return; }
+      target.units=round4(Number(target.units||0)+Number(row.units||0));
+      target.amount=round2(Number(target.amount||0)+Number(row.amount||0));
+      for(const field of ['balanceUnits','accrualUnits','serviceHours']) if(target[field]!==undefined||row[field]!==undefined) target[field]=round4(Number(target[field]||0)+Number(row[field]||0));
+      if(row.startDate&&(!target.startDate||compare(row.startDate,target.startDate)<0)) target.startDate=row.startDate;
+      if(row.endDate&&(!target.endDate||compare(row.endDate,target.endDate)>0)) target.endDate=row.endDate;
+    });
+    return output;
+  }
+  function orderPayslipRows(rows){
+    return (rows||[]).slice().sort((a,b)=>compare(a.startDate||'9999-12-31',b.startDate||'9999-12-31'));
+  }
   function makePayslip(state,e,c,rows,position,rate,segmentIndex,segmentCount,finalised,allocation,wholeRows){
+    rows=orderPayslipRows(consolidateHigherDutiesRows(rows));
     const gross=round2(rows.reduce((s,r)=>s+Number(r.amount||0),0));
     const taxParts=allocation.taxParts;
     const deductionParts=allocation.deductions;
@@ -1696,7 +1786,8 @@
     const retro=round2(rows.filter(r=>r.kind==='retro').reduce((sum,r)=>sum+Number(r.amount||0),0));
     const snapshot=Object.assign({},e,activePersonalDetails(state,e.id,c.paymentDate||c.end));
     const employmentType=activeEmploymentType(state,e,c.end)||normaliseEmploymentType(e.type)||'';
-    const department=activeDepartment(state,e,c.end);
+    const segmentRow=rows.find(r=>r.kind!=='retro'&&r.payslipDepartment!==undefined)||rows.find(r=>!!r.positionDepartment);
+    const department=segmentRow?(segmentRow.payslipDepartment!==undefined?segmentRow.payslipDepartment:segmentRow.positionDepartment):activeDepartment(state,e,c.end);
     return { id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(snapshot), employeeSnapshot:JSON.parse(JSON.stringify(snapshot)), employmentType, department, cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, marginalTax:taxParts.marginalTax, terminationLeaveTax:taxParts.terminationLeaveTax, marginalTaxRetro:taxParts.marginalTaxRetro, stsl:taxParts.stsl, stslRetro:taxParts.stslRetro, noTfn:taxParts.noTfn, noTfnRetro:taxParts.noTfnRetro, taxableCurrentGross:taxParts.taxableCurrentGross, preTaxDeductions:deductionParts.preTaxDeductions, postTaxDeductions:deductionParts.postTaxDeductions, preTaxDeductionTotal:deductionParts.preTaxTotal, postTaxDeductionTotal:deductionParts.postTaxTotal, superAmt, superCurrent, superRetro, net, units:round4(rows.reduce((sum,r)=>sum+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, lslAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) };
   }
   function splitIntoPayslips(state,e,c,rows,finalised){
@@ -1708,19 +1799,25 @@
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
     const effectivePosition=effectiveEmploymentType==='Casual'?'Casual':((currentJobRow&&currentJobRow.positionName)||activePayRate(state,e.id,c.end).position||e.position||'');
     const groups=[];
-    mainRows.forEach(r=>{
-      // Additional earnings and Annual Leave Loading belong to the same payslip as
-      // the employee's underlying/base-rate earnings. Their own calculated rate must
-      // not create a second payslip for the same position and pay period.
-      const groupingRate=['additional','leaveLoading'].includes(r.kind)?(r.baseRate||r.rate||0):(r.rate||0);
-      const casualGroup=r.casualEarnings===true;
-      const key=casualGroup?'__casual_earnings__':`${r.position||effectivePosition}|${groupingRate}`;
-      let group=groups.find(x=>x.key===key);
-      if(!group){ group={key,position:casualGroup?effectivePosition:(r.position||effectivePosition),rate:casualGroup?0:groupingRate,rows:[]}; groups.push(group); }
-      group.rows.push(r);
+    function groupFor(row){
+      const casual=isCasualEarningsRow(row);
+      const position=casual?(row.position||effectivePosition):(row.payslipPosition||row.position||effectivePosition);
+      const number=casual?(row.positionNumber||''):(row.payslipPositionNumber||'');
+      // A position has one payslip even if its rate changes during the period.
+      const key=number?`number:${number}`:`name:${position}`;
+      let group=groups.find(g=>g.key===key);
+      if(!group){ group={key,position,positionNumber:number,rate:Number(row.baseRate||row.rate||0),rows:[],casual}; groups.push(group); }
+      group.rows.push(row); return group;
+    }
+    mainRows.forEach(groupFor);
+    retro.forEach(row=>{
+      if(isCasualEarningsRow(row)){ groupFor(row); return; }
+      const target=row.higherDutiesPosition||row.position||'';
+      let group=groups.find(g=>g.position===target);
+      if(!group) group=groups[0];
+      if(!group){ group={key:'retro',position:effectivePosition,rate:activePayRate(state,e.id,c.end).hourlyRate||e.hourlyRate,rows:[],casual:false}; groups.push(group); }
+      group.rows.push(row);
     });
-    if(!groups.length&&retro.length) groups.push({key:'retro',position:effectivePosition,rate:activePayRate(state,e.id,c.end).hourlyRate||e.hourlyRate,rows:[]});
-    if(groups.length) groups[0].rows.push(...retro);
     if(!groups.length) return [];
     const whole=wholePayFinancials(state,e,c,rows);
     const groupGrosses=groups.map(g=>round2(g.rows.reduce((sum,r)=>sum+Number(r.amount||0),0)));
@@ -1735,7 +1832,10 @@
       const taxParts={ noTfn:whole.taxParts.noTfn, noTfnRetro:whole.taxParts.noTfnRetro, totalTax:totalTaxAlloc[i] };
       taxFieldNames.forEach(name=>{ taxParts[name]=allocatedTaxFields[name][i]; });
       const deductions={ preTaxDeductions:preTaxLines[i], postTaxDeductions:postTaxLines[i], preTaxTotal:round2(preTaxLines[i].reduce((sum,d)=>sum+Number(d.amount||0),0)), postTaxTotal:round2(postTaxLines[i].reduce((sum,d)=>sum+Number(d.amount||0),0)) };
-      return makePayslip(state,e,c,g.rows,g.position,g.rate,i+1,groups.length,finalised,{taxParts,deductions},rows);
+      const payslip=makePayslip(state,e,c,g.rows,g.position,g.rate,i+1,groups.length,finalised,{taxParts,deductions},rows);
+      payslip.positionNumber=g.positionNumber||'';
+      if(g.casual&&g.rows.every(isCasualEarningsRow)) payslip.employmentType='Casual';
+      return payslip;
     }).filter(p=>Math.abs(p.gross)>0.004||p.rows.some(r=>r.kind==='retro'&&(Math.abs(Number(r.units||0))>0.0001||Math.abs(Number(r.amount||0))>0.004)));
   }
   function calculateEmployee(state, empId, cycleId, finalised=false){
@@ -1938,7 +2038,7 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -857,12 +857,12 @@
     // Higher Duties Allowance is the difference between the acting position and the
     // substantive Permanent rate, so storing an acting row as Permanent makes the
     // differential collapse to zero.
-    const isTemporaryActingMovement=row.action==='Movement' && ['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(row.reason);
-    const rateRow={id:rateId,empId:e.id,changeType:isTemporaryActingMovement?'Temporary':'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),jobDataId:row.id};
+    const isTemporaryActingMovement=E.isActingJobDataRow(state,row);
+    const rateRow={id:rateId,empId:e.id,changeType:isTemporaryActingMovement?'Temporary':'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),effectiveSequence:Number(row.effectiveSequence||0),jobDataId:row.id};
     if(existingRate) Object.assign(existingRate,rateRow); else state.payRates.push(rateRow);
     const schedId=row.scheduleId||uid('schedule'); row.scheduleId=schedId;
     const existingSched=(state.schedules||[]).find(r=>r.id===schedId);
-    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,rosterPattern:row.rosterPattern||'1-week',hoursByDay:row.hoursByDay,hoursByDayWeek1:row.hoursByDayWeek1||row.hoursByDay,hoursByDayWeek2:row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay,jobDataId:row.id};
+    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,effectiveSequence:Number(row.effectiveSequence||0),rosterPattern:row.rosterPattern||'1-week',hoursByDay:row.hoursByDay,hoursByDayWeek1:row.hoursByDayWeek1||row.hoursByDay,hoursByDayWeek2:row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay,jobDataId:row.id};
     if(existingSched) Object.assign(existingSched,schedRow); else state.schedules.push(schedRow);
     addJobEvent(e.id,'Job Data',row.effectiveDate,`${row.action} — ${row.reason} — ${row.positionName} — ${row.rosterPattern==='2-week'?`${weeklyHours(row.hoursByDayWeek1||row.hoursByDay).toFixed(2)} hours Week 1 / ${weeklyHours(row.hoursByDayWeek2||row.hoursByDay).toFixed(2)} hours Week 2`:`${weeklyHours(row.hoursByDay).toFixed(2)} hours/week`}`,'jobData',row.id);
   }
@@ -988,7 +988,7 @@
         else if(['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.amount=additionalDraftAmount(row); }
         else if(row.earningType==='Casual Earnings'){
           const pos=positionByNumber(row.positionNumber); const base=Number((row.casualBaseRate!==undefined&&row.casualBaseRate!==null&&String(row.casualBaseRate)!=='')?row.casualBaseRate:E.positionHourlyRate(state,row.positionNumber,row.startDate||c.start));
-          row.positionName=(pos&&pos.positionName)||row.positionName||''; row.casualBaseRate=base; row.casualLoadingRate=0.25; row.casualLoadedRate=E.round4(base*1.25); row.endDate=row.startDate; row.amount=E.round2(Number(row.hours||0)*row.casualLoadedRate);
+          row.positionName=(pos&&pos.positionName)||row.positionName||''; row.positionDepartment=(pos&&pos.department)||''; row.casualBaseRate=base; row.casualLoadingRate=0.25; row.casualLoadedRate=E.round4(base*1.25); row.endDate=row.startDate; row.amount=E.round2(Number(row.hours||0)*row.casualLoadedRate);
         }else if(row.earningType==='Higher Duties Allowance'){
           const pos=positionByNumber(row.positionNumber); const employee=emp(empId); const normal=E.substantivePayRate(state,employee,row.startDate||c.start); const higher=Number(E.positionHourlyRate(state,row.positionNumber,row.startDate||c.start)||0);
           row.positionName=(pos&&pos.positionName)||row.positionName||''; row.higherDutiesNormalRate=Number(normal.hourlyRate||0); row.higherDutiesPositionRate=higher; row.higherDutiesDifference=E.round4(higher-row.higherDutiesNormalRate); row.endDate=row.startDate; row.amount=E.round2(Number(row.hours||0)*row.higherDutiesDifference);
@@ -1456,7 +1456,7 @@
   function consolidatePayslipDisplayRows(rows){
     const output=[];
     const grouped=new Map();
-    (rows||[]).forEach(row=>{
+    E.consolidateHigherDutiesRows(rows||[]).forEach(row=>{
       const description=String(row.description||'');
       const bookingId=String(row.leaveBookingId||'');
       const isBookingLeave=row.kind!=='retro' && !!bookingId && ['leave','leaveLoading'].includes(row.kind);
@@ -1486,7 +1486,7 @@
       }else if(row._actualStart){ row.startDate=row._actualStart; row.endDate=row._actualEnd; }
       delete row._actualStart; delete row._actualEnd;
     });
-    return output;
+    return E.orderPayslipRows(output);
   }
   function payslipHtml(p){
     const e=p.employeeSnapshot||emp(p.empId)||{};
@@ -1846,6 +1846,16 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.39',notes:[
+      'Consolidated Higher Duties Allowance by position, rate and source pay period, and ordered payslip earnings by Begin Date from earliest to latest.',
+      'Each position worked has its own payslip, including acting and selected Casual Earnings positions; rate changes within one position stay on that position payslip.',
+      'Historical Casual Earnings are settled independently of source-cycle finalisation and current appointment boundaries, preserving original work rates and avoiding repeated payments.'
+    ]},
+    {version:'v1.1.38',notes:[
+      'Payslips show the effective position being worked, including acting assignments, while Regular Pay remains at the substantive rate plus the Higher Duties Allowance differential.',
+      'Schedule, position refresh and pay-rate variations during acting remain Temporary and no longer suppress Higher Duties Allowance.',
+      'Substantive rate lookup handles existing acting variations and recovers from saved Job Data when a legacy derived rate is missing.'
+    ]},
     {version:'v1.1.37',notes:[
       'Fixed the real Job Data save path for Acting Higher/Lower/Same Level so acting pay-rate rows are stored as Temporary and Higher Duties Allowance is calculated from the substantive Permanent rate.',
       'Added an upgrade repair for v1.1.36 acting rows that were incorrectly stored as Permanent, so existing acting employees begin receiving the correct Higher Duties Allowance and historical Higher-Level reclassification can settle correctly.',

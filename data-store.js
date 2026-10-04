@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.37';
+  const APP_VERSION = '1.1.39';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -72,13 +72,28 @@
     // with the open cycle at upgrade.
     if(!state.repairs.higherDutiesMovementStartCycleId && sourceVersion && sourceVersion!=='1.1.36') state.repairs.higherDutiesMovementStartCycleId=state.currentCycleId;
 
-    // v1.1.37 repair: v1.1.36's real Job Data save path wrote acting movement
+    // v1.1.39 repair: v1.1.36's real Job Data save path wrote acting movement
     // pay-rate rows as Permanent. That made the acting rate look substantive and
     // reduced Higher Duties Allowance to $0. Repair linked rows on upgrade.
-    const actingJobDataIds=new Set(state.jobDataRows
-      .filter(j=>j&&j.saved!==false&&j.action==='Movement'&&['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(String(j.reason||'')))
-      .map(j=>String(j.id||'')));
-    state.payRates.forEach(r=>{ if(r&&actingJobDataIds.has(String(r.jobDataId||''))) r.changeType='Temporary'; });
+    const actingReasons=['Acting Higher Level','Acting Lower Level','Acting Same Level'];
+    const actingRows=state.jobDataRows.filter(j=>{
+      if(!j||j.saved===false) return false;
+      if(j.action==='Movement') return actingReasons.includes(String(j.reason||''));
+      if(j.action!=='Variation') return false;
+      const event=state.jobDataRows.filter(r=>r&&r.empId===j.empId&&r.saved!==false&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
+        (String(r.effectiveDate)<String(j.effectiveDate)||(r.effectiveDate===j.effectiveDate&&Number(r.effectiveSequence||0)<=Number(j.effectiveSequence||0))))
+        .slice().sort((a,b)=>String(b.effectiveDate).localeCompare(String(a.effectiveDate))||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
+      return !!(event&&event.action==='Movement'&&actingReasons.includes(String(event.reason||''))&&
+        (j.positionNumber?String(j.positionNumber)===String(event.positionNumber):j.positionName===event.positionName));
+    });
+    const actingJobDataIds=new Set(actingRows.map(j=>String(j.id||'')).filter(Boolean));
+    const actingRateIds=new Set(actingRows.map(j=>String(j.rateId||'')).filter(Boolean));
+    state.payRates.forEach(r=>{ if(r&&(actingJobDataIds.has(String(r.jobDataId||''))||actingRateIds.has(String(r.id||'')))) r.changeType='Temporary'; });
+
+    state.payRates.concat(state.schedules).forEach(r=>{
+      const job=state.jobDataRows.find(j=>j&&j.empId===r.empId&&j.id===r.jobDataId);
+      if(job) r.effectiveSequence=Number(job.effectiveSequence||0);
+    });
 
     // Older/edge-case Casual Earnings records can retain a mismatched cycleId even
     // though their source work date belongs to a historical pay period. Align those

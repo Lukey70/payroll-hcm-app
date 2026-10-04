@@ -1,0 +1,29 @@
+Payroll/HCM App v1.1.39
+Release date: 4 October 2026
+Source: verified v1.1.38 release. Supplied v1.1.23 attachment was not used to replace the current code.
+
+IMPLEMENTED REQUESTS
+1. Consolidated Higher Duties Allowance: daily lines at the same position and differential rate are combined, with total hours/amount and earliest/latest actual source dates. Different rates and retro source periods retain separate accurate lines. Consolidation applies to generated payslips and the display of existing payslips without mutating historical records.
+2. One payslip for each position worked, including acting and selected Casual Earnings positions. Distinct position numbers remain separate even when their names and rates match. Rate changes within the same position remain on its payslip. Regular Pay and HDA stay together on the acting-position payslip. Casual retro is allocated to its original selected position.
+3. Earnings ordered by Begin Date from earliest to latest, after consolidation, in both generated rows and the rendered/printed payslip. Equal-date rows retain their prior order.
+4. Retro Casual Earnings settlement now compares all saved historical casual work with original and retro payments already finalised. It does not require the source period to have a finalised-cycle flag and is not restricted by the employee's current employment segment. New contracts, future contracts and rehire boundaries do not suppress saved unpaid historical casual work.
+
+CASUAL COMPATIBILITY AND PROTECTION
+- Original selected position name and saved base rate remain authoritative. New saves also retain the selected position department.
+- 25% loading, four-decimal loaded rates and source hours are retained. Cent rounding does not invent fractional hours.
+- Previously finalised payments and recoveries count towards settlement. Only the remaining difference is paid; changes and deletions produce the appropriate adjustment/recovery once.
+- Legacy casual entries with an end date spanning periods are routed solely by their work date, preventing the same entry from being paid as both current and retro.
+- Unsaved earnings remain excluded. Casual Earnings do not add leave/service accrual.
+- Existing finalised payroll records are preserved. Legacy v1.1.38 retro rows without the new position metadata remain settled.
+
+FINANCIAL VALIDATION
+Tax and deductions are calculated once for the employee's total pay and allocated between position payslips. Position splitting does not duplicate deductions or taxes. Casual and HDA super, current/retro tax, no casual leave accrual, higher/lower/same acting rules and return-to-substantive behavior are regression tested.
+
+REPRODUCED FAILURE
+Saved 8-hour Casual Earnings at $32 base/$40 loaded rate, work date 01/10/2026, current cycle 11, no source finalised flag:
+v1.1.38: 0 payslips / $0 retro.
+v1.1.39: 1 original-position payslip / $320 retro.
+
+VALIDATION AND LIMITS
+185 test blocks / 863 assertion call sites / 87 PASS summaries. JavaScript syntax checks pass. Actual payslipHtml rendering is tested for consolidation, position titles and chronological order. Exact final ZIP is extracted and retested before delivery; all runtime assets are served and compared byte-for-byte with the extracted files.
+No installed Chromium binary is available, so a live browser interaction pass is not claimed. No exported payroll-app-data.json was supplied or found; the reported employee's exact saved case cannot be verified without that data. Reproduced failure paths are fixed and covered by regression tests.

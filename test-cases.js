@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+// Payroll dates are WA calendar dates; make test boundaries independent of host DST.
+process.env.TZ = 'Australia/Perth';
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -36,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.37'), 'sidebar/version label must show v1.1.37');
-  assert(data.includes("APP_VERSION = '1.1.37'"), 'data-store version must be 1.1.37');
+  assert(html.includes('v1.1.39'), 'sidebar/version label must show v1.1.39');
+  assert(data.includes("APP_VERSION = '1.1.39'"), 'data-store version must be 1.1.39');
 })();
 
 (function testAnchorPayCycle(){
@@ -2162,7 +2164,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(pending.pending,true);
 })();
 
-(function testV132CasualEarningsDifferentPositionsStayOnOnePayslip(){
+(function testV139CasualEarningsDifferentPositionsHaveOwnPayslips(){
   const state=baseState(); const e=addEmployee(state,{id:'casual132',type:'Casual',position:'Casual Employee'});
   state.jobDataRows.push({id:'jc132',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionClass:'Casual',positionNumber:'C1',positionName:'Crew A',hoursByDay:{0:0,1:0,2:0,3:0,4:0,5:0,6:0},saved:true});
   state.positions.push({id:'pc1',positionNumber:'C1',positionName:'Crew A',hourlyRate:30,active:true},{id:'pc2',positionNumber:'C2',positionName:'Crew B',hourlyRate:40,active:true});
@@ -2171,9 +2173,9 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
     {id:'ce132b',empId:e.id,cycleId:1,earningType:'Casual Earnings',positionNumber:'C2',positionName:'Crew B',hours:5,startDate:'2026-05-26',endDate:'2026-05-26',saved:true}
   );
   const pays=E.calculateEmployee(state,e.id,1,false);
-  assert.strictEqual(pays.length,1,'Different Casual Earnings positions in the same pay period must remain on one payslip');
-  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew A'));
-  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew B'));
+  assert.strictEqual(pays.length,2,'Each selected Casual Earnings position must have its own payslip (v1.1.39 requirement)');
+  assert(pays.find(p=>p.position==='Crew A').rows.some(r=>r.description==='Casual Earnings - Crew A'));
+  assert(pays.find(p=>p.position==='Crew B').rows.some(r=>r.description==='Casual Earnings - Crew B'));
 })();
 
 (function testV132LoginCredentialsAccessTilesAndActiveUsers(){
@@ -2364,7 +2366,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const pays=E.calculateEmployee(state,e.id,c.id,false);
   assert.strictEqual(pays.length,1,'Casual Earnings should produce one payslip');
   assert.strictEqual(pays[0].employmentType,'Casual','Pre-conversion payslip must use the employment type effective in the pay period');
-  assert.strictEqual(pays[0].position,'Casual','Pre-conversion casual payslip header must say Casual, not the future Finance Officer position');
+  assert.strictEqual(pays[0].position,'Casual Shift','Payslip identifies the position actually worked, not a future contract');
   assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Casual Shift'),'Underlying Casual Earnings line must still retain the selected earning position name');
 })();
 
@@ -2436,8 +2438,8 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   state.additionalEarnings.push({id:'lateCas136',empId:e.id,cycleId:10,earningType:'Casual Earnings',positionNumber:'CAS136',positionName:'Casual Shift',casualBaseRate:30,startDate:'2026-10-01',endDate:'2026-10-01',hours:8,saved:true});
   const pays=E.calculateEmployee(state,e.id,11,false);
   assert.strictEqual(pays.length,1,'Late Casual Earnings should still create a current payslip even with a future Fixed Term contract');
-  assert.strictEqual(pays[0].position,'Casual','Pre-conversion payslip position must remain Casual');
-  assert.strictEqual(pays[0].department,'Operations','Pre-conversion payslip Department must come from the effective casual Job Data row, not the future contract');
+  assert.strictEqual(pays[0].position,'Casual Shift','Retro payslip identifies the original casual position worked');
+  assert.strictEqual(pays[0].department,'Operations','Retro payslip Department comes from the original casual earning position');
   const retro=pays[0].rows.find(r=>r.description==='Casual Earnings - Casual Shift Retro');
   assert(retro&&retro.units===8&&retro.amount===300,'Future Fixed Term Job Data must not suppress legitimate retro Casual Earnings');
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
@@ -2472,10 +2474,10 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
     return {state,e,c};
   }
   let x=movementState('Acting Higher Level',50,'Annual Leave'); let rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
-  let hda=rows.find(r=>r.description==='Higher Duties Allowance'); assert(hda&&hda.units===7.5&&hda.rate===10&&hda.amount===75,'Paid leave during Acting Higher Level must continue the positive Higher Duties Allowance');
+  let hda=rows.find(r=>r.description==='Higher Duties Allowance'); assert(hda&&hda.units===15&&hda.rate===10&&hda.amount===150,'Paid leave during Acting Higher Level must continue the positive Higher Duties Allowance');
   assert(rows.some(r=>r.description==='Annual Leave'&&r.rate===40),'Paid leave base earning must remain at the substantive rate when HDA is separated');
   x=movementState('Acting Higher Level',50,'LWOP'); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
-  assert(!rows.some(r=>r.description==='Higher Duties Allowance' && r.startDate==='2026-10-01'),'Unpaid leave date must not receive Higher Duties Allowance');
+  assert.strictEqual(rows.filter(r=>r.description==='Higher Duties Allowance').reduce((n,r)=>n+r.amount,0),75,'Unpaid leave must remove its HDA from the consolidated period amount');
   x=movementState('Acting Lower Level',30,null); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows); hda=rows.find(r=>r.description==='Higher Duties Allowance');
   assert(hda&&hda.rate===-10&&hda.amount<0,'Acting Lower Level must create a negative Higher Duties Allowance differential');
   x=movementState('Acting Same Level',40,null); rows=E.calculateEmployee(x.state,x.e.id,x.c.id,false).flatMap(p=>p.rows);
@@ -2568,7 +2570,7 @@ console.log('PASS: v1.1.33 Permanency Confirmed and historical Annual Leave erro
 console.log('PASS: v1.1.33 two-week roster, Acting Lower Level, new termination reasons and Absent Without Leave are verified.');
 
 console.log('PASS: v1.1.32 consolidated leave ranges, denied-calendar exclusion and casual zero-schedule behavior are verified.');
-console.log('PASS: v1.1.32 Casual Earnings single-payslip grouping and active-user login/access landing rules are verified.');
+console.log('PASS: v1.1.39 Casual Earnings position allocation and existing active-user login/access landing rules are verified.');
 console.log('PASS: v1.1.31 leave-status dropdown and non-approved payslip exclusion are verified.');
 console.log('PASS: v1.1.31 manual LSL adjustment, non-contributory timing, LWOP settlement and STSL retro fixes are verified.');
 console.log('PASS: v1.1.31 public-holiday roster rule, non-taxable Overpayment Adjustment and retro movement/Personal Leave separation are verified.');
@@ -2659,3 +2661,300 @@ console.log('PASS: v1.1.36 effective Department, retro Casual Earnings, Position
 console.log('PASS: v1.1.37 real Job Data Acting Higher Level save/migration produces Higher Duties Allowance.');
 console.log('PASS: v1.1.37 retro Casual Earnings are source-date driven and survive stale cycle IDs/future contracts.');
 
+
+function actingAppFixture138(){
+  const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
+  const windowStub={addEventListener:()=>{},scrollTo:()=>{}};
+  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'app.js'),'utf8'),context,{filename:'app.js'});
+  const app=windowStub.PayrollApp, state=app.getState(); Object.assign(state,baseState()); state.currentCycleId=11;
+  const e=addEmployee(state,{id:'actor138',department:'Operations',employmentSegments:[{id:'seg138',startDate:'2026-10-09',endDate:'',inclusiveEnd:false}]});
+  state.positions.push({positionNumber:'OFF',positionName:'Officer',department:'Operations',hourlyRate:40,active:true},{positionNumber:'MGR',positionName:'Manager',department:'Human Resources',hourlyRate:50,active:true});
+  function save(id,date,action,reason,number='MGR',name='Manager',rate=50,department='Human Resources',sequence){
+    if(sequence===undefined) sequence=Math.max(-1,...state.jobDataRows.filter(r=>r.effectiveDate===date).map(r=>Number(r.effectiveSequence||0)))+1;
+    const hours={0:0,1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0};
+    const row={id,empId:e.id,effectiveDate:date,effectiveSequence:sequence,action,reason,positionNumber:number,positionName:name,department,hourlyRate:rate,positionClass:'Permanent',rosterPattern:'1-week',hoursByDay:hours,saved:true};
+    state.jobDataRows.push(row); app.applyJobDataToEmployee(row); return row;
+  }
+  save('hire138','2026-10-09','Commencement','New Hire Permanent','OFF','Officer',40,'Operations');
+  return {app,state,e,save};
+}
+
+(function testV138RealSaveActingPositionAndHdaSurviveVariations(){
+  const {app,state,e,save}=actingAppFixture138();
+  save('acting138','2026-10-09','Movement','Acting Higher Level');
+  save('schedule138','2026-10-12','Variation','Work Schedule Adjustment');
+  save('refresh138','2026-10-13','Variation','Position Refresh');
+  save('raise138','2026-10-15','Variation','Pay Rate Change','MGR','Manager',55);
+  assert(state.payRates.filter(r=>r.jobDataId!=='hire138').every(r=>r.changeType==='Temporary'),'Actual save path must keep acting variations Temporary');
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1,'Acting base pay and HDA must share the acting-position payslip');
+  assert.strictEqual(pays[0].position,'Manager','Payslip must identify the position being worked');
+  assert.strictEqual(pays[0].department,'Human Resources','Payslip must identify acting department');
+  assert.strictEqual(totalAmountByDesc(pays,'Regular Pay'),3000,'Regular Pay remains 75 hours at substantive $40');
+  assert.strictEqual(totalAmountByDesc(pays,'Higher Duties Allowance'),975,'HDA survives variations and updates from $10 to $15 per hour');
+  assert.strictEqual(pays[0].gross,3975,'Total salary must match the actual acting rates');
+  assert.strictEqual(pays[0].ordinaryHours,75,'HDA must not add leave accrual');
+  assert.strictEqual(pays[0].superAmt,477,'HDA attracts super as ordinary time earnings');
+  const html=app.payslipHtml(pays[0]);
+  assert(html.includes('<strong>Position:</strong> Manager')&&html.includes('Higher Duties Allowance'),'Rendered payslip must show both acting position and HDA');
+  const legacy=DataStore.clone(state); legacy.version='1.1.37'; legacy.payRates.forEach(r=>r.changeType='Permanent');
+  const legacyE=legacy.employees[0];
+  assert.strictEqual(E.activeActingAssignment(legacy,legacyE,'2026-10-16').difference,15,'Engine must defend against existing variations wrongly marked Permanent');
+  const repaired=DataStore.migrate(legacy);
+  assert(repaired.payRates.filter(r=>r.jobDataId!=='hire138').every(r=>r.changeType==='Temporary'),'Migration repairs saved acting variations');
+  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(repaired,e.id,11,false),'Higher Duties Allowance'),975);
+})();
+
+(function testV138MidPayActingAndReturnHaveCorrectPositions(){
+  const {state,e,save}=actingAppFixture138();
+  save('acting138','2026-10-14','Movement','Acting Higher Level');
+  save('return138','2026-10-19','Movement','Return from Temp Assignment','OFF','Officer',40,'Operations');
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,2,'A mid-pay position movement must create the corresponding position payslips');
+  const officer=pays.find(p=>p.position==='Officer'),manager=pays.find(p=>p.position==='Manager');
+  assert(officer&&manager,'Both actual worked positions must be visible');
+  assert.strictEqual(officer.department,'Operations'); assert.strictEqual(manager.department,'Human Resources');
+  assert.strictEqual(totalUnitsByDesc([officer],'Regular Pay'),52.5); assert.strictEqual(totalUnitsByDesc([manager],'Regular Pay'),22.5);
+  assert.strictEqual(totalAmountByDesc([manager],'Higher Duties Allowance'),225);
+  assert.strictEqual(totalAmountByDesc([officer],'Higher Duties Allowance'),0,'HDA stops at return');
+  assert(manager.rows.every(r=>r.kind==='retro'||r.startDate>='2026-10-14'&&r.endDate<='2026-10-16'),'Acting rows must keep their actual worked dates');
+})();
+
+(function testV138MissingDerivedSubstantiveRateAndEmploymentReset(){
+  const {state,e,save}=actingAppFixture138();
+  save('acting138','2026-10-09','Movement','Acting Higher Level');
+  state.payRates=state.payRates.filter(r=>r.jobDataId!=='hire138');
+  assert.strictEqual(e.hourlyRate,50,'Fixture must reproduce employee snapshot overwritten by acting save');
+  assert.strictEqual(E.activeActingAssignment(state,e,'2026-10-12').difference,10,'Saved substantive Job Data must recover missing derived rate instead of using acting snapshot');
+  assert.strictEqual(totalAmountByDesc(E.calculateEmployee(state,e.id,11,false),'Higher Duties Allowance'),750);
+  save('newcontract138','2026-10-19','Commencement','New Fixed Term Contract','OFF','Officer',40,'Operations');
+  assert.strictEqual(E.activeActingAssignment(state,e,'2026-10-19'),null,'A new employment appointment must end the previous acting assignment');
+})();
+
+(function testV138ActingLowerSamePermanentAndChainedIdentity(){
+  for(const [reason,rate,hda] of [['Acting Lower Level',30,-750],['Acting Same Level',40,0],['Promotion',50,0]]){
+    const {state,e,save}=actingAppFixture138();
+    save('movement138','2026-10-09','Movement',reason,'MGR','Manager',rate);
+    const pays=E.calculateEmployee(state,e.id,11,false);
+    assert.strictEqual(pays.length,1); assert.strictEqual(pays[0].position,'Manager');
+    assert.strictEqual(totalAmountByDesc(pays,'Higher Duties Allowance'),hda);
+    assert.strictEqual(pays[0].gross,75*rate);
+  }
+  const {state,e,save}=actingAppFixture138();
+  save('acting138','2026-10-09','Movement','Acting Higher Level');
+  save('chain138','2026-10-16','Movement','Acting Higher Level','DIR','Director',60,'Customer Services');
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.deepStrictEqual(pays.map(p=>p.position),['Manager','Director']);
+  assert.strictEqual(totalAmountByDesc(pays,'Higher Duties Allowance'),1125,'Chained acting uses original substantive rate');
+})();
+
+(function testV138PaidUnpaidLeavePositionAndHda(){
+  const {state,e,save}=actingAppFixture138();
+  save('acting138','2026-10-09','Movement','Acting Higher Level');
+  state.leaveBookings.push({id:'paid138',empId:e.id,type:'Personal Leave',startDate:'2026-10-12',endDate:'2026-10-12',hours:7.5,status:'Approved'},{id:'unpaid138',empId:e.id,type:'LWOP',startDate:'2026-10-13',endDate:'2026-10-13',hours:7.5,status:'Approved'});
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1); assert.strictEqual(pays[0].position,'Manager');
+  assert.strictEqual(totalAmountByDesc(pays,'Higher Duties Allowance'),675,'Paid leave receives HDA and unpaid leave excludes it');
+  assert.strictEqual(pays[0].ordinaryHours,67.5,'HDA adds no service hours');
+})();
+
+(function testV138PresentationUpgradeDoesNotAlterFinalisedHistoryOrCreateRetro(){
+  const {state,e,save}=actingAppFixture138(); state.currentCycleId=1;
+  e.startDate=e.originalStartDate=e.lslServiceDate='2026-05-22'; e.employmentSegments[0].startDate='2026-05-22';
+  state.jobDataRows[0].effectiveDate='2026-05-22'; state.payRates[0].effectiveDate='2026-05-22'; state.schedules[0].effectiveDate='2026-05-22';
+  save('acting138','2026-09-01','Movement','Acting Higher Level');
+  // Finalise using the actual preceding release to verify financial comparison
+  // compatibility with its substantive-position earnings rows.
+  const previousEngine=require('./tests/previous-engine-fixture-v1.1.37.js');
+  for(let i=1;i<=10;i++) previousEngine.finaliseCurrentPay(state);
+  const frozen=JSON.stringify(state.payslips);
+  const upgraded=DataStore.migrate(state);
+  assert.strictEqual(JSON.stringify(upgraded.payslips),frozen,'Upgrade must preserve frozen finalised payslips');
+  const pays=E.calculateEmployee(upgraded,e.id,11,false);
+  assert.strictEqual(pays[0].position,'Manager');
+  assert(!pays.flatMap(p=>p.rows).some(r=>r.kind==='retro'),'Changing payslip presentation alone must not create financial retro');
+})();
+console.log('PASS: v1.1.38 actual Job Data saves and migration retain HDA across acting variations.');
+console.log('PASS: v1.1.38 rendered acting position, mid-pay moves, returns and chained assignments are verified.');
+console.log('PASS: v1.1.38 missing derived substantive rate, paid/unpaid leave and frozen history compatibility are verified.');
+
+(function testV138SameDaySequenceRespectsReturnAndPermanentAppointment(){
+  const {state,e,save}=actingAppFixture138();
+  save('sameDayAct','2026-10-09','Movement','Acting Higher Level');
+  save('sameDayReturn','2026-10-09','Movement','Return from Temp Assignment','OFF','Officer',40,'Operations');
+  let pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1); assert.strictEqual(pays[0].position,'Officer');
+  assert.strictEqual(pays[0].gross,3000,'Later effective sequence must override an earlier temporary rate on the same date');
+  assert.strictEqual(totalAmountByDesc(pays,'Higher Duties Allowance'),0);
+  state.payRates.forEach(r=>delete r.effectiveSequence); state.schedules.forEach(r=>delete r.effectiveSequence);
+  DataStore.migrate(state);
+  assert.strictEqual(E.activePayRate(state,e.id,'2026-10-09').hourlyRate,40,'Migration must recover effective sequences from Job Data');
+})();
+console.log('PASS: v1.1.38 same-day Job Data sequence and migration respect returns from acting.');
+
+(function testV139HigherDutiesConsolidationAndChronologicalDisplay(){
+  const {app,state,e,save}=actingAppFixture138();
+  save('act139','2026-10-09','Movement','Acting Higher Level');
+  let pays=E.calculateEmployee(state,e.id,11,false);
+  const hda=pays[0].rows.filter(r=>r.description==='Higher Duties Allowance');
+  assert.strictEqual(hda.length,1,'Daily HDA must consolidate to one line at the same rate/position');
+  assert.strictEqual(hda[0].units,75); assert.strictEqual(hda[0].amount,750);
+  assert.strictEqual(hda[0].startDate,'2026-10-09'); assert.strictEqual(hda[0].endDate,'2026-10-22');
+  assert.strictEqual((app.payslipHtml(pays[0]).match(/<td>Higher Duties Allowance<\/td>/g)||[]).length,1,'Rendered payslip must contain one consolidated HDA row');
+  save('rate139','2026-10-15','Variation','Pay Rate Change','MGR','Manager',55);
+  pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1,'A rate variation at the same position must not make a second payslip');
+  const changed=pays[0].rows.filter(r=>r.description==='Higher Duties Allowance');
+  assert.strictEqual(changed.length,2,'Different differential rates must retain accurate separate consolidated lines');
+  assert.deepStrictEqual(changed.map(r=>r.rate),[10,15]);
+  const original=[{description:'Bonus',kind:'additional',units:0,rate:0,amount:10,startDate:'2026-10-20',endDate:'2026-10-20',amountOnly:true},{description:'Higher Duties Allowance',kind:'additional',units:7.5,rate:10,baseRate:40,amount:75,startDate:'2026-10-16',endDate:'2026-10-16',position:'Officer',higherDutiesPosition:'Manager'},{description:'Regular Pay Retro',kind:'retro',units:2,rate:40,amount:80,startDate:'2026-09-30',endDate:'2026-09-30'},{description:'Higher Duties Allowance',kind:'additional',units:7.5,rate:10,baseRate:40,amount:75,startDate:'2026-10-12',endDate:'2026-10-12',position:'Officer',higherDutiesPosition:'Manager'}];
+  const before=JSON.stringify(original); const ordered=app.consolidatePayslipDisplayRows(original);
+  assert.deepStrictEqual(Array.from(ordered,r=>r.startDate),['2026-09-30','2026-10-12','2026-10-20'],'Display must sort retro and current earnings by Begin Date after consolidation');
+  assert.strictEqual(JSON.stringify(original),before,'Displaying frozen historical payslips must not mutate their rows');
+  assert.strictEqual(ordered[1].units,15); assert.strictEqual(ordered[1].amount,150);
+  const rendered=app.payslipHtml(Object.assign({},pays[0],{rows:original}));
+  assert(rendered.indexOf('<td>Regular Pay Retro</td>')<rendered.indexOf('<td>Higher Duties Allowance</td>'));
+  assert(rendered.indexOf('<td>Higher Duties Allowance</td>')<rendered.indexOf('<td>Bonus</td>'),'Actual payslip HTML follows Begin Date order');
+})();
+
+(function testV139PositionsSplitAtSameBaseRateAndSameName(){
+  const {state,e,save}=actingAppFixture138();
+  save('act139','2026-10-14','Movement','Acting Same Level','SAME','Officer',40,'Customer Services');
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,2,'Distinct positions with the same name and same rate must still have separate payslips');
+  assert.deepStrictEqual(pays.map(p=>p.positionNumber),['OFF','SAME']);
+  assert.strictEqual(totalUnitsByDesc(pays,'Regular Pay'),75);
+  assert(pays.every(p=>p.rows.every(r=>r.kind==='retro'||r.payslipPositionNumber===p.positionNumber)),'Every current earning must remain on its actual position payslip');
+})();
+
+function casualFixture139(currentCycleId=11){
+  const state=baseState(); state.currentCycleId=currentCycleId;
+  const e=addEmployee(state,{id:'cas139',type:'Casual',position:'Casual',hourlyRate:0,annualLeaveBalance:0,personalLeaveBalance:0,lslServiceDate:'',employmentSegments:[{id:'cs139',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  state.positions.push({positionNumber:'C139A',positionName:'Casual Position A',hourlyRate:32,department:'Operations',active:true},{positionNumber:'C139B',positionName:'Casual Position B',hourlyRate:40,department:'Customer Services',active:true});
+  function earning(id,date,hours=8,number='C139A',cycleId=currentCycleId){
+    const position=state.positions.find(p=>p.positionNumber===number);
+    const a={id,empId:e.id,cycleId,earningType:'Casual Earnings',positionNumber:number,positionName:position.positionName,positionDepartment:position.department,casualBaseRate:position.hourlyRate,casualLoadedRate:position.hourlyRate*1.25,startDate:date,endDate:date,hours,saved:true};
+    state.additionalEarnings.push(a); return a;
+  }
+  return {state,e,earning};
+}
+
+(function testV139RetroCasualWithoutFinalisedSourceAndNoRepeatedPayment(){
+  const {state,e,earning}=casualFixture139();
+  earning('late139','2026-10-01',8);
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,1,'Unfinalised historical source must not hide saved retro Casual Earnings');
+  const retro=pays[0].rows.find(r=>r.description==='Casual Earnings - Casual Position A Retro');
+  assert(retro&&retro.units===8&&retro.rate===40&&retro.amount===320);
+  assert.strictEqual(pays[0].position,'Casual Position A'); assert.strictEqual(pays[0].superRetro,38.4);
+  assert.strictEqual(pays[0].ordinaryHours,0); assert.strictEqual(pays[0].annualAccrual,0); assert.strictEqual(pays[0].personalAccrual,0);
+  assert.strictEqual(pays[0].gross,320); assert.strictEqual(pays[0].tax,E.calculateTaxComponents(state,e,pays[0].rows,E.cycleById(11),0).totalTax);
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.calculateEmployee(state,e.id,12,false).length,0,'Finalised retro must not pay again when its source period remains unfinalised');
+  state.additionalEarnings[0].hours=10;
+  let correction=E.calculateEmployee(state,e.id,12,false).flatMap(p=>p.rows).filter(r=>r.kind==='retro');
+  assert.strictEqual(correction.reduce((n,r)=>n+r.amount,0),80,'Changed historical hours pay only the additional difference');
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.calculateEmployee(state,e.id,13,false).length,0);
+  state.additionalEarnings=[];
+  correction=E.calculateEmployee(state,e.id,13,false).flatMap(p=>p.rows).filter(r=>r.kind==='retro');
+  assert.strictEqual(correction.reduce((n,r)=>n+r.amount,0),-400,'Deleted historical earning recovers the settled total once');
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.calculateEmployee(state,e.id,14,false).length,0,'Finalised casual recovery must remain settled');
+})();
+
+(function testV139RetroCasualAcrossRehireAndOriginalRateSnapshots(){
+  const {state,e,earning}=casualFixture139();
+  const a=earning('prior139','2026-06-01',8);
+  state.jobDataRows.push({id:'old139',empId:e.id,effectiveDate:'2026-05-22',action:'Commencement',reason:'New Hire Casual',positionClass:'Casual',positionName:'Casual',saved:true},{id:'term139',empId:e.id,effectiveDate:'2026-06-05',action:'Termination',reason:'Voluntary Resignation',saved:true},{id:'new139',empId:e.id,effectiveDate:'2026-10-09',action:'Commencement',reason:'Rehire Permanent',positionName:'Permanent Position',positionClass:'Permanent',hourlyRate:50,saved:true});
+  state.finalisedCycles['1']=true;
+  state.positions[0].positionName='Renamed Position'; state.positions[0].hourlyRate=99;
+  const pays=E.calculateEmployee(state,e.id,11,false); const rows=pays.flatMap(p=>p.rows);
+  const retro=rows.find(r=>r.description==='Casual Earnings - Casual Position A Retro');
+  assert(retro&&retro.amount===320&&retro.rate===40,'Rehire must not suppress unpaid historical casual work or replace its stored position/rate');
+  assert.strictEqual(pays.find(p=>p.rows.includes(retro)).employmentType,'Casual');
+  assert.strictEqual(a.casualBaseRate,32,'Processing must not overwrite the original source snapshot');
+})();
+
+(function testV139CurrentAndRetroCasualPositionsAndWholePayTax(){
+  const {state,e,earning}=casualFixture139();
+  earning('priorA139','2026-10-01',8,'C139A');
+  earning('currentA139','2026-10-12',4,'C139A');
+  earning('currentB139','2026-10-13',5,'C139B');
+  state.taxDetails.push({id:'t139',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
+  state.deductions.push({id:'d139',empId:e.id,startDate:'2026-05-22',deductionType:'Union Fees',amount:20,saved:true});
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,2,'Current and retro casual earnings must stay on their corresponding position payslips');
+  const first=pays.find(p=>p.positionNumber==='C139A'), second=pays.find(p=>p.positionNumber==='C139B');
+  assert.strictEqual(first.gross,480); assert.strictEqual(second.gross,250);
+  assert(first.rows.every(r=>r.position==='Casual Position A')); assert(second.rows.every(r=>r.position==='Casual Position B'));
+  assert.strictEqual(first.department,'Operations'); assert.strictEqual(second.department,'Customer Services');
+  assert.strictEqual(E.round2(pays.reduce((n,p)=>n+p.postTaxDeductionTotal,0)),20,'Deduction must be applied once across position payslips');
+  assert.strictEqual(E.round2(pays.reduce((n,p)=>n+p.tax,0)),E.calculateTaxComponents(state,e,pays.flatMap(p=>p.rows),E.cycleById(11),0).totalTax,'Whole-pay tax must be allocated without duplication');
+  for(const p of pays) assert.deepStrictEqual(p.rows.map(r=>r.startDate),p.rows.map(r=>r.startDate).slice().sort(),'Every generated payslip is ordered by Begin Date');
+})();
+
+(function testV139AlreadyPaidOriginalCasualRowsAreNotReissued(){
+  const {state,e,earning}=casualFixture139(10);
+  earning('original139','2026-10-01',8,'C139A',10);
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.calculateEmployee(state,e.id,11,false).length,0,'Original finalised casual payment must count towards cumulative settlement');
+  delete state.finalisedCycles['10'];
+  assert.strictEqual(E.calculateEmployee(state,e.id,11,false).length,0,'Stored finalised payslip must prevent duplicate payment even if cycle flag is absent');
+  state.additionalEarnings[0].hours=9;
+  assert.strictEqual(E.calculateEmployee(state,e.id,11,false).flatMap(p=>p.rows).reduce((n,r)=>n+r.amount,0),40,'Only unpaid hours may be reissued');
+})();
+
+console.log('PASS: v1.1.39 consolidated HDA and chronological payslip rendering are verified.');
+console.log('PASS: v1.1.39 separate payslips for acting, same-rate/same-name and casual positions are verified.');
+console.log('PASS: v1.1.39 unpaid historical casual work survives missing finalisation flags and rehire boundaries.');
+console.log('PASS: v1.1.39 casual retro payment, adjustment, recovery and original-payment settlement do not repeat.');
+console.log('PASS: v1.1.39 position allocation preserves whole-pay tax, deductions, super and no casual leave accrual.');
+
+(function testV139FractionalCasualRateRetainsExactHoursAndSettlement(){
+  const {state,e,earning}=casualFixture139();
+  const a=earning('fraction139','2026-10-01',8); a.casualBaseRate=33.3333;
+  const pays=E.calculateEmployee(state,e.id,11,false); const row=pays[0].rows[0];
+  assert.strictEqual(row.rate,41.6666,'Retro must preserve the four-decimal loaded rate');
+  assert.strictEqual(row.units,8,'Rounding cents must not change the source hours');
+  assert.strictEqual(row.amount,333.33);
+  E.finaliseCurrentPay(state); assert.strictEqual(E.calculateEmployee(state,e.id,12,false).length,0);
+  a.hours=9;
+  const extra=E.calculateEmployee(state,e.id,12,false)[0].rows[0];
+  assert.strictEqual(extra.units,1); assert.strictEqual(extra.rate,41.6666); assert.strictEqual(extra.amount,41.67);
+})();
+
+(function testV139SameNameSameRateCasualPositionsStillSplit(){
+  const {state,e,earning}=casualFixture139();
+  state.positions[1].positionName=state.positions[0].positionName; state.positions[1].hourlyRate=32;
+  earning('sameA139','2026-10-12',4,'C139A'); earning('sameB139','2026-10-13',4,'C139B');
+  let pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,2); assert.deepStrictEqual(pays.map(p=>p.positionNumber),['C139A','C139B']);
+  state.additionalEarnings[0].startDate=state.additionalEarnings[0].endDate='2026-10-01';
+  state.additionalEarnings[1].startDate=state.additionalEarnings[1].endDate='2026-10-02';
+  pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.length,2,'Retro at same-name/same-rate distinct positions must remain separate');
+  assert(pays.every(p=>p.gross===160));
+  E.finaliseCurrentPay(state);
+  assert.strictEqual(E.calculateEmployee(state,e.id,12,false).length,0,'Splitting same-name retro positions must not duplicate settlement');
+})();
+
+(function testV139FrozenV138CasualRetroStillSettlesAfterUpgrade(){
+  const {state,e,earning}=casualFixture139(); state.finalisedCycles['10']=true;
+  earning('oldPaid139','2026-10-01',8);
+  const previous=require('./tests/previous-engine-fixture-v1.1.38.js');
+  previous.finaliseCurrentPay(state);
+  const frozen=JSON.stringify(state.payslips); state.version='1.1.38';
+  DataStore.migrate(state);
+  assert.strictEqual(JSON.stringify(state.payslips),frozen);
+  assert.strictEqual(E.calculateEmployee(state,e.id,12,false).length,0,'Legacy v1.1.38 retro without new metadata must remain settled');
+})();
+console.log('PASS: v1.1.39 fractional casual rates/hours, same-name positions and frozen v1.1.38 settlement are verified.');
+
+(function testV139LegacyCasualEndDateCannotDuplicateRetroInCurrentPay(){
+  const {state,e,earning}=casualFixture139(); const a=earning('range139','2026-10-01',8); a.endDate='2026-10-15';
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  assert.strictEqual(pays.reduce((n,p)=>n+p.gross,0),320,'Legacy casual end date spanning periods must not pay full hours once as retro and again as current');
+  assert(pays.flatMap(p=>p.rows).every(r=>r.kind==='retro'&&r.startDate==='2026-10-01'&&r.endDate==='2026-10-01'));
+})();

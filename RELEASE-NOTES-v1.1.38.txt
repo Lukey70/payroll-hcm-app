@@ -1,0 +1,20 @@
+Payroll/HCM App v1.1.38
+Release date: 4 October 2026
+Source: v1.1.37 package, with current versions verified before editing.
+
+FIXES
+1. Payslips identify the effective job being worked, including the acting position and department. Regular Pay retains the substantive hourly rate and HDA pays the acting differential on the same payslip. Mid-pay movements separate the actual positions worked. Acting Same Level has no HDA, Acting Lower Level has negative HDA, and permanent movements use the new Regular Pay rate.
+2. Variations during an acting assignment (Work Schedule Adjustment, Position Refresh, Pay Rate Change) previously became Permanent rate rows. They could replace the substantive comparison rate with the acting rate, reducing HDA to zero. Such variations remain Temporary, existing linked rows are repaired on migration, and the engine defensively excludes them from the substantive comparison.
+3. If a legacy import is missing the derived substantive rate, the engine recovers it from saved non-acting Job Data rather than the employee snapshot overwritten by an acting save.
+4. The latest Commencement/Movement/Termination assignment event determines whether acting remains active. A new appointment ends an older acting assignment. Same-date effective sequences are carried into derived pay-rate and schedule rows; a later return overrides an earlier temporary acting rate.
+
+COMPATIBILITY
+Existing data is migrated in place. Finalised historical payslips remain frozen. Payslip presentation metadata is separate from financial retro comparison keys, so changing the displayed position alone does not create a retro payment or alter historical leave accrual.
+Existing historical Higher-Level reclassification from 01/07/2026 and legacy Lower/Same transition boundaries are preserved. HDA continues on paid leave and excludes unpaid leave. HDA attracts super and does not add leave accrual.
+The v1.1.37 retro Casual Earnings source-date and future-contract fixes remain included.
+
+VERIFICATION
+Targeted regressions use the actual applyJobDataToEmployee UI save function and rendered payslipHtml output, including acting variations, missing derived base rates, mid-pay acting/return, same-day sequences, higher/lower/same/permanent movements, chained acting, paid/unpaid leave, and compatibility with finalised v1.1.37 payroll history.
+The test harness fixes its calendar timezone to Australia/Perth, removing host DST dependence from an existing parental-leave date assertion.
+See test-results.txt for complete automated results. Exact final ZIP is verified from a fresh extraction before delivery.
+No successful real-browser interaction test is claimed; this environment has no installed Chromium binary.

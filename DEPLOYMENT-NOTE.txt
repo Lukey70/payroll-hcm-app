@@ -1,20 +1,10 @@
-Payroll/HCM App v1.1.37
+Payroll/HCM App v1.1.39
 
-DEPLOYMENT
-Upload all application files in this folder together. Before replacing an existing version, use Export Data and retain the JSON backup. v1.1.37 preserves the payrollAppData/localStorage structure and migrates it through DataStore.migrate().
+Export Data and retain the JSON backup before updating.
+Upload index.html, styles.css, data-store.js, payroll-engine.js, app.js and latest-version.json together. The tests/ directory contains compatibility fixtures and is not used by the running app.
 
-IMPORTANT BEFORE UPDATE
-Ensure at least one active employee's current Position Data record has "Access to Payroll Management" enabled. Payroll Management tile visibility continues to follow that effective position flag.
+Existing payrollAppData is migrated in place. Employees, Job Data, positions, schedules, leave, deductions, Additional Earnings, credentials and finalised payroll records are retained. Open payslips recalculate on startup. Existing finalised records are not rewritten; their display can consolidate HDA and sort earnings.
 
-V1.1.37 NOTES
-- Fixed Acting Higher Level saved through Job Data not receiving Higher Duties Allowance.
-- Acting Higher/Lower/Same Level Job Data rate rows are now stored as Temporary; existing v1.1.36 acting rows are repaired automatically.
-- Substantive-rate lookup defensively ignores acting-linked rows even if legacy data has the wrong rate change type.
-- Fixed retro Casual Earnings disappearing when saved/imported cycle metadata does not match the historical work date.
-- Additional Earnings source dates now determine their source pay period for retro comparison, and Casual Earnings cycle IDs are repaired from the work date on migration.
-- Existing future-contract, tax, super, 25% loading and no-leave-accrual Casual Earnings rules remain unchanged.
+This version consolidates HDA, creates one payslip per worked position, orders earnings by Begin Date, and independently settles saved historical Casual Earnings. Current and retro Casual Earnings follow their selected earning position; this supersedes the older single generic Casual payslip grouping.
 
-DATA
-Existing employees, Job Data, schedules, Position Data, payroll history, finalised payslips, leave, balances, deductions, Additional Earnings, certifications, alerts and login credentials are preserved.
-
-See RELEASE-NOTES-v1.1.37.txt and test-results.txt for release details and verification results.
+See RELEASE-NOTES-v1.1.39.txt and test-results.txt for checks and exact-case limitations.
