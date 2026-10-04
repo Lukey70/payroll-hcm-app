@@ -853,7 +853,12 @@
     e.position=row.positionName; e.department=row.department; e.hourlyRate=Number(row.hourlyRate||0); e.type=row.positionClass==='Fixed-Term'?'Fixed Term':row.positionClass; if(row.positionClass!=='Fixed-Term'){ e.contractEndDate=''; e.autoTerminate=false; }
     const rateId=row.rateId||uid('rate'); row.rateId=rateId;
     const existingRate=(state.payRates||[]).find(r=>r.id===rateId);
-    const rateRow={id:rateId,empId:e.id,changeType:'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),jobDataId:row.id};
+    // Temporary acting movements must not become the employee's substantive rate.
+    // Higher Duties Allowance is the difference between the acting position and the
+    // substantive Permanent rate, so storing an acting row as Permanent makes the
+    // differential collapse to zero.
+    const isTemporaryActingMovement=row.action==='Movement' && ['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(row.reason);
+    const rateRow={id:rateId,empId:e.id,changeType:isTemporaryActingMovement?'Temporary':'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),jobDataId:row.id};
     if(existingRate) Object.assign(existingRate,rateRow); else state.payRates.push(rateRow);
     const schedId=row.scheduleId||uid('schedule'); row.scheduleId=schedId;
     const existingSched=(state.schedules||[]).find(r=>r.id===schedId);
@@ -1841,6 +1846,11 @@
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.37',notes:[
+      'Fixed the real Job Data save path for Acting Higher/Lower/Same Level so acting pay-rate rows are stored as Temporary and Higher Duties Allowance is calculated from the substantive Permanent rate.',
+      'Added an upgrade repair for v1.1.36 acting rows that were incorrectly stored as Permanent, so existing acting employees begin receiving the correct Higher Duties Allowance and historical Higher-Level reclassification can settle correctly.',
+      'Made Additional Earnings source dates authoritative for pay-period routing and repaired stale Casual Earnings cycle IDs so legitimate historical Casual Earnings appear as retro even when a future contract is already recorded.'
+    ]},
     {version:'v1.1.36',notes:[
       'Made payslip Department effective-dated so future contract departments do not appear on earlier payslips; historical retro Casual Earnings remain tied to their original casual position/rate.',
       'Added the Position Structure Report with an As Of date, active/vacant positions, occupants, Reports To relationships, acting assignments, print and HTML download.',

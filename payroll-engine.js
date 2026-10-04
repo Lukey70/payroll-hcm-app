@@ -238,8 +238,11 @@
   }
   function activePermanentPayRate(state, empId, onDate){
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
+    const actingJobIds=new Set((state.jobDataRows||[])
+      .filter(j=>j&&j.empId===empId&&j.saved!==false&&j.action==='Movement'&&['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(String(j.reason||'')))
+      .map(j=>String(j.id||'')));
     const rows=(state.payRates||[]).map((p,i)=>Object.assign({_sourceIndex:i},p))
-      .filter(p=>p.empId===empId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && p.changeType==='Permanent')
+      .filter(p=>p.empId===empId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && p.changeType==='Permanent' && !actingJobIds.has(String(p.jobDataId||'')))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0)||b._sourceIndex-a._sourceIndex);
     const e=(state.employees||[]).find(x=>x.id===empId)||{};
     return rows[0] || { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
@@ -1252,7 +1255,17 @@
       pushHigherDuties(hours,1);
     });
     if(includeAdditional){
-      (state.additionalEarnings||[]).filter(a=>a.empId===e.id && Number(a.cycleId)===Number(c.id) && a.saved !== false).forEach(a=>{
+      (state.additionalEarnings||[]).filter(a=>{
+        if(!a || a.empId!==e.id || a.saved===false) return false;
+        // Source dates are authoritative for Additional Earnings. This is especially
+        // important for a late Casual Earnings entry: older saved data can carry the
+        // current/open cycleId even though the work date belongs to a finalised cycle.
+        // Route it to the source pay period so the cumulative retro engine can create
+        // the outstanding Casual Earnings Retro rather than silently dropping it.
+        const sourceStart=a.startDate||''; const sourceEnd=a.endDate||sourceStart;
+        if(sourceStart && sourceEnd) return compare(sourceEnd,c.start)>=0 && compare(sourceStart,c.end)<=0;
+        return Number(a.cycleId)===Number(c.id);
+      }).forEach(a=>{
         const earningType = a.earningType || 'Additional Hours';
         const baseRate = activePayRate(state,e.id,a.startDate || c.start);
         if(earningType === 'Overpayment Adjustment'){

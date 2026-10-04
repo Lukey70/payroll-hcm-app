@@ -1,28 +1,33 @@
-Payroll/HCM App v1.1.36 — Automated Test Results
-Date: 4 October 2026
+Payroll/HCM App v1.1.37 — Test Results
+Run date: 4 October 2026
 
-PRE-PACKAGE SOURCE VERIFICATION
-- node test-cases.js: PASS / exit code 0
-- Self-invoking test blocks: 166
-- assert / assert.* call sites: 746
-- Runtime PASS summaries: 75
-- node --check data-store.js: PASS
-- node --check payroll-engine.js: PASS
-- node --check app.js: PASS
-- node --check test-cases.js: PASS
-- Local HTTP load: HTTP 200
-- Chromium headless real-browser attempt: timed out before returning rendered DOM; NOT counted as a browser interaction pass.
+AUTOMATED REGRESSION SUITE
+Command: node test-cases.js
+Result: PASS (exit code 0)
+Test blocks: 168
+Assertion call sites: 754
+Runtime PASS summaries: 77
 
-V1.1.36 FOCUSED COVERAGE
-- Effective-dated Department with current Casual / future Fixed Term contract.
-- Retro Casual Earnings retained with future Job Data.
-- Manual Higher Duties Allowance position/rate-difference calculation and no leave accrual.
-- Acting Higher Level positive HDA, Acting Lower Level negative HDA, Acting Same Level no HDA and permanent Promotion no HDA.
-- Paid leave during acting retains HDA; unpaid leave does not.
-- Substantive Permanent rate remains the HDA base across chained temporary acting assignments.
-- One-time Acting Higher Level reclassification from 01/07/2026 is dollar-neutral, leaves historical leave accrual unchanged, creates a per-employee notification and settles once.
-- Pre-upgrade Acting Lower/Same historical periods are excluded from the Higher-Level-only historical reclassification.
-- Position Structure Report As Of date, occupants, vacancies, Reports To and print/download surfaces.
+NEW v1.1.37 REGRESSION COVERAGE
+- Reproduces v1.1.36 real Job Data save state where an Acting Higher Level pay-rate row was incorrectly stored as Permanent.
+- Confirms migration repairs that acting rate row to Temporary.
+- Confirms Acting Higher Level pays substantive Regular Pay plus the correct Higher Duties Allowance differential.
+- Confirms the real app save path now writes Acting Higher/Lower/Same Level rate rows as Temporary.
+- Reproduces retro Casual Earnings with a historical work date but stale/current cycleId.
+- Confirms migration aligns Casual Earnings cycleId to the source work date.
+- Confirms the payroll engine routes Additional Earnings by source date and generates the correct Casual Earnings Retro even when cycleId remains stale.
+- Confirms future Fixed Term Job Data does not suppress historical Casual Earnings retro.
 
-FINAL ARTIFACT
-The final application ZIP is re-extracted into a clean directory and the complete suite/syntax checks are rerun before delivery. The external test-results-v1.1.36.txt supplied with the release records the exact-ZIP verification and SHA-256.
+SYNTAX CHECKS
+node --check data-store.js — PASS
+node --check payroll-engine.js — PASS
+node --check app.js — PASS
+node --check test-cases.js — PASS
+
+INTERFACE / SERVER CHECKS
+Local HTTP index.html request — PASS (HTTP 200)
+Chromium headless DOM smoke attempt — attempted but timed out (exit 124) before returning a rendered DOM.
+No successful real-browser interaction pass is claimed.
+
+PACKAGED ARTIFACT
+The final ZIP is separately extracted into a clean directory and the full suite/syntax checks are rerun before delivery. See the external final test-results-v1.1.37.txt/release record for the exact packaged artifact verification and SHA-256.

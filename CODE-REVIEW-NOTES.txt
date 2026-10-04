@@ -1,24 +1,19 @@
-Payroll/HCM App v1.1.36 — Code Review Notes
+Payroll/HCM App v1.1.37 — Code Review Notes
 
 Scope reviewed for this release
-- Effective-dated payslip Department and future Job Data isolation.
-- Retro Casual Earnings with future contract changes.
-- Position Structure Report and As Of occupancy logic.
-- Manual Higher Duties Allowance calculation and validation.
-- Temporary movement Higher Duties treatment, paid/unpaid leave and return handling.
-- One-time FY2026-27 Acting Higher Level reclassification, notification and cumulative retro settlement.
+- Real Job Data save path for temporary acting movements and Higher Duties Allowance.
+- Upgrade migration of v1.1.36 acting pay-rate rows saved with the wrong change type.
+- Substantive-rate lookup used by Higher Duties Allowance.
+- Retro Casual Earnings routing/settlement when cycle metadata is stale.
+- Future non-casual contracts and historical casual earnings.
 
 Findings / implemented corrections
-1. Payslip position had been made effective-dated in v1.1.35, but Department could still come from an employee master field updated by future Job Data. v1.1.36 stores/renders the effective Department on each calculated payslip.
-2. Retro Casual Earnings are calculated from their historical selected position/rate and remain payable even when a future Fixed Term/Permanent contract exists.
-3. Position Structure Report uses effective-dated Job Data for occupants/acting assignments and existing Position Data Reports To relationships, with vacancies retained.
-4. Higher Duties Allowance uses the employee's latest substantive Permanent pay rate as the normal-rate base, preventing chained temporary acting assignments from incorrectly using the previous acting rate.
-5. Acting Higher/Lower Level now separates substantive Regular Pay from the positive/negative differential. Same-level/permanent movements do not generate HDA. Paid leave within acting receives the differential; unpaid leave does not.
-6. The one-time Acting Higher Level reclassification is settled through cumulative retro rows and notifications. Existing pre-upgrade Acting Lower/Same Level history is excluded from the one-time historical reclassification, while new presentation applies from the upgrade open cycle.
+1. v1.1.36's UI save path created every non-termination Job Data pay-rate row with changeType='Permanent'. For Acting Higher Level this caused activePermanentPayRate() to select the acting rate itself as the normal/substantive rate, making the HDA differential zero. v1.1.37 saves acting movement rate rows as Temporary, repairs existing linked rows on migration, and defensively excludes acting-linked rows from substantive-rate lookup.
+2. The v1.1.36 retro Casual Earnings regression used a correctly stored historical cycleId, so it did not cover saved/imported states where the Casual Earnings work date was historical but cycleId still pointed at the open pay. v1.1.37 routes Additional Earnings by source date when dates are present and aligns Casual Earnings cycleId during migration. The retro engine therefore sees the historical earning in the correct finalised source cycle.
+3. Future-dated non-casual Job Data remains isolated from the historical casual source position/rate and does not suppress the retro payment.
+4. Existing cumulative retro settlement remains authoritative, so already-finalised Casual Earnings retro is not recreated.
 
 Verification
-- Full automated suite passes: 166 test blocks / 746 assertion call sites / 75 PASS summaries.
+- Full automated suite passes: 168 test blocks / 754 assertion call sites / 77 PASS summaries.
 - All four JavaScript files pass node --check.
-- Local HTTP load returns HTTP 200.
-- Chromium headless was attempted but timed out before returning rendered DOM, so no successful real-browser interaction pass is claimed.
 - Final ZIP verification is performed again from a clean extraction.

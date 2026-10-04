@@ -1,0 +1,42 @@
+Payroll/HCM App v1.1.37 — Release Notes
+Release date: 4 October 2026
+Source: verified v1.1.36 release
+
+SUMMARY
+v1.1.37 fixes two reported payroll regressions in v1.1.36: Acting Higher Level movements saved through the real Job Data workflow could fail to generate Higher Duties Allowance, and legitimate retro Casual Earnings could disappear when their stored cycle ID did not match the actual historical work date. Both fixes include migration/compatibility protection for existing saved employee data.
+
+IMPLEMENTED CHANGES
+
+1. Acting Higher Level / Higher Duties Allowance save-path fix
+- The real Job Data save path now stores Acting Higher Level, Acting Lower Level and Acting Same Level pay-rate rows as Temporary rather than Permanent.
+- This preserves the employee's substantive Permanent rate as the Higher Duties Allowance comparison base.
+- Acting Higher Level now produces substantive Regular Pay plus the positive Higher Duties Allowance differential when saved through the normal Job Data UI.
+- Existing v1.1.36 acting Job Data/pay-rate rows that were incorrectly saved as Permanent are repaired automatically on migration to v1.1.37.
+- The payroll engine also defensively excludes acting-linked pay-rate rows from the substantive Permanent-rate lookup even if imported legacy data still carries an incorrect Permanent flag.
+- Existing Higher Duties rules remain unchanged: paid leave during the acting period attracts the allowance; unpaid leave does not; Acting Lower Level uses a negative differential; Acting Same Level has no allowance; permanent movements do not use HDA.
+- The existing one-time Acting Higher Level reclassification from 01/07/2026 can now correctly identify/settle affected historical acting periods in data that was saved through the real v1.1.36 Job Data workflow.
+
+2. Retro Casual Earnings recovery
+- Additional Earnings source dates are now authoritative for determining the pay period they belong to.
+- A legitimate historical Casual Earnings item is routed to its actual source pay period even if an older/imported record contains a stale or incorrect cycleId.
+- This allows the cumulative retro engine to generate the outstanding Casual Earnings Retro in the current open pay instead of silently dropping the earning.
+- Migration also aligns stored Casual Earnings cycleId values to the source work date where the date belongs to a configured payroll cycle.
+- Future Permanent/Fixed Term contracts continue not to suppress historical casual earnings.
+- Historical selected position, hours, base rate, 25% casual loading, loaded rate and amount remain preserved.
+- Once a retro Casual Earnings correction is finalised/settled it remains settled and is not recreated without a genuine historical entitlement change.
+
+DATA / UPGRADE COMPATIBILITY
+- Existing payrollAppData/localStorage data is migrated in place.
+- Existing finalised historical payslips are preserved.
+- Acting movement pay-rate rows linked to Acting Higher/Lower/Same Level Job Data are corrected to Temporary classification during migration.
+- Historical Casual Earnings records are preserved; only their pay-period routing metadata is aligned to their source work date where needed.
+- Employee, Job Data, Position Data, leave, deductions, payslips, alerts, certifications and login credentials remain compatible.
+
+TESTING
+- Full automated regression suite: PASS.
+- 168 self-invoking test blocks.
+- 754 assert/assert.* call sites.
+- 77 runtime PASS summaries.
+- New regressions reproduce the v1.1.36 real Job Data save-path HDA failure and stale-cycle-id retro Casual Earnings failure.
+- node --check passed for data-store.js, payroll-engine.js, app.js and test-cases.js.
+- Exact packaged ZIP is separately verified from a clean extraction before delivery.

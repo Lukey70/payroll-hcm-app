@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.36';
+  const APP_VERSION = '1.1.37';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -71,6 +71,30 @@
     // history remains as finalised before the upgrade; the new presentation starts
     // with the open cycle at upgrade.
     if(!state.repairs.higherDutiesMovementStartCycleId && sourceVersion && sourceVersion!=='1.1.36') state.repairs.higherDutiesMovementStartCycleId=state.currentCycleId;
+
+    // v1.1.37 repair: v1.1.36's real Job Data save path wrote acting movement
+    // pay-rate rows as Permanent. That made the acting rate look substantive and
+    // reduced Higher Duties Allowance to $0. Repair linked rows on upgrade.
+    const actingJobDataIds=new Set(state.jobDataRows
+      .filter(j=>j&&j.saved!==false&&j.action==='Movement'&&['Acting Higher Level','Acting Lower Level','Acting Same Level'].includes(String(j.reason||'')))
+      .map(j=>String(j.id||'')));
+    state.payRates.forEach(r=>{ if(r&&actingJobDataIds.has(String(r.jobDataId||''))) r.changeType='Temporary'; });
+
+    // Older/edge-case Casual Earnings records can retain a mismatched cycleId even
+    // though their source work date belongs to a historical pay period. Align those
+    // records to the source date so both the Additional Earnings screen and retro
+    // settlement use the same period.
+    const anchorDay=Date.UTC(2026,4,22);
+    function sourceCycleId(dateIso){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateIso||''))) return 0;
+      const parts=String(dateIso).split('-').map(Number);
+      const day=Date.UTC(parts[0],parts[1]-1,parts[2]); if(Number.isNaN(day)) return 0;
+      const diff=Math.floor((day-anchorDay)/86400000); if(diff<0) return 0;
+      return Math.floor(diff/14)+1;
+    }
+    state.additionalEarnings.forEach(a=>{
+      if(a&&a.earningType==='Casual Earnings'&&a.startDate){ const sourceId=sourceCycleId(a.startDate); if(sourceId) a.cycleId=sourceId; }
+    });
 
     state.employees.forEach(e=>{
       if(!e.id) e.id = String(Date.now());

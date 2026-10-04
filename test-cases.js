@@ -36,8 +36,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.1.36'), 'sidebar/version label must show v1.1.36');
-  assert(data.includes("APP_VERSION = '1.1.36'"), 'data-store version must be 1.1.36');
+  assert(html.includes('v1.1.37'), 'sidebar/version label must show v1.1.37');
+  assert(data.includes("APP_VERSION = '1.1.37'"), 'data-store version must be 1.1.37');
 })();
 
 (function testAnchorPayCycle(){
@@ -2595,3 +2595,67 @@ console.log('PASS: v1.1.26 7-year/65-day LSL cycles, migration, service breaks, 
 console.log('PASS: v1.1.26 termination leave payouts, new Additional Earnings types and open-ended Union Fees regression are verified.');
 
 console.log('PASS: v1.1.36 effective Department, retro Casual Earnings, Position Structure Report and Higher Duties Allowance workflows are verified.');
+
+(function testV137ActingHigherSavedAsPermanentIsRepairedAndPaysHDA(){
+  const raw=baseState(); raw.version='1.1.36'; raw.currentCycleId=11;
+  const e=addEmployee(raw,{id:'hda137',position:'Officer',department:'Operations',hourlyRate:40,startDate:'2026-05-22',originalStartDate:'2026-05-22',lslServiceDate:'2026-05-22',employmentSegments:[{id:'seg137',startDate:'2026-05-22',endDate:'',inclusiveEnd:false}]});
+  raw.positions.push(
+    {id:'off137',positionNumber:'OFF137',positionName:'Officer',department:'Operations',hourlyRate:40,active:true},
+    {id:'mgr137',positionNumber:'MGR137',positionName:'Manager',department:'Operations',hourlyRate:50,active:true}
+  );
+  raw.jobDataRows.push(
+    {id:'basejd137',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:'OFF137',positionName:'Officer',department:'Operations',hourlyRate:40,positionClass:'Permanent',saved:true},
+    {id:'actjd137',empId:e.id,effectiveDate:'2026-10-09',effectiveSequence:0,action:'Movement',reason:'Acting Higher Level',positionNumber:'MGR137',positionName:'Manager',department:'Operations',hourlyRate:50,positionClass:'Permanent',saved:true}
+  );
+  const hours={1:7.5,2:7.5,3:7.5,4:7.5,5:7.5,6:0,0:0};
+  raw.schedules.push(
+    {id:'bases137',empId:e.id,jobDataId:'basejd137',effectiveDate:'2026-05-22',hoursByDay:hours},
+    {id:'acts137',empId:e.id,jobDataId:'actjd137',effectiveDate:'2026-10-09',hoursByDay:hours}
+  );
+  // Reproduce the real v1.1.36 UI save-path bug: acting rate was stored Permanent.
+  raw.payRates.push(
+    {id:'baser137',empId:e.id,jobDataId:'basejd137',effectiveDate:'2026-05-22',position:'Officer',hourlyRate:40,changeType:'Permanent'},
+    {id:'actr137',empId:e.id,jobDataId:'actjd137',effectiveDate:'2026-10-09',position:'Manager',hourlyRate:50,changeType:'Permanent'}
+  );
+  const state=DataStore.migrate(raw);
+  assert.strictEqual(state.payRates.find(r=>r.id==='actr137').changeType,'Temporary','Upgrade must repair linked Acting Higher Level pay rates to Temporary');
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  const rows=pays.flatMap(p=>p.rows||[]);
+  const regular=rows.filter(r=>r.description==='Regular Pay').reduce((sum,r)=>sum+Number(r.amount||0),0);
+  const hda=rows.filter(r=>r.description==='Higher Duties Allowance').reduce((sum,r)=>sum+Number(r.amount||0),0);
+  assert(hda>0,'Acting Higher Level saved through Job Data must generate Higher Duties Allowance');
+  assert(rows.some(r=>r.description==='Higher Duties Allowance'&&r.rate===10),'HDA rate must be acting rate minus substantive rate');
+  assert(rows.filter(r=>r.description==='Regular Pay').every(r=>r.rate===40),'Regular Pay during Acting Higher Level must stay at the substantive rate');
+  assert(regular>0,'Substantive Regular Pay must remain payable during acting');
+  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+  assert(app.includes("changeType:isTemporaryActingMovement?'Temporary':'Permanent'"),'Real Job Data save path must store acting movement pay-rate rows as Temporary');
+})();
+
+(function testV137RetroCasualUsesSourceDateEvenWhenCycleIdIsStale(){
+  const raw=baseState(); raw.version='1.1.36'; raw.currentCycleId=11;
+  const e=addEmployee(raw,{id:'casretro137',type:'Casual',position:'Casual',department:'Operations',hourlyRate:0,startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',employmentSegments:[{id:'seg137c',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
+  raw.positions.push(
+    {id:'caspos137',positionNumber:'CAS137',positionName:'Customer Service Casual',department:'Customer Services',hourlyRate:32,active:true},
+    {id:'future137',positionNumber:'FUT137',positionName:'Finance Officer',department:'Human Resources',hourlyRate:45,active:true}
+  );
+  raw.jobDataRows.push(
+    {id:'casjd137',empId:e.id,effectiveDate:'2026-01-01',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionNumber:'CAS137',positionName:'Casual',department:'Operations',hourlyRate:0,positionClass:'Casual',saved:true},
+    {id:'futurejd137',empId:e.id,effectiveDate:'2027-01-04',effectiveSequence:0,action:'Commencement',reason:'New Fixed Term Contract',positionNumber:'FUT137',positionName:'Finance Officer',department:'Human Resources',hourlyRate:45,positionClass:'Fixed-Term',saved:true}
+  );
+  raw.schedules.push({id:'sc137',empId:e.id,jobDataId:'casjd137',effectiveDate:'2026-01-01',hoursByDay:{1:0,2:0,3:0,4:0,5:0,6:0,0:0}});
+  raw.payRates.push({id:'rc137',empId:e.id,jobDataId:'casjd137',effectiveDate:'2026-01-01',position:'Casual',hourlyRate:0,changeType:'Permanent'});
+  raw.finalisedCycles['10']=true;
+  // Reproduce stale imported/UI state: source work date is cycle 10 but cycleId says open cycle 11.
+  raw.additionalEarnings.push({id:'lateCas137',empId:e.id,cycleId:11,earningType:'Casual Earnings',positionNumber:'CAS137',positionName:'Customer Service Casual',casualBaseRate:32,casualLoadingRate:0.25,casualLoadedRate:40,startDate:'2026-10-01',endDate:'2026-10-01',hours:8,amount:320,saved:true});
+  const state=DataStore.migrate(raw);
+  assert.strictEqual(Number(state.additionalEarnings.find(a=>a.id==='lateCas137').cycleId),10,'Migration must align Casual Earnings cycleId to its source work date');
+  // Also prove the engine is date-driven rather than depending solely on repaired cycleId.
+  state.additionalEarnings.find(a=>a.id==='lateCas137').cycleId=11;
+  const pays=E.calculateEmployee(state,e.id,11,false);
+  const retro=pays.flatMap(p=>p.rows||[]).find(r=>r.description==='Casual Earnings - Customer Service Casual Retro');
+  assert(retro&&retro.units===8&&retro.rate===40&&retro.amount===320,'Late Casual Earnings must appear as retro from the historical work date even when stored cycleId is stale');
+})();
+
+console.log('PASS: v1.1.37 real Job Data Acting Higher Level save/migration produces Higher Duties Allowance.');
+console.log('PASS: v1.1.37 retro Casual Earnings are source-date driven and survive stale cycle IDs/future contracts.');
+
