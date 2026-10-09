@@ -1,5 +1,5 @@
-Payroll/HCM App v1.1.39 verification
-185 test blocks; 863 assertion call sites; 87 PASS summaries
+Payroll/HCM App v1.1.40 verification
+185 existing test blocks + 18 new feature test groups; 1011 assertion call sites across both suites.
 
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
@@ -88,10 +88,28 @@ PASS: v1.1.39 unpaid historical casual work survives missing finalisation flags 
 PASS: v1.1.39 casual retro payment, adjustment, recovery and original-payment settlement do not repeat.
 PASS: v1.1.39 position allocation preserves whole-pay tax, deductions, super and no casual leave accrual.
 PASS: v1.1.39 fractional casual rates/hours, same-name positions and frozen v1.1.38 settlement are verified.
+PASS: current/future cycle boundaries, duplicate sequence, historical read-only and validation
+PASS: stable super fund identity, unique USI, inactive/deleted assignment errors and no silent remapping
+PASS: one effective super account; future changes and latest same-day sequence
+PASS: missing/incomplete accounts flagged for employees in cycle and paid terminated employees
+PASS: all contribution types use one frozen account; separate position disbursements equal their own net
+PASS: Recovery Deduction post-tax only, preview idempotence, final cap, auto-stop and ledger exactly once
+PASS: recoveries capped to available net after other obligations, including multiple debts and zero/negative net
+PASS: split-position recovery allocation and finalisation repay the debt once per employee
+PASS: Recovery Deduction future start, expiry and non-taxable earnings budget
+PASS: pending leave strictly exceeds 72 hours, notifies once, resets between pending episodes
+PASS: legacy pending age starts now unless trustworthy status history exists; denied/approved leave excluded
+PASS: real Bank Details controls: dropdown, plus, default date, validation, save and leading zeros
+PASS: real Settings Super controls: add, save, edit, dropdown label and readonly auto-population
+PASS: real Recovery Deduction modal fields, fixed amount rules, staged saving and persisted payroll
+PASS: real fund deletion, inactive/missing errors and historical row UI locking
+PASS: real leave status changes restart pending timing only on a new episode
+PASS: actual payslip HTML hides disbursements until finalised and places them below entitlement date
+PASS: browser script order/version metadata and migration retain all account/ledger fields
+PASS: 18 v1.1.40 feature tests completed. UI tests use an event/DOM harness; live-browser QA is not claimed.
 
-Syntax: all four application/test JavaScript files PASS.
-Rendered payslipHtml: consolidated HDA, job title and Begin Date ordering PASS.
-Exact packaged release: full tests and syntax rerun from a fresh extraction before delivery.
-HTTP: all runtime assets verified against extracted files byte-for-byte.
-Live browser: unavailable (Chromium not installed).
-Employee-specific data: not provided; reproduced failure paths are verified.
+All JavaScript syntax PASS.
+Actual UI rendering/event handlers exercised in a DOM harness.
+Live-browser QA unavailable: Chromium not installed.
+Real employee payroll export not supplied; regression fixtures verified.
+Exact ZIP freshly extracted; full suites/syntax rerun; SHA-256 manifest and HTTP asset byte equality verified.

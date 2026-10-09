@@ -134,6 +134,7 @@
   const PAY_CYCLES = makePayCycles(100);
   function cycleById(id){ return PAY_CYCLES.find(c=>c.id===Number(id)) || PAY_CYCLES[0]; }
   function currentCycle(state){ return cycleById(state.currentCycleId || 1); }
+  const Payment=(typeof module!=='undefined'?require('./payment-details.js'):global.PaymentDetails).create({PAY_CYCLES,currentCycle,round2,uid,employeeName,fmtPay,isEmployedInCycle});
   function cycleForDate(dateIso){ return PAY_CYCLES.find(c=>between(dateIso,c.start,c.end)); }
   function isFinalised(state, cycle){ return !!state.finalisedCycles[String(cycle.id)]; }
   function isPublicHoliday(dateIso){ return PUBLIC_HOLIDAYS_WA.some(p=>p[0]===dateIso); }
@@ -1005,12 +1006,14 @@
     if(d.percentage !== undefined && d.percentage !== null && String(d.percentage) !== '') return round2(Number(base||0) * Number(d.percentage||0) / 100);
     return 0;
   }
-  function calculateDeductions(state,e,c,gross,netAfterPreTax){
+  function calculateDeductions(state,e,c,gross,netAfterPreTax,availableRecoveryNet){
     const active=activeDeductions(state,e,c);
     const preTaxDeductions = active.filter(d=>d.deductionType==='Pre-tax Super Deduction').map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
     const preTaxTotal = round2(preTaxDeductions.reduce((s,d)=>s+d.amount,0));
     const postBase = netAfterPreTax === undefined || netAfterPreTax === null ? Math.max(0, Number(gross||0)-preTaxTotal) : netAfterPreTax;
     const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
+    const otherPostTaxTotal=round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
+    postTaxDeductions.push(...Payment.recoveryDeductionLines(state,active,c,Number(availableRecoveryNet??postBase)-otherPostTaxTotal));
     const postTaxTotal = round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
     return { preTaxDeductions, postTaxDeductions, preTaxTotal, postTaxTotal };
   }
@@ -1741,7 +1744,7 @@
     const firstPass=calculateDeductions(state,e,c,deductionBaseGross,null);
     const taxParts=calculateTaxComponents(state,e,rows,c,firstPass.preTaxTotal);
     const netAfterPreTax=round2(deductionBaseGross-taxParts.totalTax-firstPass.preTaxTotal);
-    const deductions=calculateDeductions(state,e,c,deductionBaseGross,netAfterPreTax);
+    const deductions=calculateDeductions(state,e,c,deductionBaseGross,netAfterPreTax,round2(gross-taxParts.totalTax-firstPass.preTaxTotal));
     return {gross,taxParts,deductions};
   }
   function consolidateHigherDutiesRows(rows){
@@ -1788,7 +1791,7 @@
     const employmentType=activeEmploymentType(state,e,c.end)||normaliseEmploymentType(e.type)||'';
     const segmentRow=rows.find(r=>r.kind!=='retro'&&r.payslipDepartment!==undefined)||rows.find(r=>!!r.positionDepartment);
     const department=segmentRow?(segmentRow.payslipDepartment!==undefined?segmentRow.payslipDepartment:segmentRow.positionDepartment):activeDepartment(state,e,c.end);
-    return { id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(snapshot), employeeSnapshot:JSON.parse(JSON.stringify(snapshot)), employmentType, department, cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, marginalTax:taxParts.marginalTax, terminationLeaveTax:taxParts.terminationLeaveTax, marginalTaxRetro:taxParts.marginalTaxRetro, stsl:taxParts.stsl, stslRetro:taxParts.stslRetro, noTfn:taxParts.noTfn, noTfnRetro:taxParts.noTfnRetro, taxableCurrentGross:taxParts.taxableCurrentGross, preTaxDeductions:deductionParts.preTaxDeductions, postTaxDeductions:deductionParts.postTaxDeductions, preTaxDeductionTotal:deductionParts.preTaxTotal, postTaxDeductionTotal:deductionParts.postTaxTotal, superAmt, superCurrent, superRetro, net, units:round4(rows.reduce((sum,r)=>sum+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, lslAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) };
+    return Object.assign({ id:`${e.id}_${c.id}_${segmentIndex}`, empId:e.id, employeeName:employeeName(snapshot), employeeSnapshot:JSON.parse(JSON.stringify(snapshot)), employmentType, department, cycleId:c.id, cycle:JSON.parse(JSON.stringify(c)), position:position||e.position, rate:Number(rate||0), rows, gross, tax, marginalTax:taxParts.marginalTax, terminationLeaveTax:taxParts.terminationLeaveTax, marginalTaxRetro:taxParts.marginalTaxRetro, stsl:taxParts.stsl, stslRetro:taxParts.stslRetro, noTfn:taxParts.noTfn, noTfnRetro:taxParts.noTfnRetro, taxableCurrentGross:taxParts.taxableCurrentGross, preTaxDeductions:deductionParts.preTaxDeductions, postTaxDeductions:deductionParts.postTaxDeductions, preTaxDeductionTotal:deductionParts.preTaxTotal, postTaxDeductionTotal:deductionParts.postTaxTotal, superAmt, superCurrent, superRetro, net, units:round4(rows.reduce((sum,r)=>sum+Number(r.units||0),0)), ordinaryHours:round4(ordinary), annualAccrual, personalAccrual, lslAccrual, retro, balances, segmentIndex, segmentCount, finalised:!!finalised, createdAt:(new Date()).toISOString().slice(0,10) },Payment.paymentPayslipFields(state,e,c,net,superAmt,deductionParts.preTaxDeductions,deductionParts.postTaxDeductions,finalised));
   }
   function splitIntoPayslips(state,e,c,rows,finalised){
     rows=consolidatePayslipRetroRows(rows);
@@ -1827,7 +1830,22 @@
     taxFieldNames.forEach(name=>{ allocatedTaxFields[name]=allocateRounded(Number(whole.taxParts[name]||0),weights); });
     const totalTaxAlloc=allocateRounded(Number(whole.taxParts.totalTax||0),weights);
     const preTaxLines=allocateDeductionLines(whole.deductions.preTaxDeductions,weights);
-    const postTaxLines=allocateDeductionLines(whole.deductions.postTaxDeductions,weights);
+    const postTaxLines=allocateDeductionLines(whole.deductions.postTaxDeductions.filter(d=>d.description!=='Recovery Deduction'),weights);
+    // Allocate recoveries against each position's available net, never below zero.
+    const recoveryBudgets=groupGrosses.map((gross,i)=>round2(Math.max(0,gross-totalTaxAlloc[i]-preTaxLines[i].reduce((s,d)=>s+d.amount,0)-postTaxLines[i].reduce((s,d)=>s+d.amount,0))));
+    whole.deductions.postTaxDeductions.filter(d=>d.description==='Recovery Deduction').forEach(line=>{
+      let remaining=round2(line.amount);
+      const allocations=allocateRounded(remaining,recoveryBudgets);
+      allocations.forEach((value,i)=>{
+        const amount=round2(Math.min(remaining,recoveryBudgets[i],Math.max(0,value)));
+        if(amount>0){postTaxLines[i].push(Object.assign({},line,{amount}));recoveryBudgets[i]=round2(recoveryBudgets[i]-amount);remaining=round2(remaining-amount);}
+      });
+      // Redistribute rounding residue only to a position that can afford it.
+      for(let i=0;i<groups.length&&remaining>0;i++){
+        const amount=round2(Math.min(remaining,recoveryBudgets[i]));
+        if(amount>0){const prior=postTaxLines[i].find(d=>d.id===line.id);if(prior)prior.amount=round2(prior.amount+amount);else postTaxLines[i].push(Object.assign({},line,{amount}));recoveryBudgets[i]=round2(recoveryBudgets[i]-amount);remaining=round2(remaining-amount);}
+      }
+    });
     return groups.map((g,i)=>{
       const taxParts={ noTfn:whole.taxParts.noTfn, noTfnRetro:whole.taxParts.noTfnRetro, totalTax:totalTaxAlloc[i] };
       taxFieldNames.forEach(name=>{ taxParts[name]=allocatedTaxFields[name][i]; });
@@ -1852,6 +1870,7 @@
   }
   function calculateAll(state, cycleId, finalised=false){
     const c = cycleById(cycleId || state.currentCycleId || 1);
+    Payment.ensurePendingLeaveNotifications(state);
     reconcileAllEmploymentFromJobData(state);
     autoProcessContractExpiries(state,c.end);
     ensureLslEntitlementNotifications(state,c.end);
@@ -1909,6 +1928,7 @@
     const payslips = calculateAll(state,c.id,true).map(p=>Object.assign({},p,{finalised:true,finalisedAt:(new Date()).toISOString().slice(0,10)}));
     state.payslips = (state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id)).concat(payslips);
     state.finalisedCycles[String(c.id)] = { id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c) };
+    Payment.commitRecoveryRepayments(state,c,payslips);
     commitBalancesOnFinalise(state,c,payslips);
     state.currentCycleId = c.id + 1;
     state.payResults[String(state.currentCycleId)] = calculateAll(state,state.currentCycleId,false);
@@ -2039,6 +2059,7 @@
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
   const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  Object.assign(api,Payment);
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

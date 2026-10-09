@@ -1,12 +1,12 @@
-Payroll/HCM App v1.1.39 code review
+Payroll/HCM App v1.1.40 code review
 
-- Reproduced a remaining v1.1.38 casual failure: no finalised source flag led to no retro, because the legacy commencement fallback handled only Regular Pay. Current-segment filtering also omitted old casual work after rehire. Casual settlement is now independent of both restrictions and counts all prior finalised casual payments/recoveries once.
-- Kept ordinary/leave retro comparison separate from casual settlement to prevent duplicate corrections. Removed roster-based casual Regular Pay from the commencement fallback.
-- Preserved source position/rate snapshots and selected position numbers through retro comparison and consolidation; legacy missing identifiers are matched conservatively to the known source signature for settlement compatibility.
-- Position grouping uses position number where available, with name fallback. Different rates at the same position no longer create extra payslips. Casual earnings no longer use a single generic group.
-- HDA consolidation sums existing rounded amounts; it does not recompute pay from a multiplied total or add leave accrual. Begin Date ordering uses stable sorting on cloned display rows.
-- Whole-pay financial calculations and allocations remain authoritative.
-- Fixed source hours/rate precision for casual retro and prevented duplicate current/retro routing of a malformed legacy casual end-date range.
-- Existing v1.1.38 finalised casual retro and v1.1.37 acting-history fixtures remain settled after upgrade.
+- Added payment-details.js: fund/assignment validation, effective account selection, frozen snapshots, contribution report, recovery ledger and pending reminders.
+- Stable fund IDs and soft-delete tombstones preserve assignment identity and error detection. USI edit/recreation does not reassign employees.
+- No historical bank/super editing or assignment deletion. Unique employee/date/sequence and latest-applicable selection yield one effective account. Account/member numbers stay strings.
+- Recovery debt derives from opening debt minus finalised repayments. Previews never repay. One idempotent cycle ledger entry aggregates all position deductions. Available-net caps apply to both whole pay and each position, including rounded residue.
+- Existing tax/OTE/employer-super calculation bases remain unchanged. New finalised payslips freeze all account details/contribution totals; old stored records are not backfilled.
+- Pending status entry sets a timer; migration uses trustworthy contiguous pending history or current time. More than 72 hours triggers once per episode; confidential leave wording remains private.
+- Bank/super changes invalidate open-pay certification. Tab navigation refreshes catalogue-linked details.
+- Fixed employment-check helper signature while testing account warnings. Existing compatibility fixtures remain passing.
 
-Full automated suite and syntax checks pass. Live-browser testing and the reported employee's exact saved-data case are not claimed.
+Full regression and feature tests, syntax, exact ZIP manifest/extracted tests and HTTP asset byte checks pass. UI event/DOM harness tests are not live-browser visual QA. No real employee export was supplied. No payment submission or closed-app notification service is implemented.

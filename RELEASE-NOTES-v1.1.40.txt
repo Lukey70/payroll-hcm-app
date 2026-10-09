@@ -1,0 +1,20 @@
+Payroll/HCM App v1.1.40
+Built from v1.1.39, retaining Higher Duties Allowance, worked-position payslips, chronological earnings and retro Casual Earnings fixes.
+
+NEW FEATURES
+- Settings > Super: fund dropdown (Super Fund Name - USI), Add New, Save, Edit and Delete. Fields: Name, USI, eleven-digit ABN and Active. Unique USI among undeleted funds. Stable internal identity prevents fund edits/deletion/recreation from silently redirecting employee assignments.
+- Employee Super and Bank Details: employee dropdown, saved-row history, plus-only addition, effective date/sequence and Save. No minus/remove control. Super requires active catalogue USI and Member Number; Name/ABN populate automatically. Bank fields are BSB, Account Number and Account Name; leading zeros retained.
+- Current/future pay-period start dates only, default current start. Previous-period rows read-only. Duplicate employee/date/sequence rejected. Latest applicable date and highest sequence select one effective account.
+- Check for Errors flags missing super, inactive/deleted/missing funds, missing membership and incomplete/invalid bank details. Includes current-period employment and paid terminated employees, not unpaid future employees. Warnings remain review-only under the existing finalisation workflow.
+- Employer, pre-tax and post-tax super use one recorded account. Settings > Super includes a contribution report consolidated across position payslips. Reporting only, not actual super payments.
+- Finalisation freezes bank/super details per payslip. Disbursement Details follows entitlement date only when finalised: BSB, Account Nbr and that position payslip's net Amount. No zero/negative payment is generated. Missing accounts are not invented. Older finalised payslips without snapshots do not backfill today's details.
+- Recovery Deduction: post-tax fixed repayment, Opening Debt, effective date and optional end date. Deductions displays Repaid/Remaining. Previews do not repay debt; finalisation commits one employee/cycle ledger entry per debt, summed across position payslips. Repayment caps to remaining debt and available net after other obligations, stops at zero, and does not change gross/tax/employer super.
+- Leave Awaiting Manager Approval for strictly more than 72 elapsed hours gets one notification per pending episode. Repeated checks/same-status updates do not duplicate it; a new pending episode restarts timing. Unknown legacy ages start at migration, not leave dates. Checks run on startup/calculation and every minute while the app is open, not while closed.
+- Account changes invalidate certification signatures for open pay so they can be reviewed again.
+
+EXCLUSIONS RETAINED
+No new bank/super before-after audit history or save-confirmation workflow. No new bank/super masking or access restrictions. Existing security/audit features remain. Fund deletion retains ordinary destructive-action confirmation.
+
+VALIDATION AND LIMITS
+Complete existing suite and 18 new feature test groups pass, including actual rendering and event handlers in a lightweight DOM harness. Exact ZIP is freshly extracted, checksummed and retested; runtime assets served and compared byte-for-byte.
+No Chromium binary is installed: live-browser interaction/visual QA is not claimed. No real employee payroll data export was supplied, so the exact reported cases cannot be verified. Use a backed-up copy of real data for acceptance testing before operational payroll use.

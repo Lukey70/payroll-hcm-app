@@ -8,6 +8,7 @@ body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text
 button,select,input{border-radius:10px;border:1px solid var(--border);padding:9px 11px;font-size:14px}
 input,select{width:100%;background:#fff;color:var(--text)}
 input[readonly],input:disabled{background:#f1f5f9;color:#475569}
+#catalogueActive{width:auto;vertical-align:middle;margin-right:6px}
 label{font-size:13px;color:var(--muted);display:block;margin:0 0 4px}
 button{background:var(--primary);color:#fff;border:0;cursor:pointer;font-weight:bold;width:auto}
 button:hover{opacity:.92}button:disabled{opacity:.45;cursor:not-allowed}.secondary{background:#475569}.success{background:var(--success)}.danger{background:var(--danger)}.warning{background:var(--warning)}.purple{background:var(--purple)}.teal{background:var(--teal)}.ghost{background:#fff;color:var(--text);border:1px solid var(--border)}

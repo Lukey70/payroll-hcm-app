@@ -1,10 +1,15 @@
-Payroll/HCM App v1.1.39
+Payroll/HCM App v1.1.40
 
-Export Data and retain the JSON backup before updating.
-Upload index.html, styles.css, data-store.js, payroll-engine.js, app.js and latest-version.json together. The tests/ directory contains compatibility fixtures and is not used by the running app.
+Export Data and retain the JSON backup before updating. Preserve the same site origin/browser so payrollAppData remains available, or import your backup.
 
-Existing payrollAppData is migrated in place. Employees, Job Data, positions, schedules, leave, deductions, Additional Earnings, credentials and finalised payroll records are retained. Open payslips recalculate on startup. Existing finalised records are not rewritten; their display can consolidate HDA and sort earnings.
+Upload index.html, styles.css, data-store.js, payment-details.js, payroll-engine.js, app.js and latest-version.json together. payment-details.js is a required NEW runtime asset. Keep the script order in index.html. Tests are not runtime dependencies.
 
-This version consolidates HDA, creates one payslip per worked position, orders earnings by Begin Date, and independently settles saved historical Casual Earnings. Current and retro Casual Earnings follow their selected earning position; this supersedes the older single generic Casual payslip grouping.
+Existing data migrates in place; finalised payslips remain stored and current pay recalculates. No bank/super assignment is invented. Create funds in Settings > Super, then enter employee Super and Bank Details for current/future pay-period starts. Run Check for Errors before finalising.
 
-See RELEASE-NOTES-v1.1.39.txt and test-results.txt for checks and exact-case limitations.
+Test a backed-up copy of real data before operational use. Recovery Deduction is a fixed post-tax repayment with Opening Debt, not a correction of original earnings. Bank/super details and contribution reports do not send payments. No new bank/super masking, access restrictions, before-after audit or save-confirmation workflow is included.
+
+Run:
+node test-cases.js
+node tests/payment-details-v140.test.js
+
+See RELEASE-NOTES-v1.1.40.txt and test-results.txt for coverage and limits.

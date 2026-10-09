@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.1.39';
+  const APP_VERSION = '1.1.40';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -12,6 +12,10 @@
       leaveBookings: [],
       additionalEarnings: [],
       deductions: [],
+      superFunds: [],
+      superDetails: [],
+      bankDetails: [],
+      recoveryRepayments: [],
       positions: [],
       jobDataRows: [],
       cashOutRequests: [],
@@ -62,9 +66,19 @@
     const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','additionalEarnings','deductions','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
+    // Preserve trustworthy pending-status timestamps; unknown legacy ages start now.
+    state.leaveBookings.forEach(l=>{
+      if(l.status!=='Awaiting Manager Approval'||Number.isFinite(Date.parse(l.pendingApprovalSince))) return;
+      let since='';
+      for(const h of (Array.isArray(l.statusHistory)?l.statusHistory:[]).slice().reverse()){
+        if(h.status!=='Awaiting Manager Approval') break;
+        if(Number.isFinite(Date.parse(h.changedAt))) since=h.changedAt;
+      }
+      l.pendingApprovalSince=since||(new Date()).toISOString();
+    });
     // v1.1.36 changes temporary-movement pay presentation to substantive Regular Pay
     // plus Higher Duties Allowance. Only Acting Higher Level is intentionally
     // reclassified historically back to 01/07/2026. Existing Acting Lower/Same

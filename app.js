@@ -38,6 +38,9 @@
   let selectedJobDataRowIndex = 0;
   let selectedJobDataDraft = null;
   let settingsView = 'general';
+  const paymentSelection={bankDetails:{empId:'',id:'',draft:null},superDetails:{empId:'',id:'',draft:null}};
+  let selectedSuperFundId='';
+  let superFundDraft=false;
   let pendingTab = null;
   let timeoutWarning = null;
   let timeoutLogout = null;
@@ -71,6 +74,7 @@
     calculateAllForCurrent();
     if(E.ensureContractExpiryNotifications(state,todayIso())) save();
     renderAll();
+    if(typeof setInterval==='function') setInterval(()=>{ if(E.ensurePendingLeaveNotifications(state)){save();renderAlerts();} },60000);
   }
 
   function attachGlobalEvents(){
@@ -343,7 +347,8 @@
   function currentResults(){ return state.payResults[String(currentCycle().id)] || []; }
   function paySignature(p){
     const rows=(p.rows||[]).map(r=>({d:r.description,u:Number(r.units||0),a:Number(r.amount||0),s:r.startDate||'',e:r.endDate||'',rate:Number(r.rate||0),k:r.kind||''}));
-    return JSON.stringify({empId:p.empId,position:p.position||'',gross:Number(p.gross||0),tax:Number(p.tax||0),net:Number(p.net||0),rows});
+    const bank=E.activePaymentRecord(state,'bankDetails',p.empId,p.cycle?.start||currentCycle().start);
+    return JSON.stringify({empId:p.empId,position:p.position||'',gross:Number(p.gross||0),tax:Number(p.tax||0),net:Number(p.net||0),rows,superAccount:p.superAccountSnapshot||null,bank:bank?{bsb:bank.bsb,accountNumber:bank.accountNumber,accountName:bank.accountName}:null});
   }
   function reconcileCertificationForCycle(c, oldResults, newResults){
     if(!c || Number(c.id)!==Number(currentCycle().id)) return;
@@ -431,6 +436,8 @@
     leave.statusHistory=Array.isArray(leave.statusHistory)?leave.statusHistory:[];
     leave.statusHistory.push({status,changedAt:(new Date()).toISOString(),source});
     leave.status=status;
+    leave.pendingApprovalSince=status==='Awaiting Manager Approval'?(new Date()).toISOString():'';
+    leave.pendingApprovalNotifiedSince='';
     state.auditLog=state.auditLog||[];
     state.auditLog.unshift(`Leave status changed for ${E.employeeName(emp(leave.empId)||{})}: ${leave.type} ${E.fmtPay(leave.startDate)} - ${E.fmtPay(leave.endDate)} -> ${status} (${source}).`);
     save(); calculateAllForCurrent(); renderAll();
@@ -542,6 +549,8 @@
     if(tab==='jobData') renderJobData();
     if(tab==='deductions') renderDeductions();
     if(tab==='taxDetails') renderTaxDetails();
+    if(tab==='bankDetails') renderBankDetails();
+    if(tab==='superDetails') renderSuperDetails();
     if(tab==='certification') renderCertification();
     if(tab==='reports') renderReports();
     if(tab==='payslip') renderPayslip();
@@ -590,10 +599,47 @@
     document.querySelectorAll('[data-view-personal]').forEach(b=>b.addEventListener('click',()=>openPersonalDetailsView(b.dataset.viewPersonal)));
   }
   function renderBankDetails(){
-    h('bankDetails', '<h2>Bank Details</h2><p class="small-note">This tab is ready for future bank details. No bank details fields have been added yet.</p>');
+    renderPaymentDetails('bankDetails');
   }
   function renderSuperDetails(){
-    h('superDetails', '<h2>Super</h2><p class="small-note">This tab is ready for future superannuation details. No super details fields have been added yet.</p>');
+    renderPaymentDetails('superDetails');
+  }
+  function renderPaymentDetails(kind){
+    const bank=kind==='bankDetails',prefix=bank?'bank':'super',sel=paymentSelection[kind];
+    const employees=employeeList(showTerminatedByTab[kind]);
+    if(sel.empId&&!employees.some(e=>e.id===sel.empId)) {sel.empId='';sel.id='';sel.draft=null;}
+    const rows=(state[kind]||[]).filter(r=>r.empId===sel.empId).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence)-Number(a.effectiveSequence));
+    const row=sel.draft||rows.find(r=>r.id===sel.id)||rows[0]||null;
+    if(row&&!sel.draft)sel.id=row.id;
+    const locked=!!row&&row.effectiveDate<currentCycle().start;
+    const disabled=locked?'disabled':'';
+    const fund=row&&(state.superFunds||[]).find(f=>f.id===row.fundId);
+    const dates=E.paymentEffectiveCycles(state);
+    const dateOptions=(locked?`<option value="${esc(row.effectiveDate)}" selected>${E.fmtPay(row.effectiveDate)} (historical)</option>`:'')+dates.map(c=>`<option value="${c.start}" ${row?.effectiveDate===c.start?'selected':''}>${E.fmtPay(c.start)}</option>`).join('');
+    const fields=bank?`<div><label>BSB</label><input id="bankBsb" inputmode="numeric" value="${esc(row?.bsb)}" ${disabled}></div><div><label>Account Number</label><input id="bankAccountNumber" inputmode="numeric" value="${esc(row?.accountNumber)}" ${disabled}></div><div><label>Account Name</label><input id="bankAccountName" value="${esc(row?.accountName)}" ${disabled}></div>`:`<div><label>USI</label><input id="superUsi" list="activeSuperUsis" value="${esc(fund?.usi||row?.usi)}" ${disabled}><datalist id="activeSuperUsis">${(state.superFunds||[]).filter(f=>!f.deleted&&f.active!==false).map(f=>`<option value="${esc(f.usi)}">${esc(f.fundName)} - ${esc(f.usi)}</option>`).join('')}</datalist></div><div><label>Member Number</label><input id="superMemberNumber" value="${esc(row?.memberNumber)}" ${disabled}></div><div><label>Super Fund Name</label><input id="superFundName" value="${esc(fund?.fundName)}" readonly></div><div><label>ABN</label><input id="superAbn" value="${esc(fund?.abn)}" readonly></div>`;
+    h(kind,`<h2>${bank?'Bank Details':'Super'}</h2><div class="controls"><label>Employee <select id="${prefix}Emp">${employeeOptions(employees)}</select></label><button id="${prefix}ShowTerminated" class="secondary">${showTerminatedByTab[kind]?'Hide':'Show'} Terminated</button><button id="${prefix}Plus" aria-label="Add ${bank?'bank':'super'} row" ${sel.empId?'':'disabled'}>+</button></div><p class="small-note">One account applies at a time: the latest effective date and highest sequence. Add a row for the current or a future pay-period start. Previous pay-period rows are read-only.</p>${sel.empId?`<label>Saved Rows <select id="${prefix}Rows"><option value="">${sel.draft?'New row':'Select saved row'}</option>${rows.map(r=>`<option value="${esc(r.id)}" ${!sel.draft&&r.id===row?.id?'selected':''}>${E.fmtPay(r.effectiveDate)} — Sequence ${r.effectiveSequence}</option>`).join('')}</select></label>${row?`<div class="grid form-grid"><div><label>Effective Date</label><select id="${prefix}EffectiveDate" ${disabled}>${dateOptions}</select></div><div><label>Effective Sequence</label><input id="${prefix}Sequence" type="number" min="0" step="1" value="${row.effectiveSequence}" ${disabled}></div>${fields}</div><div class="controls"><button id="${prefix}Save" ${disabled}>Save</button></div><p id="${prefix}Note" class="small-note">${locked?'Historical row — add a new row to make a change.':bank?'Account numbers are stored as text to preserve leading zeros.':'Employer, pre-tax and post-tax super all use this same account.'}</p>`:'<p class="small-note">Press + to add the first row.</p>'}`:''}`);
+    setv(`${prefix}Emp`,sel.empId);
+    $(`${prefix}Emp`).addEventListener('change',()=>{sel.empId=v(`${prefix}Emp`);sel.id='';sel.draft=null;renderPaymentDetails(kind);});
+    $(`${prefix}ShowTerminated`).addEventListener('click',()=>{showTerminatedByTab[kind]=!showTerminatedByTab[kind];renderPaymentDetails(kind);});
+    $(`${prefix}Plus`).addEventListener('click',()=>{
+      const date=currentCycle().start,seq=Math.max(-1,...rows.filter(r=>r.effectiveDate===date).map(r=>Number(r.effectiveSequence)))+1;
+      sel.draft={empId:sel.empId,effectiveDate:date,effectiveSequence:seq};sel.id='';renderPaymentDetails(kind);
+    });
+    if($(`${prefix}Rows`))$(`${prefix}Rows`).addEventListener('change',()=>{const id=v(`${prefix}Rows`);if(id){sel.id=id;sel.draft=null;renderPaymentDetails(kind);}});
+    if(!row||locked)return;
+    $(`${prefix}EffectiveDate`).addEventListener('change',()=>{setv(`${prefix}Sequence`,Math.max(-1,...rows.filter(r=>r.id!==row.id&&r.effectiveDate===v(`${prefix}EffectiveDate`)).map(r=>Number(r.effectiveSequence)))+1);});
+    if(!bank){
+      $('superUsi').addEventListener('input',()=>{const f=(state.superFunds||[]).find(f=>!f.deleted&&f.active!==false&&f.usi===v('superUsi').trim());setv('superFundName',f?.fundName||'');setv('superAbn',f?.abn||'');});
+    }
+    $(`${prefix}Save`).addEventListener('click',()=>{
+      try{
+        const record={id:row.id,empId:sel.empId,effectiveDate:v(`${prefix}EffectiveDate`),effectiveSequence:v(`${prefix}Sequence`)};
+        if(bank)Object.assign(record,{bsb:v('bankBsb'),accountNumber:v('bankAccountNumber'),accountName:v('bankAccountName')});
+        else Object.assign(record,{usi:v('superUsi'),memberNumber:v('superMemberNumber')});
+        const saved=bank?E.saveBankDetails(state,record):E.saveEmployeeSuper(state,record);
+        sel.id=saved.id;sel.draft=null;save();calculateAllForCurrent();renderPaymentDetails(kind);h(`${prefix}Note`,'Save Successful');
+      }catch(err){alert(err.message);}
+    });
   }
 
   function nextEmployeeId(){ let max=0; state.employees.forEach(e=>{ const m=String(e.id).match(/\d+/); if(m) max=Math.max(max,Number(m[0])); }); return String(max+1).padStart(6,'0'); }
@@ -787,6 +833,8 @@
     affected.forEach(l=>{
       if(l.status!=='Awaiting Manager Approval'){
         l.status='Awaiting Manager Approval';
+        l.pendingApprovalSince=(new Date()).toISOString();
+        l.pendingApprovalNotifiedSince='';
         l.statusHistory=Array.isArray(l.statusHistory)?l.statusHistory:[];
         l.statusHistory.push({status:'Awaiting Manager Approval',changedAt:(new Date()).toISOString(),source:'Termination conflict'});
       }
@@ -1033,9 +1081,10 @@
   function openDeductionModal(){
     const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
     const c=currentCycle();
-    modal('Add New Deduction', `<div class="grid form-grid"><div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option><option>Union Fees</option></select></div><div><label>Amount</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div></div>`, `<button id="stageDeduction">Add to Table</button>`, true);
+    modal('Add New Deduction', `<div class="grid form-grid"><div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option><option>Union Fees</option><option>Recovery Deduction</option></select></div><div><label>Amount (fixed repayment per pay for recovery)</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div><div id="dedDebtField" hidden><label>Opening Debt</label><input id="dedOpeningDebt" type="number" step="0.01" min="0"><p class="small-note">Post-tax recovery only. Balance reduces at pay finalisation and stops when repaid.</p></div></div>`, `<button id="stageDeduction">Add to Table</button>`, true);
     const sync=()=>{
-      const unionFees=v('dedType')==='Union Fees';
+      $('dedDebtField').hidden=v('dedType')!=='Recovery Deduction';
+      const unionFees=['Union Fees','Recovery Deduction'].includes(v('dedType'));
       if(unionFees){ setv('dedPercentage',''); $('dedPercentage').disabled=true; $('dedAmount').disabled=false; return; }
       const hasAmt=String(v('dedAmount')).trim()!==''; const hasPct=String(v('dedPercentage')).trim()!==''; $('dedPercentage').disabled=hasAmt; $('dedAmount').disabled=hasPct;
     };
@@ -1052,6 +1101,8 @@
     if(amount && percentage) return alert('Enter an Amount OR Percentage, not both.');
     if(!amount && !percentage) return alert('Enter either an Amount or Percentage.');
     const draft={ id:uid('ded'), empId, startDate:start, endDate:end, deductionType, amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false };
+    if(deductionType==='Recovery Deduction') draft.openingDebt=Number(v('dedOpeningDebt'));
+    try{E.validateRecoveryDeduction(draft);}catch(err){return alert(err.message);}
     const dateValidation=E.validateDeductionDates(state,draft,true); if(!dateValidation.ok) return alert(dateValidation.message);
     deductionDraftRows.push(draft);
     closeModal(); markDeductionDirty(); renderDeductionsTable();
@@ -1069,9 +1120,10 @@
       const endCell=deductionCanEditEnd(d)?`<select data-ded-end="${esc(d.id)}"><option value="" ${!d.endDate?'selected':''}></option>${deductionCycleOptions('end',d.endDate||'')}</select>`:E.fmtPay(d.endDate);
       const amountCell=d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>';
       const percentageCell=d.percentage!==''&&d.percentage!=null?`${Number(d.percentage).toFixed(2)}%`:'<span class="muted">—</span>';
-      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">End-date only</span>'];
+      const recovery=d.deductionType==='Recovery Deduction'?E.recoveryBalance(state,d):null;
+      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,recovery?E.money(recovery.opening):'—',recovery?E.money(recovery.repaid):'—',recovery?E.money(recovery.remaining):'—',deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:'<span class="muted">End-date only</span>'];
     });
-    h('deductionsTable', rows.length?table(['Deduction Type','Start Date','End Date','Amount','Percentage','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
+    h('deductionsTable', rows.length?table(['Deduction Type','Start Date','End Date','Amount','Percentage','Opening Debt','Repaid','Remaining','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
     document.querySelectorAll('[data-ded-end]').forEach(el=>el.addEventListener('change',()=>stageDeductionEnd(el.dataset.dedEnd,el.value)));
     document.querySelectorAll('[data-del-ded]').forEach(b=>b.addEventListener('click',()=>confirmModal('Are you sure you want to delete this deduction?','Yes',()=>stageDeleteDeduction(b.dataset.delDed))));
   }
@@ -1096,6 +1148,7 @@
     for(const d of deductionDraftRows.filter(x=>x.empId===empId && x.deleted!==true)){
       d.endDate=String(d.endDate||'').trim();
       const persisted=persistedById.get(d.id);
+      try{E.validateRecoveryDeduction(d);}catch(err){return alert(err.message);}
       if(deductionDateNeedsValidation(persisted,d)){ const dateValidation=E.validateDeductionDates(state,d,!persisted); if(!dateValidation.ok) return alert(dateValidation.message); }
       if(d.deductionType==='Union Fees' && (d.amount===''||d.amount==null)) return alert('Union Fees must be entered as an Amount.');
       if(d.deductionType==='Union Fees' && d.percentage!=='' && d.percentage!=null) return alert('Union Fees cannot be entered as a Percentage.');
@@ -1524,7 +1577,10 @@
       ['LSL Entitlement Date', '', '', E.fmtPay((p.balances&&p.balances.lslEntitlementDate)||'')]
     ];
     const leaveSection=(p.employmentType||e.type)==='Casual'?'':`<div class="section-title">Leave Balance</div>${table(['Leave','Accrued','Used','Balance'],leaveRows)}`;
-    return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-header"><div>${employeeBlock}</div><div class="payslip-details">${detailRows}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Rate</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}${leaveSection}</div>`;
+    const a=p.superAccountSnapshot;
+    const accountSection=a?`<div class="section-title">Super Account</div>${table(['Super Fund Name','USI','ABN','Member Number'],[[esc(a.fundName),esc(a.usi),esc(a.abn),esc(a.memberNumber)]])}${a.valid===false?'<p class="error-text">Super account requires review.</p>':''}`:'';
+    const disbursementSection=p.finalised&&Array.isArray(p.disbursements)?`<div class="section-title">Disbursement Details</div>${p.disbursements.length?table(['BSB','Account Nbr','Amount'],p.disbursements.map(d=>[esc(d.bsb),esc(d.accountNumber),E.money(d.amount)])):'<p class="small-note">No disbursement recorded (no positive net pay or valid bank account).</p>'}`:'';
+    return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-header"><div>${employeeBlock}</div><div class="payslip-details">${detailRows}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Rate</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}${accountSection}${leaveSection}${disbursementSection}</div>`;
   }
 
   function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); const selected=selectedCertCycleId && visible.some(c=>String(c.id)===String(selectedCertCycleId)) ? String(selectedCertCycleId) : String(currentCycle().id); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${String(c.id)===selected?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',()=>{ selectedCertCycleId=v('certCycle'); renderCertOutput(); }); renderCertOutput(); }
@@ -1726,10 +1782,24 @@
 
   function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
   function renderSettings(){
-    h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button></div><div id="settingsOutput"></div>`);
+    h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button><button id="settingsSuper" class="${settingsView==='super'?'':'secondary'}">Super</button></div><div id="settingsOutput"></div>`);
     $('settingsGeneral').addEventListener('click',()=>{ settingsView='general'; renderSettings(); });
     $('settingsPositions').addEventListener('click',()=>{ settingsView='positions'; renderSettings(); });
-    if(settingsView==='positions') renderPositionsSettings(); else renderGeneralSettings();
+    $('settingsSuper').addEventListener('click',()=>{settingsView='super';renderSettings();});
+    if(settingsView==='positions') renderPositionsSettings(); else if(settingsView==='super')renderSuperSettings();else renderGeneralSettings();
+  }
+  function renderSuperSettings(){
+    const funds=(state.superFunds||[]).filter(f=>!f.deleted).slice().sort((a,b)=>a.fundName.localeCompare(b.fundName));
+    const f=superFundDraft?{}:funds.find(f=>f.id===selectedSuperFundId);
+    h('settingsOutput',`<h3>Super Funds</h3><div class="controls"><label>Existing Super <select id="superFundSelect"><option value="">Select super fund</option>${funds.map(x=>`<option value="${esc(x.id)}" ${x.id===selectedSuperFundId?'selected':''}>${esc(x.fundName)} - ${esc(x.usi)}</option>`).join('')}</select></label><button id="addSuperFund">Add New</button></div>${f?`<div class="grid form-grid"><div><label>Super Fund Name</label><input id="catalogueFundName" value="${esc(f.fundName)}"></div><div><label>USI</label><input id="catalogueUsi" value="${esc(f.usi)}"></div><div><label>ABN</label><input id="catalogueAbn" value="${esc(f.abn)}" inputmode="numeric"></div><div><label><input id="catalogueActive" type="checkbox" ${f.active===false?'':'checked'}> Active</label></div></div><div class="controls"><button id="saveSuperFund">Save</button>${f.id?'<button id="deleteSuperFund" class="danger">Delete</button>':''}</div><p id="superFundNote" class="small-note">Inactive or deleted assigned funds appear in Check for Errors. Existing employee assignments retain their fund identity when a fund is edited.</p>`:''}<h3>Super Contribution Report</h3><label>Pay Cycle <select id="superReportCycle">${E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id).map(c=>`<option value="${c.id}" ${c.id===currentCycle().id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></label><div id="superReportOutput"></div><p class="small-note">Report only — this does not send payments to super funds. Finalised reports use frozen payslip account details.</p>`);
+    $('superFundSelect').addEventListener('change',()=>{selectedSuperFundId=v('superFundSelect');superFundDraft=false;renderSuperSettings();});
+    $('addSuperFund').addEventListener('click',()=>{selectedSuperFundId='';superFundDraft=true;renderSuperSettings();});
+    if(f){
+      $('saveSuperFund').addEventListener('click',()=>{try{const out=E.saveSuperFund(state,{id:f.id,fundName:v('catalogueFundName'),usi:v('catalogueUsi'),abn:v('catalogueAbn'),active:$('catalogueActive').checked});selectedSuperFundId=out.id;superFundDraft=false;save();calculateAllForCurrent();renderSuperSettings();h('superFundNote','Save Successful');}catch(err){alert(err.message);}});
+      if(f.id)$('deleteSuperFund').addEventListener('click',()=>confirmModal(`Delete ${f.fundName} - ${f.usi}? Assigned employees will be flagged in Check for Errors.`,'Delete',()=>{E.deleteSuperFund(state,f.id);selectedSuperFundId='';save();calculateAllForCurrent();renderSuperSettings();}));
+    }
+    const report=()=>{const rows=E.superContributionReport(state,v('superReportCycle')).map(r=>[esc(r.employeeName),esc(r.empId),esc(r.account?.fundName||'Not recorded'),esc(r.account?.usi),esc(r.account?.memberNumber),E.money(r.employer),E.money(r.preTax),E.money(r.postTax),E.money(r.total)]);h('superReportOutput',rows.length?table(['Employee','Employee ID','Fund','USI','Member Number','Employer','Pre-Tax','Post-Tax','Total'],rows):'<p class="small-note">No recorded contributions for this period.</p>');};
+    $('superReportCycle').addEventListener('change',report);report();
   }
   function renderGeneralSettings(){
     h('settingsOutput', `<div class="controls"><button id="checkUpdates">Check for Updates</button><button id="changeNotes" class="secondary">Change Notes</button><button id="overnight" class="secondary">Check Overnight Processing</button><button id="finalisePay" class="warning">Finalise Pay</button><button id="checkErrors" class="secondary">Check for Errors</button></div><div class="controls"><button id="publicHolidays" class="secondary">View WA Public Holidays</button></div><div id="settingsGeneralOutput" class="small-note"></div>`);
@@ -1810,6 +1880,8 @@
     const c=currentCycle();
     const warnings=[];
     const results=currentResults();
+    warnings.push(...E.paymentDetailErrors(state,c,results));
+    (state.deductions||[]).filter(d=>d.saved!==false&&!d.deleted&&d.deductionType==='Recovery Deduction').forEach(d=>{try{E.validateRecoveryDeduction(d);}catch(err){warnings.push(`${E.employeeName(emp(d.empId)||{})}: ${err.message}`);}});
     state.employees.forEach(e=>{
       const active=employeeDisplayStatus(e)!=='Terminated';
       if(!active) return;
@@ -1842,10 +1914,12 @@
     });
     const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
     modal('Pay Error / Warning Check', body, `<button data-close-modal>Close</button>`);
+    return warnings;
   }
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.40',notes:['Added Settings → Super fund catalogue, effective-dated employee Super and Bank Details, and frozen finalised payslip disbursements.','Added post-tax Recovery Deduction with finalisation-only debt repayments and capped final repayments.','Added one reminder per leave request awaiting manager approval for more than three days.']},
     {version:'v1.1.39',notes:[
       'Consolidated Higher Duties Allowance by position, rate and source pay period, and ordered payslip earnings by Begin Date from earliest to latest.',
       'Each position worked has its own payslip, including acting and selected Casual Earnings positions; rate changes within one position stay on that position payslip.',
@@ -2136,5 +2210,5 @@
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = { getState:()=>state, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();
