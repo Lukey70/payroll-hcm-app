@@ -1798,16 +1798,17 @@
     const mainRows=rows.filter(r=>r.kind!=='retro');
     const retro=rows.filter(r=>r.kind==='retro');
     const effectiveEmploymentType=activeEmploymentType(state,e,c.end);
+    const casualOnly=effectiveEmploymentType==='Casual'&&daysBetween(c.start,c.end).every(date=>!isEmployedOn(e,date)||activeEmploymentType(state,e,date)==='Casual');
     const currentJobRow=(state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,c.end)<=0)
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
     const effectivePosition=effectiveEmploymentType==='Casual'?'Casual':((currentJobRow&&currentJobRow.positionName)||activePayRate(state,e.id,c.end).position||e.position||'');
     const groups=[];
     function groupFor(row){
       const casual=isCasualEarningsRow(row);
-      const position=casual?(row.position||effectivePosition):(row.payslipPosition||row.position||effectivePosition);
-      const number=casual?(row.positionNumber||''):(row.payslipPositionNumber||'');
+      const position=casualOnly?'Casual':casual?(row.position||effectivePosition):(row.payslipPosition||row.position||effectivePosition);
+      const number=casualOnly?'':casual?(row.positionNumber||''):(row.payslipPositionNumber||'');
       // A position has one payslip even if its rate changes during the period.
-      const key=number?`number:${number}`:`name:${position}`;
+      const key=casualOnly?'casual-only':number?`number:${number}`:`name:${position}`;
       let group=groups.find(g=>g.key===key);
       if(!group){ group={key,position,positionNumber:number,rate:Number(row.baseRate||row.rate||0),rows:[],casual}; groups.push(group); }
       group.rows.push(row); return group;
@@ -1852,6 +1853,8 @@
       const deductions={ preTaxDeductions:preTaxLines[i], postTaxDeductions:postTaxLines[i], preTaxTotal:round2(preTaxLines[i].reduce((sum,d)=>sum+Number(d.amount||0),0)), postTaxTotal:round2(postTaxLines[i].reduce((sum,d)=>sum+Number(d.amount||0),0)) };
       const payslip=makePayslip(state,e,c,g.rows,g.position,g.rate,i+1,groups.length,finalised,{taxParts,deductions},rows);
       payslip.positionNumber=g.positionNumber||'';
+      payslip.casualOnly=casualOnly;
+      if(casualOnly) payslip.employmentType='Casual';
       if(g.casual&&g.rows.every(isCasualEarningsRow)) payslip.employmentType='Casual';
       return payslip;
     }).filter(p=>Math.abs(p.gross)>0.004||p.rows.some(r=>r.kind==='retro'&&(Math.abs(Number(r.units||0))>0.0001||Math.abs(Number(r.amount||0))>0.004)));

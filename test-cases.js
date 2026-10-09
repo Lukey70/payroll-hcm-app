@@ -2164,7 +2164,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(pending.pending,true);
 })();
 
-(function testV139CasualEarningsDifferentPositionsHaveOwnPayslips(){
+(function testV140CasualOnlyDifferentPositionsShareOnePayslip(){
   const state=baseState(); const e=addEmployee(state,{id:'casual132',type:'Casual',position:'Casual Employee'});
   state.jobDataRows.push({id:'jc132',empId:e.id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Casual',positionClass:'Casual',positionNumber:'C1',positionName:'Crew A',hoursByDay:{0:0,1:0,2:0,3:0,4:0,5:0,6:0},saved:true});
   state.positions.push({id:'pc1',positionNumber:'C1',positionName:'Crew A',hourlyRate:30,active:true},{id:'pc2',positionNumber:'C2',positionName:'Crew B',hourlyRate:40,active:true});
@@ -2173,9 +2173,10 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
     {id:'ce132b',empId:e.id,cycleId:1,earningType:'Casual Earnings',positionNumber:'C2',positionName:'Crew B',hours:5,startDate:'2026-05-26',endDate:'2026-05-26',saved:true}
   );
   const pays=E.calculateEmployee(state,e.id,1,false);
-  assert.strictEqual(pays.length,2,'Each selected Casual Earnings position must have its own payslip (v1.1.39 requirement)');
-  assert(pays.find(p=>p.position==='Crew A').rows.some(r=>r.description==='Casual Earnings - Crew A'));
-  assert(pays.find(p=>p.position==='Crew B').rows.some(r=>r.description==='Casual Earnings - Crew B'));
+  assert.strictEqual(pays.length,1,'Casual-only employees have one payslip across positions');
+  assert.strictEqual(pays[0].position,'Casual');
+  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew A'));
+  assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Crew B'));
 })();
 
 (function testV132LoginCredentialsAccessTilesAndActiveUsers(){
@@ -2366,7 +2367,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const pays=E.calculateEmployee(state,e.id,c.id,false);
   assert.strictEqual(pays.length,1,'Casual Earnings should produce one payslip');
   assert.strictEqual(pays[0].employmentType,'Casual','Pre-conversion payslip must use the employment type effective in the pay period');
-  assert.strictEqual(pays[0].position,'Casual Shift','Payslip identifies the position actually worked, not a future contract');
+  assert.strictEqual(pays[0].position,'Casual','Casual-only payslip uses Casual, not an earning position or future contract');
   assert(pays[0].rows.some(r=>r.description==='Casual Earnings - Casual Shift'),'Underlying Casual Earnings line must still retain the selected earning position name');
 })();
 
@@ -2438,7 +2439,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   state.additionalEarnings.push({id:'lateCas136',empId:e.id,cycleId:10,earningType:'Casual Earnings',positionNumber:'CAS136',positionName:'Casual Shift',casualBaseRate:30,startDate:'2026-10-01',endDate:'2026-10-01',hours:8,saved:true});
   const pays=E.calculateEmployee(state,e.id,11,false);
   assert.strictEqual(pays.length,1,'Late Casual Earnings should still create a current payslip even with a future Fixed Term contract');
-  assert.strictEqual(pays[0].position,'Casual Shift','Retro payslip identifies the original casual position worked');
+  assert.strictEqual(pays[0].position,'Casual','Casual-only retro payslip uses Casual; earnings retain the worked position');
   assert.strictEqual(pays[0].department,'Operations','Retro payslip Department comes from the original casual earning position');
   const retro=pays[0].rows.find(r=>r.description==='Casual Earnings - Casual Shift Retro');
   assert(retro&&retro.units===8&&retro.amount===300,'Future Fixed Term Job Data must not suppress legitimate retro Casual Earnings');
@@ -2847,7 +2848,7 @@ function casualFixture139(currentCycleId=11){
   assert.strictEqual(pays.length,1,'Unfinalised historical source must not hide saved retro Casual Earnings');
   const retro=pays[0].rows.find(r=>r.description==='Casual Earnings - Casual Position A Retro');
   assert(retro&&retro.units===8&&retro.rate===40&&retro.amount===320);
-  assert.strictEqual(pays[0].position,'Casual Position A'); assert.strictEqual(pays[0].superRetro,38.4);
+  assert.strictEqual(pays[0].position,'Casual'); assert.strictEqual(pays[0].superRetro,38.4);
   assert.strictEqual(pays[0].ordinaryHours,0); assert.strictEqual(pays[0].annualAccrual,0); assert.strictEqual(pays[0].personalAccrual,0);
   assert.strictEqual(pays[0].gross,320); assert.strictEqual(pays[0].tax,E.calculateTaxComponents(state,e,pays[0].rows,E.cycleById(11),0).totalTax);
   E.finaliseCurrentPay(state);
@@ -2885,11 +2886,11 @@ function casualFixture139(currentCycleId=11){
   state.taxDetails.push({id:'t139',empId:e.id,effectiveDate:'2026-05-22',taxFileNumber:'123456789',claimTaxFreeThreshold:true,stsl:false});
   state.deductions.push({id:'d139',empId:e.id,startDate:'2026-05-22',deductionType:'Union Fees',amount:20,saved:true});
   const pays=E.calculateEmployee(state,e.id,11,false);
-  assert.strictEqual(pays.length,2,'Current and retro casual earnings must stay on their corresponding position payslips');
-  const first=pays.find(p=>p.positionNumber==='C139A'), second=pays.find(p=>p.positionNumber==='C139B');
-  assert.strictEqual(first.gross,480); assert.strictEqual(second.gross,250);
-  assert(first.rows.every(r=>r.position==='Casual Position A')); assert(second.rows.every(r=>r.position==='Casual Position B'));
-  assert.strictEqual(first.department,'Operations'); assert.strictEqual(second.department,'Customer Services');
+  assert.strictEqual(pays.length,1,'Casual-only current and retro earnings must share one payslip');
+  assert.strictEqual(pays[0].position,'Casual');assert.strictEqual(pays[0].positionNumber,'');
+  assert.strictEqual(pays[0].gross,730);
+  assert.strictEqual(pays[0].rows.filter(r=>r.position==='Casual Position A').reduce((s,r)=>s+r.amount,0),480);
+  assert.strictEqual(pays[0].rows.filter(r=>r.position==='Casual Position B').reduce((s,r)=>s+r.amount,0),250);
   assert.strictEqual(E.round2(pays.reduce((n,p)=>n+p.postTaxDeductionTotal,0)),20,'Deduction must be applied once across position payslips');
   assert.strictEqual(E.round2(pays.reduce((n,p)=>n+p.tax,0)),E.calculateTaxComponents(state,e,pays.flatMap(p=>p.rows),E.cycleById(11),0).totalTax,'Whole-pay tax must be allocated without duplication');
   for(const p of pays) assert.deepStrictEqual(p.rows.map(r=>r.startDate),p.rows.map(r=>r.startDate).slice().sort(),'Every generated payslip is ordered by Begin Date');
@@ -2907,7 +2908,7 @@ function casualFixture139(currentCycleId=11){
 })();
 
 console.log('PASS: v1.1.39 consolidated HDA and chronological payslip rendering are verified.');
-console.log('PASS: v1.1.39 separate payslips for acting, same-rate/same-name and casual positions are verified.');
+console.log('PASS: separate acting/regular position payslips and one casual-only payslip across positions are verified.');
 console.log('PASS: v1.1.39 unpaid historical casual work survives missing finalisation flags and rehire boundaries.');
 console.log('PASS: v1.1.39 casual retro payment, adjustment, recovery and original-payment settlement do not repeat.');
 console.log('PASS: v1.1.39 position allocation preserves whole-pay tax, deductions, super and no casual leave accrual.');
@@ -2925,17 +2926,18 @@ console.log('PASS: v1.1.39 position allocation preserves whole-pay tax, deductio
   assert.strictEqual(extra.units,1); assert.strictEqual(extra.rate,41.6666); assert.strictEqual(extra.amount,41.67);
 })();
 
-(function testV139SameNameSameRateCasualPositionsStillSplit(){
+(function testV140SameNameSameRateCasualPositionsShareOnePayslip(){
   const {state,e,earning}=casualFixture139();
   state.positions[1].positionName=state.positions[0].positionName; state.positions[1].hourlyRate=32;
   earning('sameA139','2026-10-12',4,'C139A'); earning('sameB139','2026-10-13',4,'C139B');
   let pays=E.calculateEmployee(state,e.id,11,false);
-  assert.strictEqual(pays.length,2); assert.deepStrictEqual(pays.map(p=>p.positionNumber),['C139A','C139B']);
+  assert.strictEqual(pays.length,1); assert.strictEqual(pays[0].position,'Casual');
+  assert.deepStrictEqual([...new Set(pays[0].rows.map(r=>r.positionNumber))],['C139A','C139B']);
   state.additionalEarnings[0].startDate=state.additionalEarnings[0].endDate='2026-10-01';
   state.additionalEarnings[1].startDate=state.additionalEarnings[1].endDate='2026-10-02';
   pays=E.calculateEmployee(state,e.id,11,false);
-  assert.strictEqual(pays.length,2,'Retro at same-name/same-rate distinct positions must remain separate');
-  assert(pays.every(p=>p.gross===160));
+  assert.strictEqual(pays.length,1,'Casual-only retro at distinct positions must share one payslip');
+  assert.strictEqual(pays[0].gross,320);
   E.finaliseCurrentPay(state);
   assert.strictEqual(E.calculateEmployee(state,e.id,12,false).length,0,'Splitting same-name retro positions must not duplicate settlement');
 })();

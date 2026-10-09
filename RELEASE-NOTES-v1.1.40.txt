@@ -16,5 +16,12 @@ EXCLUSIONS RETAINED
 No new bank/super before-after audit history or save-confirmation workflow. No new bank/super masking or access restrictions. Existing security/audit features remain. Fund deletion retains ordinary destructive-action confirmation.
 
 VALIDATION AND LIMITS
-Complete existing suite and 18 new feature test groups pass, including actual rendering and event handlers in a lightweight DOM harness. Exact ZIP is freshly extracted, checksummed and retested; runtime assets served and compared byte-for-byte.
+Complete existing suite and 21 new feature test groups pass, including actual rendering and event handlers in a lightweight DOM harness. Exact ZIP is freshly extracted, checksummed and retested; runtime assets served and compared byte-for-byte.
 No Chromium binary is installed: live-browser interaction/visual QA is not claimed. No real employee payroll data export was supplied, so the exact reported cases cannot be verified. Use a backed-up copy of real data for acceptance testing before operational payroll use.
+
+PAYSLIP DISPLAY REVISION
+Removed the separate Super Account section. Employer Superannuation now displays Employer Super Contribution - Super Name (and Employer Super Contribution Retro - Super Name when applicable). Names use the payslip snapshot, not today's catalogue, preserving finalised history. Older payslips without a recorded fund retain the original label. USI, ABN and Member Number remain stored for account/reporting use but no longer appear on the payslip. Contribution amounts are unchanged.
+
+CASUAL-ONLY PAYSLIP REVISION
+Casual-only employees now receive one payslip per pay period labelled Position: Casual, regardless of the number of worked positions. Current and retro casual earnings share that payslip while each earnings line retains its source position, rate, hours and dates. Whole-pay tax/deductions apply once; account snapshots and finalised disbursement reflect the combined net. Chronological earnings ordering and independent retro settlement remain.
+Employees who have non-casual employment during the period retain the position-based rules, including acting positions. A future non-casual appointment does not change a current casual-only period. Existing stored finalised payslips are not rewritten or merged.

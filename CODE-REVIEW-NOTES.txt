@@ -7,6 +7,7 @@ Payroll/HCM App v1.1.40 code review
 - Existing tax/OTE/employer-super calculation bases remain unchanged. New finalised payslips freeze all account details/contribution totals; old stored records are not backfilled.
 - Pending status entry sets a timer; migration uses trustworthy contiguous pending history or current time. More than 72 hours triggers once per episode; confidential leave wording remains private.
 - Bank/super changes invalidate open-pay certification. Tab navigation refreshes catalogue-linked details.
+- Casual-only grouping uses effective employment across the whole current period, not the selected earning position or a future appointment. All current/retro casual work shares a Casual payslip; source row positions remain for settlement matching. Mixed casual/non-casual periods retain position grouping. Existing finalised stored records are not rewritten.
 - Fixed employment-check helper signature while testing account warnings. Existing compatibility fixtures remain passing.
 
 Full regression and feature tests, syntax, exact ZIP manifest/extracted tests and HTTP asset byte checks pass. UI event/DOM harness tests are not live-browser visual QA. No real employee export was supplied. No payment submission or closed-app notification service is implemented.
