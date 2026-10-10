@@ -1,0 +1,34 @@
+Payroll/HCM App v1.2.1
+Built from v1.1.41. All previous payroll, bank/super, recovery, reimbursement and self-service features retained.
+
+PAYSLIPS
+ESS includes the employee's current open pay results alongside historical payslips. Default most recent ten and earlier date filters remain. Open payslips are labelled Open; Print / Save as PDF and Download stay disabled until finalised, with handlers independently checking finalisation. Disbursement Details remain finalised-only.
+
+MATCHED PAYROLL MANAGEMENT SCREENS
+ESS yearly Leave Calendar uses the exact Payroll Management yearly renderer, colours, legend, twelve month grids, and current/next-year range. Only the signed-in employee's data is passed.
+MSS Absence Monthly Calendar uses the exact Payroll Management monthly renderer, initials, colour key, weekday headings and pending indicators. Only current direct reports are included; previous/next month controls and a month selector are available.
+ESS and MSS Job Summary use Payroll Management's saved-row table: Effective Date, Effective Sequence, Action, Reason, Position Name, Weekly Hours. Read-only; unsaved drafts excluded.
+MSS Payment Processing uses the actual Payroll Management Additional Earnings renderer and row controls. Select employee and pay period using Previous/Next Pay, then + Add Row. Earnings Type, Position, Start/End Dates, Hours, Amount and Delete match payroll; Save commits the selected employee/period together. Rows remain drafts until saved. Scope and row validation are checked before committing, including after the saving delay; failures roll back the period. Only direct reports are selectable. Previous/current/next periods remain available; Overpayment Adjustment is current-open-period only.
+
+LEAVE REQUESTS
+Fields are stacked vertically: Leave Type, Start Date, End Date, Hours, Evidence Provided. Evidence applies to Personal Leave.
+Hours are calculated using Payroll Management's existing booking validator and effective roster, including one/two-week schedules, public holidays and non-rostered days. Changing Start Date resets End Date to it; changing type, dates or evidence refreshes duration. Hours are editable only for eligible partial single-day types, exactly as payroll; multi-day duration and LSL are not manually editable.
+Pending overlap/balance reservations, manager AWOL and existing leave evidence/entitlement rules remain.
+
+APPROVERS AND MULTIPLE MANAGERS
+Payroll-booked requests show Payroll as the approver, including legacy payroll bookings without a source marker.
+Manager bookings show the booking manager. Approved/denied ESS requests retain the actual decision-maker.
+Current Reports To routing includes the current acting and substantive assignment where acting is active, as well as multiple Reports To values and all eligible active occupants of a reporting position. Sequential former assignments are excluded. All linked managers see the employee, requests, details and payments; initial alerts and overdue reminders target all linked managers. Reminders also target payroll. The first decision changes the shared request status; a second approval/denial is rejected.
+Unresolved reporting links remain errors and block a new submission. Role/inactive-employment checks and employee/manager scope remain enforced.
+An employee currently occupying the active position named Operations Manager has no missing-manager error and ESS leave submissions are automatically Approved, labelled Automatically Approved. This is a position-based rule, not a hardcoded employee exemption. Normal leave validation still applies. Existing historical requests are not silently reapproved.
+
+NAVIGATION
+Self-service notifications appear behind a bell icon with an unread count and accessible label. Back replaces Back to Manager/Employee Self Service. Home uses a home icon with a tooltip and accessible label. Notification refresh preserves form inputs.
+
+UPDATING
+Export a data backup first. Upload all runtime files listed in DEPLOYMENT-NOTE.txt together, preserving the same browser/site origin or importing the backup. Version/cache metadata is v1.2.1. Existing local data migrates in place; finalised payroll records are preserved.
+
+VALIDATION AND LIMITS
+185 existing regression blocks, 23 payment/account/reimbursement groups and 37 self-service groups pass. Screens and handlers are exercised with a DOM/event harness. ZIP is extracted, retested and checked against the file manifest; HTTP runtime assets are byte-compared.
+No live-browser visual QA is claimed: Chromium is unavailable. No real employee data export was supplied.
+This remains the existing browser/localStorage application, without server-side authentication/authorization or shared multi-device persistence. Multiple managers share status in the same app data; separate devices do not sync automatically. Production shared payroll access requires a backend. Notifications run while the app is open; no email/push service is added.

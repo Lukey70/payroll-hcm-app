@@ -1,13 +1,19 @@
-Payroll/HCM App v1.1.41 code review
+Payroll/HCM App v1.2.1 review
 
-- Added self-service.js service layer and standalone ESS/MSS UI adapter. Engine exports these for both browser and Node tests. Browser load order is DataStore, PaymentDetails, SelfService, PayrollEngine, App.
-- Scope checks occur at each service action; ESS derives employee ID from the signed-in user, ignoring submitted target IDs. MSS derives current direct reports from Reports To and effective position occupants. Self-approval and inactive manager roles are rejected.
-- Request validation uses a cloned validation state with pending requests temporarily treated as approved. Actual state/payroll remains unchanged until approval. Current/future pending reservations and later annual commitments are tested. Approval excludes its own request during revalidation.
-- Denial requires a comment. Employee withdrawal is pending-only; manager deletion is approved-only and archived. Finalised leave deletion is tested for retro reversal with frozen original payslips.
-- Alerts contain explicit recipient IDs and per-recipient read status. Initial manager submission alerts are excluded from the payroll bell; overdue reminders target manager and payroll. Current manager reassignment updates pending routing.
-- MSS earnings save validated source dates/type/units/positions. Rate-based amounts retain an empty amount override so the payroll engine calculates real rate-based earnings; fixed/date allowances follow engine rules. Current/previous/next periods mirror payroll Additional Earnings.
-- Read-only views construct scoped tables and expose no personal/bank/tax/super mutation controls. Full sensitive data still resides in localStorage; UI/service authorization is not a server-side security boundary.
-- Reimbursement nonTaxable flag propagates into current/retro tax handling; presentation label changes do not alter source descriptions used for settlement. Frozen old withholding is not silently rewritten.
-- Existing UI and regression tests pass alongside role/action/DOM-handler tests. A DOM harness dispatch bug was fixed in the harness while testing; no live browser QA is claimed.
+Shared renderers: Payroll Management and self-service call the same Job Summary and calendar functions. MSS mounts the existing Additional Earnings renderer with a scoped employee list. Its original hidden payroll editor is cleared to prevent duplicate DOM IDs; leaving the portal resets the mounted scope.
 
-Material limitations: browser-local shared-data model, existing browser-readable credentials, no server authentication/authorization, no closed-app notifications, no real employee data supplied. Production multi-user security remains a separate backend task, as documented.
+MSS period saves stage rows, recheck manager scope, employee and cycle after the delay, validate each row through SelfService, then delete absent rows only in that employee/period. State and persistence roll back on error. Failed saves never show success. Rate-based source rows keep an empty amount override; fixed/amount earnings preserve engine semantics. HDA must exceed substantive pay; overpayment adjustments remain current-period-only.
+
+Multiple managers: active acting plus substantive reporting assignments, multiple reporting values and eligible position occupants resolve to a unique recipient list. Sequential superseded assignments do not accumulate permissions. Current routing controls request visibility, detail/payment scope and reminder recipients. Actual approval actor is frozen on decision; repeated decisions fail.
+
+Operations Manager: active position identity/name and current effective job assignment determine the exception. New own ESS requests approve automatically after normal validation. No missing-manager error or pending reminder is generated for those approved requests.
+
+Payroll approver labels: new payroll bookings carry source and approver metadata; legacy source-less payroll bookings display Payroll. ESS/MSS sources and actual decision actors remain distinguishable after export/import.
+
+ESS payslips combine scoped current payResults with historical payslips. Open pay is viewable. Export controls are disabled and handlers recheck finalisation. The existing payslip renderer retains finalised-only disbursements.
+
+Hours use the same engine booking validator as Payroll Management. UI resets/partial constraints follow payroll rules. Request submission continues using pending reservations in a cloned validation state.
+
+Version/cache metadata v1.2.1; storage key unchanged. Full existing regressions plus payment and integrated self-service DOM/event tests pass. Exact delivered archive is re-extracted and retested. No live-browser or real-data acceptance QA is claimed.
+
+Material limits unchanged: browser-local storage, browser-readable credentials, no server-side authorization, no shared multi-device database, no closed-app notifications.

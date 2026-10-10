@@ -55,8 +55,13 @@
   const E = PayrollEngine;
   const S = E.selfService;
   let ssUI=null;
+  let paymentManagerId='',paymentContainer='additionalEarnings';
+  function unmountSelfServicePayments(){if(paymentManagerId){paymentManagerId='';paymentContainer='additionalEarnings';additionalDraftRows=[];additionalDirty=false;}}
+  function mountSelfServicePayments(container,managerId){paymentManagerId=managerId;paymentContainer=container;additionalPeriodOffset=0;h('additionalEarnings','');renderAdditionalEarnings(true);}
+  function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
+
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -489,7 +494,7 @@
   }
   function loadingModal(title, doneMessage, callback, delay=900){
     modal(title, `<div class="spinner"></div><p class="muted">Please wait...</p>`, '', true);
-    setTimeout(()=>{ callback && callback(); modal(title, `<p class="success-text"><strong>${esc(doneMessage)}</strong></p>`, `<button type="button" data-close-modal>Close</button>`, true); }, delay);
+    setTimeout(()=>{try{callback && callback();modal(title, `<p class="success-text"><strong>${esc(doneMessage)}</strong></p>`, `<button type="button" data-close-modal>Close</button>`, true);}catch(err){closeModal();alert(err.message||'Unable to save.');}}, delay);
   }
 
 
@@ -945,22 +950,25 @@
     h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
     bindShowTerminated('jobShowTerminated','jobSummary',renderJobSummary); $('jobEmp').addEventListener('change',renderJobOutput); renderJobOutput();
   }
-  function renderJobOutput(){
-    const id=v('jobEmp'); if(!id){ h('jobOutput','<p class="small-note">Select an employee.</p>'); return; }
-    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
-    h('jobOutput', rows.length?table(['Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'], rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>');
+  function jobSummaryHtml(id){
+    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id&&r.saved!==false).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    return rows.length?table(['Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'],rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>';
   }
+  function renderJobOutput(){const id=v('jobEmp');h('jobOutput',id?jobSummaryHtml(id):'<p class="small-note">Select an employee.</p>');}
 
-  function renderAdditionalEarnings(){
+  function renderAdditionalEarnings(explicitMount=false){
+    if(paymentManagerId&&!explicitMount)return;
+    const scoped=!!paymentManagerId;
+    const list=scoped?S.directReports(state,paymentManagerId):employeeList(showTerminatedByTab.additionalEarnings);
     if(additionalPeriodOffset === undefined) additionalPeriodOffset = 0;
-    h('additionalEarnings', `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(employeeList(showTerminatedByTab.additionalEarnings))}</select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="saveAdditional">Save</button></div>`);
-    bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addRow').addEventListener('click',addAdditionalRow); $('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
+    h(paymentContainer, `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${scoped?'':showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(list)}</select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="saveAdditional">Save</button></div>`);
+    if(!scoped)bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addRow').addEventListener('click',addAdditionalRow); $('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
   }
   function additionalCycle(){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const idx=Math.min(currentIndex+1,Math.max(0,currentIndex+additionalPeriodOffset)); return E.PAY_CYCLES[idx] || currentCycle(); }
   function moveAdditionalPeriod(n){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const nextOffset=additionalPeriodOffset+n; const idx=currentIndex+nextOffset; if(idx<0 || idx>currentIndex+1) return; additionalPeriodOffset=nextOffset; loadAdditionalDraft(); }
-  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); const empId=v('addEmp'); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
+  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
   function markAdditionalDirty(){ additionalDirty=true; h('additionalNote','Unsaved changes. Additional earnings will not appear on payslips until saved.'); }
-  function addAdditionalRow(){ if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
+  function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function casualPositionOptions(a){
     const selected=String((a&&a.positionNumber)||'');
     const positions=(state.positions||[]).filter(p=>p.active!==false || String(p.positionNumber)===selected).slice().sort((x,y)=>String(x.positionName||'').localeCompare(String(y.positionName||'')));
@@ -1030,12 +1038,14 @@
   }
   function saveAdditional(){
     const empId=v('addEmp'); if(!empId) return alert('Select an employee first.');
+    guardPaymentEmployee(empId);
+    const managerId=paymentManagerId;
     const c=additionalCycle();
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
       if((a.earningType||'') !== 'Overpayment Adjustment' && (!a.startDate || !a.endDate || E.compare(a.startDate,c.start)<0 || E.compare(a.endDate,c.end)>0 || E.compare(a.startDate,a.endDate)>0)) return alert('Additional earning dates must fall within the selected pay period.');
       if((a.earningType||'') === 'Additional Hours' && emp(empId)?.startDate && E.compare(a.startDate, emp(empId).startDate) < 0) return alert("These additional hours are before the employee's start date and cannot be paid.");
-      if(['Travel Allowance','Bonus'].includes(a.earningType||'') && Number(a.amount||0)<0) return alert(`${a.earningType} amount cannot be negative.`);
+      if(['Travel Allowance','Bonus','Reimbursement'].includes(a.earningType||'') && Number(a.amount||0)<0) return alert(`${a.earningType} amount cannot be negative.`);
       if(a.earningType==='Casual Earnings'){
         const pos=positionByNumber(a.positionNumber); if(!pos) return alert('Select a Position for Casual Earnings.');
         if(Number(a.hours||0)<=0) return alert('Enter the hours worked for Casual Earnings.');
@@ -1048,7 +1058,22 @@
         if(higher<=Number(normal.hourlyRate||0)) return alert("The selected position rate must be higher than the employee's normal rate.");
       }
     }
+    const stagedRows=DataStore.clone(additionalDraftRows);
     loadingModal('Saving Additional Earnings','Save Successful',()=>{
+      if(managerId){
+        if(paymentManagerId!==managerId||$('selfServiceScreen')?.hidden||v('addEmp')!==empId||additionalCycle().id!==c.id)throw Error('The selection changed. Return to the employee and pay period before saving.');
+        S.assertScope(state,managerId,empId,'mss');
+        const backup=DataStore.clone(state);
+        try{
+          const source=stagedRows.map(a=>Object.assign({},a,{empId,cycleId:c.id}));
+          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id));
+for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assign({},a,{id:existing.some(old=>old.id===a.id)?a.id:undefined}));a.id=saved.id;}
+          const ids=new Set(source.map(a=>a.id));for(const a of existing)if(!ids.has(a.id))S.deleteAdditional(state,managerId,a.id);
+          calculateAllForCurrent();
+          if(!DataStore.save(state))throw Error('Unable to save. Export a backup before continuing.');
+        }catch(err){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,backup);DataStore.save(state);throw err;}
+        additionalDirty=false;loadAdditionalDraft();renderAlerts();return;
+      }
       state.additionalEarnings=state.additionalEarnings.filter(a=>!(a.empId===empId&&Number(a.cycleId)===Number(c.id)));
       additionalDraftRows.forEach(a=>{
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
@@ -1319,21 +1344,14 @@
     const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
     let result;
     try{result=S.validateRequest(state,{empId:v('leaveEmp'),type:v('leaveType'),startDate:v('leaveStart'),endDate:v('leaveEnd'),requestedHours:requested,evidenceProvided,payOption});}catch(err){return alert(err.message);}
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved',source:'Payroll Management',submittedBy:currentUserId,approverId:'payroll',approverName:'Payroll', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
   function openCalendarSelect(){ const eligible=employeeList(showTerminatedByTab.leave).filter(e=>employmentTypeFor(e,currentCycle().end)!=='Casual'); modal('Select Employee', `${showTerminatedControl('calendarShowTerminated','leave')}<label>Employee</label><select id="calendarEmp">${employeeOptions(eligible)}</select>`, `<button id="openCalendar">Open Calendar</button>`, true); bindShowTerminated('calendarShowTerminated','leave',openCalendarSelect); $('openCalendar').addEventListener('click',()=>{ selectedCalendarEmp=v('calendarEmp'); selectedCalendarYear=E.parseDate(currentCycle().start).getFullYear(); if(!selectedCalendarEmp) return alert('Select an employee.'); closeModal(); openAbsenceCalendar(); }); }
-  function absenceLegendHtml(){ return `<div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="lwop">Leave Without Pay</span><span class="otherleave">Other Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div>`; }
-  function openAbsenceCalendar(){
-    const e=emp(selectedCalendarEmp); if(!e) return;
-    const defaultYear=E.parseDate(currentCycle().start).getFullYear();
-    const maxYear=defaultYear + 1;
-    selectedCalendarYear = selectedCalendarYear || defaultYear;
-    if(selectedCalendarYear < defaultYear) selectedCalendarYear = defaultYear;
-    if(selectedCalendarYear > maxYear) selectedCalendarYear = maxYear;
-    const year=selectedCalendarYear;
-    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div>${absenceLegendHtml()}<div class="calendar">`;
+  function yearlyCalendarHtml(id,year){
+    const e=emp(id);if(!e)return '';
+    let body=`${absenceLegendHtml()}<div class="calendar">`;
     for(let m=0;m<12;m++){
       const first=new Date(year,m,1); const last=new Date(year,m+1,0);
       body+=`<div class="month"><h4>${first.toLocaleDateString('en-AU',{month:'long'})}</h4><div class="month-grid">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('')}`;
@@ -1345,7 +1363,19 @@
       }
       body+='</div></div>';
     }
-    body+='</div>'; modal('Absence Calendar', body, '', false);
+    return body+'</div>';
+  }
+  function absenceLegendHtml(){ return `<div class="legend"><span class="annual">Annual Leave</span><span class="personal">Personal Leave</span><span class="lsl">Long Service Leave</span><span class="lwop">Leave Without Pay</span><span class="otherleave">Other Leave</span><span class="publicholiday">Public Holiday</span><span class="nonrostered">Non Rostered Day</span></div>`; }
+  function openAbsenceCalendar(){
+    const e=emp(selectedCalendarEmp); if(!e) return;
+    const defaultYear=E.parseDate(currentCycle().start).getFullYear();
+    const maxYear=defaultYear + 1;
+    selectedCalendarYear = selectedCalendarYear || defaultYear;
+    if(selectedCalendarYear < defaultYear) selectedCalendarYear = defaultYear;
+    if(selectedCalendarYear > maxYear) selectedCalendarYear = maxYear;
+    const year=selectedCalendarYear;
+    let body=`<p><strong>${esc(E.employeeName(e))}</strong></p><div class="controls"><button id="prevCalendarYear" class="secondary" ${year<=defaultYear?'disabled':''}>Previous Year</button><strong>${year}</strong><button id="nextCalendarYear" class="secondary" ${year>=maxYear?'disabled':''}>Next Year</button><span class="small-note">Calendar defaults to the current year and can be viewed up to one year ahead.</span></div>${yearlyCalendarHtml(e.id,year)}`;
+    modal('Absence Calendar', body, '', false);
     const prev=$('prevCalendarYear'); const next=$('nextCalendarYear');
     if(prev) prev.addEventListener('click',()=>{ selectedCalendarYear=Math.max(defaultYear, selectedCalendarYear-1); openAbsenceCalendar(); });
     if(next) next.addEventListener('click',()=>{ selectedCalendarYear=Math.min(maxYear, selectedCalendarYear+1); openAbsenceCalendar(); });
@@ -1732,10 +1762,10 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     for(let i=1;i<=days;i++){ const date=E.iso(new Date(year,month,i)); if(E.isEmployedOn(e,date) && employmentTypeFor(e,date)!=='Casual') return true; }
     return false;
   }
-  function monthlyAbsenceCalendarHtml(monthIso){
+  function monthlyAbsenceCalendarHtml(monthIso,employeeIds=null){
     const first=E.parseDate(monthStartIso(monthIso)); const year=first.getFullYear(); const month=first.getMonth(); const last=new Date(year,month+1,0); const days=last.getDate();
     const monthLabel=first.toLocaleDateString('en-AU',{month:'long',year:'numeric'});
-    const employees=(state.employees||[]).filter(e=>employeeVisibleInMonthlyAbsence(e,monthIso)).slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
+    const employees=(state.employees||[]).filter(e=>(!employeeIds||employeeIds.includes(e.id))&&employeeVisibleInMonthlyAbsence(e,monthIso)).slice().sort((a,b)=>E.employeeName(a).localeCompare(E.employeeName(b)));
     const headers=Array.from({length:days},(_,i)=>{ const d=new Date(year,month,i+1); return `<th class="monthly-day-head"><strong>${i+1}</strong><small>${d.toLocaleDateString('en-AU',{weekday:'short'}).slice(0,1)}</small></th>`; }).join('');
     const rows=employees.map(e=>{
       const cells=Array.from({length:days},(_,i)=>{ const date=E.iso(new Date(year,month,i+1)); const st=E.absenceCalendarStatus(state,e,date); return `<td class="monthly-absence-cell ${st.cssClass}${st.pending?' pending':''}" title="${esc(st.title)}"><span>${esc(st.label||'')}</span></td>`; }).join('');
@@ -1946,6 +1976,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.2.1',notes:['Matched ESS/MSS Job Summary and calendars to Payroll Management. ESS shows open payslips; printing remains finalised-only. MSS payments now use the Payroll Management row editor. Added multiple active manager routing, Operations Manager automatic leave approval, payroll approver labels, roster-based request hours, vertical request forms and bell/home navigation.']},
     {version:'v1.1.41',notes:['Added Employee Self Service with Payslips, Leave & Timesheets and Personal Details tiles, each with an icon.','Added Manager Self Service with Approvals, Direct Reports, Leave & Timesheets, Payment Processing and Employee Details tiles.','Scoped ESS to the signed-in employee and MSS to current direct reports. Personal, bank, tax and super details are read-only; payroll retains editing rights.','Added pending request submission, manager approval/denial, employee notifications, deletion rules, reserved pending balances and missing-manager errors.','Three-day pending reminders notify the Reports To manager and payroll, with independent read status.','Reimbursement is excluded from tax and labelled Reimbursement (Non-Taxable), including retro display.','This remains a browser-local application, not a secure shared server service.']},
     {version:'v1.1.40',notes:['Added Settings → Super fund catalogue, effective-dated employee Super and Bank Details, and frozen finalised payslip disbursements.','Added post-tax Recovery Deduction with finalisation-only debt repayments and capped final repayments.','Added one reminder per leave request awaiting manager approval for more than three days.','Removed the payslip Super Account section and added the saved fund name to employer contribution labels.','Casual-only employees receive one payslip labelled Casual across all worked positions, retaining position names on earning lines. Mixed and non-casual employment retains position-based payslips.']},
     {version:'v1.1.39',notes:[
@@ -2238,5 +2269,5 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = { getState:()=>state,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();

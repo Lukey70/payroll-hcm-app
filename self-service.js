@@ -5,24 +5,41 @@
     const today=()=>E.iso(new Date());
     const employee=(s,id)=>s.employees.find(e=>e.id===id);
     const active=(e,date)=>!!e&&E.isEmployedOn(e,date);
-    const job=(s,id,date)=>s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
+    const job=(s,id,date)=>s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date&&(!r.endDate||r.endDate>=date)).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
     function profile(s,id,date=today()){
       const e=employee(s,id),j=job(s,id,date),number=j?.positionNumber;
       const p=s.positions.find(p=>p.active!==false&&(number?String(p.positionNumber)===String(number):p.positionName===(E.activePayRate(s,id,date).position||e?.position)));
       return {payroll:active(e,date)&&p?.accessPayrollManagement===true,mss:active(e,date)&&p?.accessManagerSelfService===true};
     }
     function actor(s,id,date=today()){if(!active(employee(s,id),date))throw Error('Sign in as an active employee.');return employee(s,id);}
+    function assignments(s,id,date=today()){
+      const rows=s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+      const current=rows[0];if(!current)return [];
+      const result=[current];
+      if(E.isActingJobDataRow(s,current)){
+        const substantive=rows.find(r=>!E.isActingJobDataRow(s,r));if(substantive)result.push(substantive);
+      }
+      return result.filter(r=>!r.endDate||r.endDate>=date);
+    }
+    function isOperationsManager(s,id,date=today()){
+      const j=job(s,id,date),p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(j?.positionNumber));
+      return active(employee(s,id),date)&&!!p&&String(p.positionName||'').trim().toLowerCase()==='operations manager';
+    }
     function managerFor(s,id,date=today()){
-      const e=employee(s,id),j=job(s,id,date),p=s.positions.find(p=>String(p.positionNumber)===String(j?.positionNumber));
-      const reportsTo=String(j?.reportsTo||p?.reportsTo||e?.reportsTo||'');
-      if(!reportsTo)return {managerId:'',message:'No Reports To position is assigned.'};
-      const matches=s.employees.filter(m=>m.id!==id&&active(m,date)&&String(job(s,m.id,date)?.positionNumber||'')===reportsTo&&profile(s,m.id,date).mss);
-      if(matches.length!==1)return {managerId:'',message:matches.length?'Reports To has multiple eligible managers.':'Reports To has no active manager with MSS access.'};
-      return {managerId:matches[0].id,managerName:E.employeeName(matches[0]),reportsTo};
+      const e=employee(s,id),rows=assignments(s,id,date);
+      const positions=[...new Set(rows.flatMap(j=>{
+        const p=s.positions.find(p=>String(p.positionNumber)===String(j.positionNumber));
+        const value=j.reportsTo||p?.reportsTo||e?.reportsTo||'';
+        return (Array.isArray(value)?value:String(value).split(',')).map(x=>String(x).trim()).filter(Boolean);
+      }))];
+      if(!positions.length)return {managerId:'',managerIds:[],managerName:'',message:isOperationsManager(s,id,date)?'Automatically Approved':'No Reports To position is assigned.',automatic:isOperationsManager(s,id,date)};
+      const matches=s.employees.filter(m=>m.id!==id&&active(m,date)&&profile(s,m.id,date).mss&&positions.some(n=>String(job(s,m.id,date)?.positionNumber||'')===n));
+      const unresolved=positions.filter(n=>!matches.some(m=>String(job(s,m.id,date)?.positionNumber||'')===n));
+      return {managerId:matches[0]?.id||'',managerIds:matches.map(m=>m.id),managerName:matches.map(E.employeeName).join(', '),reportsTo:positions.join(', '),automatic:isOperationsManager(s,id,date),message:unresolved.length?'Reports To has no active manager with MSS access: '+unresolved.join(', '):''};
     }
     function directReports(s,id,date=today()){
       actor(s,id,date);if(!profile(s,id,date).mss)throw Error('Manager Self Service access is required.');
-      return s.employees.filter(e=>e.id!==id&&active(e,date)&&managerFor(s,e.id,date).managerId===id);
+      return s.employees.filter(e=>e.id!==id&&active(e,date)&&managerFor(s,e.id,date).managerIds.includes(id));
     }
     function assertScope(s,id,target,area='ess',date=today()){
       actor(s,id,date);
@@ -71,13 +88,13 @@
       const type=input.type==='Leave without Pay'?'LWOP':input.type;
       if(!(area==='mss'?MANAGER_LEAVE:EMPLOYEE_LEAVE).includes(type))throw Error('This leave type can only be booked by payroll.');
       const manager=managerFor(s,target,date);
-      if(!manager.managerId)throw Error(manager.message+' Payroll must correct Reports To before submission.');
+      if(!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error(manager.message+' Payroll must correct Reports To before submission.');
       const result=validateRequest(s,Object.assign({},input,{empId:target,type}));
-      const stamp=new Date().toISOString(),status=area==='mss'?'Approved':'Awaiting Manager Approval';
-      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.managerId,approverName:manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
+      const stamp=new Date().toISOString(),status=area==='mss'||manager.automatic?'Approved':'Awaiting Manager Approval';
+      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.automatic?'automatic':area==='mss'?id:manager.managerId,approverIds:manager.managerIds,approverName:manager.automatic?'Automatically Approved':area==='mss'?E.employeeName(employee(s,id)):manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
       s.leaveBookings.push(l);
-      if(area==='ess')notify(s,[manager.managerId],`${E.employeeName(e)} submitted ${type==='LWOP'?'Leave without Pay':type}: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-submit:${l.id}`,{area:'mss',page:'approvals',requestId:l.id});
-      else notify(s,[target],`${E.employeeName(employee(s,id))} booked approved ${type==='LWOP'?'Leave without Pay':type} for you: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-manager-book:${l.id}`,{area:'ess',page:'requests'});
+      if(area==='ess'&&status==='Awaiting Manager Approval')notify(s,manager.managerIds,`${E.employeeName(e)} submitted ${type==='LWOP'?'Leave without Pay':type}: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-submit:${l.id}`,{area:'mss',page:'approvals',requestId:l.id});
+      else if(area==='mss')notify(s,[target],`${E.employeeName(employee(s,id))} booked approved ${type==='LWOP'?'Leave without Pay':type} for you: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-manager-book:${l.id}`,{area:'ess',page:'requests'});
       return l;
     }
     function notifyDecision(s,l,status,actorId,comment=''){
@@ -91,7 +108,7 @@
       if(!['Approved','Denied'].includes(status))throw Error('Choose Approve or Deny.');
       if(status==='Denied'&&!String(comment).trim())throw Error('A denial comment is required.');
       if(status==='Approved')validateRequest(s,l,l.id);
-      l.status=status;l.decisionComment=String(comment).trim();l.decidedBy=id;l.decidedAt=new Date().toISOString();l.pendingApprovalSince='';l.pendingApprovalNotifiedSince='';
+      l.approverId=id;l.approverName=E.employeeName(employee(s,id));l.status=status;l.decisionComment=String(comment).trim();l.decidedBy=id;l.decidedAt=new Date().toISOString();l.pendingApprovalSince='';l.pendingApprovalNotifiedSince='';
       (l.statusHistory||(l.statusHistory=[])).push({status,changedAt:l.decidedAt,source:'Manager Self Service',actorId:id,comment:l.decisionComment});
       notifyDecision(s,l,status,id,l.decisionComment);return l;
     }
@@ -103,24 +120,29 @@
       (s.leaveRequestArchive||(s.leaveRequestArchive=[])).push(Object.assign({},JSON.parse(JSON.stringify(l)),{deletedBy:id,deletedAt:new Date().toISOString(),deletedFrom:area}));
       s.leaveBookings=s.leaveBookings.filter(x=>x.id!==requestId);
       if(area==='mss')notify(s,[l.empId],`Your approved ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)} was deleted by your manager.`,`leave-delete:${l.id}`,{area:'ess',page:'requests'});
-      else notify(s,[managerFor(s,id,date).managerId],`${E.employeeName(employee(s,id))} withdrew ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-withdraw:${l.id}`,{area:'mss',page:'requests'});
+      else notify(s,managerFor(s,id,date).managerIds,`${E.employeeName(employee(s,id))} withdrew ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-withdraw:${l.id}`,{area:'mss',page:'requests'});
       return l;
     }
     function requests(s,id,area='ess',date=today()){
       actor(s,id,date);const ids=area==='ess'?[id]:directReports(s,id,date).map(e=>e.id);
-      return s.leaveBookings.filter(l=>ids.includes(l.empId)).slice().sort((a,b)=>String(b.submittedAt||b.startDate).localeCompare(String(a.submittedAt||a.startDate))).map(l=>Object.assign({},l,{approverId:managerFor(s,l.empId,date).managerId,approverName:managerFor(s,l.empId,date).managerName||'Unassigned'}));
+      return s.leaveBookings.filter(l=>ids.includes(l.empId)).slice().sort((a,b)=>String(b.submittedAt||b.startDate).localeCompare(String(a.submittedAt||a.startDate))).map(l=>{
+        const m=managerFor(s,l.empId,date);
+        const payroll=l.source==='Payroll Management'||(!l.source&&!l.submittedBy);
+        const name=payroll?'Payroll':l.approverId==='automatic'?'Automatically Approved':l.decidedBy?E.employeeName(employee(s,l.decidedBy)||{id:l.decidedBy}):l.source==='Manager Self Service'?l.approverName:l.status==='Awaiting Manager Approval'?m.managerName:l.approverName||m.managerName;
+        return Object.assign({},l,{approverName:name||'Unassigned'});
+      });
     }
     function errors(s,date=today()){
-      return s.employees.filter(e=>active(e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.managerId?[]:[`${E.employeeName(e)}: ${m.message}`];});
+      return s.employees.filter(e=>active(e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[`${E.employeeName(e)}: ${m.message}`];});
     }
     function syncNotifications(s,date=today()){
       const payroll=s.employees.filter(e=>profile(s,e.id,date).payroll).map(e=>e.id);
       for(const l of s.leaveBookings){
         if(l.status!=='Awaiting Manager Approval')continue;
         const m=managerFor(s,l.empId,date);
-        l.approverId=m.managerId;l.approverName=m.managerName||'Unassigned';
-        s.alerts.filter(a=>a.key===`leave-submit:${l.id}`).forEach(a=>a.recipientIds=m.managerId?[m.managerId]:[]);
-        s.alerts.filter(a=>a.leaveId===l.id&&a.type==='Leave Approval Reminder').forEach(a=>{a.recipientIds=[...new Set([m.managerId,...payroll].filter(Boolean))];a.action={area:'mss',page:'approvals',requestId:l.id};if(!a.readBy)a.readBy=[];});
+        if(l.source==='Payroll Management'||(!l.source&&!l.submittedBy)){l.approverId='payroll';l.approverName='Payroll';}else{l.approverId=m.managerId;l.approverIds=m.managerIds;l.approverName=m.managerName||'Unassigned';}
+        s.alerts.filter(a=>a.key===`leave-submit:${l.id}`).forEach(a=>a.recipientIds=m.managerIds);
+        s.alerts.filter(a=>a.leaveId===l.id&&a.type==='Leave Approval Reminder').forEach(a=>{a.recipientIds=[...new Set([...m.managerIds,...payroll].filter(Boolean))];a.action={area:'mss',page:'approvals',requestId:l.id};if(!a.readBy)a.readBy=[];});
       }
     }
     function alertsFor(s,id,date=today()){
@@ -133,7 +155,8 @@
     }
     function payslips(s,id,from='',to='',recent=true,date=today()){
       actor(s,id,date);if(from&&to&&from>to)throw Error('From Date cannot be after To Date.');
-      const list=s.payslips.filter(p=>p.empId===id&&p.finalised&&(!from||p.cycle.end>=from)&&(!to||p.cycle.end<=to)).slice().sort((a,b)=>b.cycle.end.localeCompare(a.cycle.end)||Number(b.segmentIndex)-Number(a.segmentIndex));
+      const c=E.currentCycle(s),open=E.isFinalised(s,c)?[]:(s.payResults[String(c.id)]||[]).filter(p=>p.empId===id).map(p=>Object.assign({},p,{id:'open_'+p.id,finalised:false}));
+      const list=open.concat(s.payslips).filter(p=>p.empId===id&&(!from||p.cycle.end>=from)&&(!to||p.cycle.end<=to)).slice().sort((a,b)=>b.cycle.end.localeCompare(a.cycle.end)||Number(b.segmentIndex)-Number(a.segmentIndex));
       return recent?list.slice(0,10):list;
     }
     const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'];
@@ -143,6 +166,7 @@
       if(input.id&&(!old||old.empId!==input.empId))throw Error('Earnings record is not available for this employee.');
       if(!EARNINGS.includes(input.earningType))throw Error('Select a valid earning type.');
       const cycle=E.PAY_CYCLES.find(c=>c.id===Number(input.cycleId));
+      if(input.earningType==='Overpayment Adjustment'&&cycle?.id!==E.currentCycle(s).id)throw Error('Overpayment Adjustment can only be entered in the current open pay period.');
       if(!cycle||cycle.id>E.currentCycle(s).id+1||input.startDate<cycle.start||input.startDate>cycle.end||input.endDate<input.startDate||input.endDate>cycle.end)throw Error('Choose work dates within the selected previous, current or next pay period.');
       if(!E.isEmployedOn(employee(s,input.empId),input.startDate)||!E.isEmployedOn(employee(s,input.empId),input.endDate))throw Error('Work dates must fall within employment.');
       const amountOnly=['Travel Allowance','Bonus','Reimbursement','Overpayment Adjustment'].includes(input.earningType);
@@ -153,7 +177,7 @@
         const p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(input.positionNumber));if(!p)throw Error('Choose an active position.');
         a.positionNumber=p.positionNumber;a.positionName=p.positionName;a.positionDepartment=p.department;
         if(a.earningType==='Casual Earnings'){a.casualBaseRate=E.positionHourlyRate(s,p.positionNumber,a.startDate);a.casualLoadedRate=E.round4(a.casualBaseRate*1.25);a.casualLoadingRate=0.25;}
-        else a.higherDutiesPositionRate=E.positionHourlyRate(s,p.positionNumber,a.startDate);
+        else {a.higherDutiesPositionRate=E.positionHourlyRate(s,p.positionNumber,a.startDate);if(a.higherDutiesPositionRate<=Number(E.substantivePayRate(s,employee(s,a.empId),a.startDate).hourlyRate||0))throw Error('The selected position rate must be higher than the employee normal rate.');}
       }
       const index=s.additionalEarnings.findIndex(x=>x.id===a.id);if(index<0)s.additionalEarnings.push(a);else s.additionalEarnings[index]=a;
       return a;
@@ -173,7 +197,7 @@
       if(a.earningType==='Motor Vehicle Allowance - Return Trip')return 50;
       return E.round2(Number(a.hours||0)*Number(E.activePayRate(s,a.empId,a.startDate).hourlyRate||0)*(a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1));
     }
-    return {EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,saveAdditional,deleteAdditional,additionalAmount};
+    return {EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,saveAdditional,deleteAdditional,additionalAmount};
   }
   function createUI(o){
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
@@ -190,13 +214,14 @@
       area=mode;page=newPage;section='';target='';requestId='';slipId='';from='';to='';recent=true;earnId='';
       ['appShell','landingScreen'].forEach(id=>{if($(id))$(id).hidden=true;});$('selfServiceScreen').hidden=false;document.body.classList.remove('landing-active');render();
     }
-    function hide(){if($('selfServiceScreen')){$('selfServiceScreen').hidden=true;$('selfServiceScreen').innerHTML='';}put('printArea','');}
+    function hide(){o.unmountPayments?.();if($('selfServiceScreen')){$('selfServiceScreen').hidden=true;$('selfServiceScreen').innerHTML='';}put('printArea','');}
     function render(){
+      o.unmountPayments?.();
       S.assertScope(state(),user(),user(),'ess');if(area==='mss'&&!S.profile(state(),user()).mss){hide();home();return;}
       E.ensurePendingLeaveNotifications(state());S.syncNotifications(state());
       const title=area==='ess'?'Employee Self Service':'Manager Self Service';
       const alerts=S.alertsFor(state(),user());
-      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back to ${title}</button><button id="ssHome" class="secondary">Home</button><button id="ssLogout" class="danger">Sign out</button></div></header><details id="ssNotifications" class="ss-notifications"></details><div id="ssBody"></div>`);
+      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home">⌂</button><button id="ssLogout" class="danger">Sign out</button></div></header><details id="ssNotifications" class="ss-notifications"></details><div id="ssBody"></div>`);
       click('ssBack',()=>show(area));click('ssHome',()=>{hide();home();});click('ssLogout',()=>{hide();logout();});
       refreshNotifications();
       if(!page){
@@ -221,14 +246,14 @@
     function selected(){if(!target&&area==='ess')target=user();if(!target)return null;return S.assertScope(state(),user(),target,area);}
     function renderPayslips(){
       const all=S.payslips(state(),user(),'','',false),list=S.payslips(state(),user(),from,to,recent);
-      put('ssSidebar',`<h2>Payslips</h2><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button>${list.map(p=>`<button data-ss-slip="${esc(p.id)}" class="secondary">${E.ppeLabel(p.cycle)} — ${esc(p.position)} — ${E.money(p.net)}</button>`).join('')||'<p>No finalised payslips.</p>'}`);
+      put('ssSidebar',`<h2>Payslips</h2><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button>${list.map(p=>`<button data-ss-slip="${esc(p.id)}" class="secondary">${E.ppeLabel(p.cycle)} — ${esc(p.position)} — ${p.finalised?'Finalised':'Open'} — ${E.money(p.net)}</button>`).join('')||'<p>No payslips.</p>'}`);
       click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),user(),f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
       if(!list.some(p=>p.id===slipId))slipId=list[0]?.id||'';
       const p=list.find(p=>p.id===slipId);
-      put('ssMain',p?`<div class="controls"><button id="ssPrint">Print / Save as PDF</button><button id="ssDownload" class="secondary">Download Payslip</button></div>${payslipHtml(p)}`:'<p>Only your finalised payslips are shown. Choose a wider date range to see earlier payslips.</p>');
+      put('ssMain',p?`<div class="controls"><button id="ssPrint" ${p.finalised?'':'disabled'}>Print / Save as PDF</button><button id="ssDownload" class="secondary" ${p.finalised?'':'disabled'}>Download Payslip</button></div>${payslipHtml(p)}`:'<p>Only your own payslips are shown. Choose a wider date range to see earlier payslips.</p>');
       buttons('data-ss-slip',id=>{slipId=id;render();});
-      click('ssPrint',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
-      click('ssDownload',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+      click('ssPrint',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
+      click('ssDownload',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     }
     function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',esc(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')]]);}
     function renderApprovals(){
@@ -243,11 +268,7 @@
       if(!people.some(e=>e.id===target))target=people[0]?.id||'';
       put('ssMain',target?jobSummary(selected()):'<p>Select a direct report.</p>');buttons('data-ss-report',id=>{target=id;render();});
     }
-    function jobSummary(e){
-      const s=state(),rows=s.jobDataRows.filter(r=>r.empId===e.id&&r.saved!==false).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
-      const events=s.jobEvents.filter(r=>r.empId===e.id);
-      return `<h2>Job Summary — ${esc(E.employeeName(e))}</h2>${table(['Effective Date','Sequence','Action','Reason','Position','Department','Employment Type','Hourly Rate','Reports To'],rows.map(r=>[E.fmtPay(r.effectiveDate),Number(r.effectiveSequence||0),esc(r.action),esc(r.reason),esc(r.positionName),esc(r.department),esc(r.positionClass),E.money(r.hourlyRate),esc(r.reportsToName||r.reportsTo||'')]))}${table(['Effective Date','Event','Description'],events.map(r=>[E.fmtPay(r.effectiveDate),esc(r.type),esc(r.description)]))}<p class="small-note">Read only. Changes are made by payroll.</p>`;
-    }
+    function jobSummary(e){return `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p>${o.jobSummaryHtml?o.jobSummaryHtml(e.id):'<p>Job Summary unavailable.</p>'}`;}
     function renderDetails(){
       nav([['personal','Personal Details'],['bank','Bank Details'],['tax','Tax Details'],['super','Super'],...(area==='ess'?[['job','Job Summary']]:[])]);
       const picker=selector(),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
@@ -280,27 +301,39 @@
       }
       const types=area==='ess'?S.EMPLOYEE_LEAVE:S.MANAGER_LEAVE;
       const manager=S.managerFor(state(),e.id);
-      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Reports To: ${esc(manager.managerName||manager.message)}</p><div class="grid form-grid"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours (optional for a partial single day)<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence provided (Personal Leave)</label></div></div><button id="ssLeaveSubmit" ${manager.managerId?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
-      click('ssLeaveSubmit',()=>{const hours=v('ssLeaveHours');mutate(s=>S.submitLeave(s,user(),{empId:target,type:v('ssLeaveType'),startDate:v('ssLeaveStart'),endDate:v('ssLeaveEnd'),requestedHours:hours===''?undefined:Number(hours),evidenceProvided:!!$('ssEvidence').checked},area));section='requests';render();});
+      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
+      const updateHours=(reset=true)=>{
+        const type=v('ssLeaveType'),start=v('ssLeaveStart'),end=v('ssLeaveEnd');
+        const basic=E.validateLeaveBooking(state(),e.id,type,start,end,undefined,undefined,{evidenceProvided:!!$('ssEvidence').checked});
+        const field=$('ssLeaveHours'),single=start&&start===end;
+        field.readOnly=!(single&&['Annual Leave','Personal Leave','LWOP','Absent Without Leave'].includes(type)&&basic.partialAllowed);
+        field.disabled=field.readOnly&&type==='Long Service Leave';field.max=basic.maxHours||'';
+        if(reset)field.value=basic.hours?Number(basic.hours).toFixed(2):'0.00';
+        $('ssEvidence').parentElement && ($('ssEvidence').parentElement.hidden=type!=='Personal Leave');
+      };
+      change('ssLeaveStart',()=>{$('ssLeaveEnd').value=v('ssLeaveStart');updateHours();});
+      change('ssLeaveEnd',()=>updateHours());change('ssLeaveType',()=>updateHours());change('ssEvidence',()=>updateHours());
+      $('ssLeaveHours').addEventListener('input',()=>updateHours(false));updateHours();
+      click('ssLeaveSubmit',()=>{const hours=$('ssLeaveHours').readOnly?'':v('ssLeaveHours');mutate(s=>S.submitLeave(s,user(),{empId:target,type:v('ssLeaveType'),startDate:v('ssLeaveStart'),endDate:v('ssLeaveEnd'),requestedHours:hours===''?undefined:Number(hours),evidenceProvided:!!$('ssEvidence').checked},area));section='requests';render();});
     }
     function calendar(){
-      const now=E.iso(new Date()).slice(0,7);put('ssMain',`<h2>${area==='ess'?'Leave Calendar':'Absence Monthly Calendar'}</h2><label>Month<input id="ssMonth" type="month" value="${now}"></label><div id="ssCalendar"></div>`);
-      const draw=()=>{
-        const month=v('ssMonth');if(!/^\d{4}-\d{2}$/.test(month))return;const d=E.parseDate(month+'-01'),last=E.iso(new Date(d.getFullYear(),d.getMonth()+1,0)),days=E.daysBetween(month+'-01',last);
-        const people=area==='ess'?[state().employees.find(e=>e.id===user())]:S.directReports(state(),user());
-        put('ssCalendar',table(['Employee',...days.map(x=>String(Number(x.slice(-2))))],people.map(e=>[esc(E.employeeName(e)),...days.map(date=>{const status=E.absenceCalendarStatus(state(),e,date);const l=state().leaveBookings.find(l=>l.empId===e.id&&l.status!=='Denied'&&l.startDate<=date&&l.endDate>=date);return `<span class="ss-calendar-day ${esc(status.cssClass||'')}">${esc(l?(l.confidential?'Private Leave':l.type)+(l.status==='Awaiting Manager Approval'?' (Pending)':''):status.label||'')}</span>`;})])));
-      };change('ssMonth',draw);draw();
+      if(area==='ess'){
+        let year=E.parseDate(E.currentCycle(state()).start).getFullYear(),base=year;
+        put('ssMain','<h2>Leave Calendar</h2><div class="controls"><button id="ssYearPrev" class="secondary">Previous Year</button><strong id="ssYear"></strong><button id="ssYearNext" class="secondary">Next Year</button></div><div id="ssCalendar"></div>');
+        const draw=()=>{put('ssYear',String(year));$('ssYearPrev').disabled=year<=base;$('ssYearNext').disabled=year>=base+1;put('ssCalendar',o.yearlyCalendarHtml?o.yearlyCalendarHtml(user(),year):'');};
+        click('ssYearPrev',()=>{year=Math.max(base,year-1);draw();});click('ssYearNext',()=>{year=Math.min(base+1,year+1);draw();});draw();return;
+      }
+      const now=E.currentCycle(state()).start.slice(0,7);put('ssMain',`<h2>Absence Monthly Calendar</h2><div class="controls"><button id="ssMonthPrev" class="secondary" title="Previous month">←</button><label>Month<input id="ssMonth" type="month" value="${now}"></label><button id="ssMonthNext" class="secondary" title="Next month">→</button></div><div id="ssCalendar"></div>`);
+      const draw=()=>{const month=v('ssMonth');if(!/^\d{4}-\d{2}$/.test(month))return;put('ssCalendar',o.monthlyCalendarHtml?o.monthlyCalendarHtml(month+'-01',S.directReports(state(),user()).map(e=>e.id)):'');};
+      const shift=n=>{const d=E.parseDate(v('ssMonth')+'-01');if(!d)return;d.setMonth(d.getMonth()+n);$('ssMonth').value=E.iso(d).slice(0,7);draw();};
+      click('ssMonthPrev',()=>shift(-1));click('ssMonthNext',()=>shift(1));change('ssMonth',draw);draw();
     }
     function renderPayments(){
-      put('ssSidebar','<h2>Payment Processing</h2><p>Additional Earnings for direct reports.</p>');const picker=selector(),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
-      const s=state(),rows=s.additionalEarnings.filter(a=>a.empId===e.id),a=rows.find(a=>a.id===earnId)||{};
-put('ssMain',`${picker}<h2>Additional Earnings</h2>${table(['Pay Period','Earning Type','Position','Begin Date','End Date','Hours/Units','Amount','Actions'],rows.map(a=>[E.ppeLabel(E.cycleById(a.cycleId)),esc(a.earningType),esc(a.positionName||''),E.fmtPay(a.startDate),E.fmtPay(a.endDate),Number(a.hours||0),E.money(S.additionalAmount(s,a)),`<button data-ss-edit-earning="${esc(a.id)}">Edit</button> <button data-ss-delete-earning="${esc(a.id)}" class="danger">Delete</button>`]))}<h3>${a.id?'Edit':'Add'} Earnings</h3><div class="grid form-grid"><div><label>Pay Period<select id="ssEarnCycle">${E.PAY_CYCLES.filter(c=>c.id<=E.currentCycle(s).id+1).map(c=>`<option value="${c.id}" ${(a.cycleId||E.currentCycle(s).id)===c.id?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></label></div><div><label>Earning Type<select id="ssEarnType">${S.EARNINGS.map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('')}</select></label></div><div><label>Position (Casual Earnings / Higher Duties)<select id="ssEarnPosition"><option value="">Select position</option>${s.positions.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.positionNumber)}" ${a.positionNumber===p.positionNumber?'selected':''}>${esc(p.positionName)} (${esc(p.positionNumber)})</option>`).join('')}</select></label></div><div><label>Begin Date<input id="ssEarnStart" type="date" value="${esc(a.startDate||E.currentCycle(s).start)}"></label></div><div><label>End Date<input id="ssEarnEnd" type="date" value="${esc(a.endDate||E.currentCycle(s).start)}"></label></div><div><label>Hours/Units<input id="ssEarnHours" type="number" min="0" step="0.0001" value="${esc(a.hours)}"></label></div><div><label>Amount (amount-based types)<input id="ssEarnAmount" type="number" step="0.01" value="${esc(a.amount)}"></label></div></div><div class="controls"><button id="ssEarnSave">Save</button><button id="ssEarnNew" class="secondary">Add New</button></div><p class="small-note">Saved historical changes flow into retro payroll; pay is not finalised here.</p>`);bindSelector();
-      change('ssEarnCycle',()=>{const c=E.cycleById(v('ssEarnCycle'));$('ssEarnStart').value=c.start;$('ssEarnEnd').value=c.start;});
-      click('ssEarnNew',()=>{earnId='';render();});buttons('data-ss-edit-earning',id=>{earnId=id;render();});buttons('data-ss-delete-earning',id=>{if(!confirm('Delete this earnings record?'))return;mutate(s=>S.deleteAdditional(s,user(),id));earnId='';render();});
-      click('ssEarnSave',()=>{mutate(s=>S.saveAdditional(s,user(),{id:earnId||undefined,empId:target,cycleId:Number(v('ssEarnCycle')),earningType:v('ssEarnType'),positionNumber:v('ssEarnPosition'),startDate:v('ssEarnStart'),endDate:v('ssEarnEnd'),hours:v('ssEarnHours'),amount:v('ssEarnAmount')}));earnId='';render();});
+      put('ssSidebar','<h2>Payment Processing</h2>');
+      if(o.mountPayments)o.mountPayments('ssMain',user());else put('ssMain','<p>Payment Processing unavailable.</p>');
     }
     function refreshNotifications(){
-      const alerts=S.alertsFor(state(),user());put('ssNotifications',`<summary>Notifications (${alerts.length})</summary>${alerts.map(a=>`<div class="history-item">${esc(a.message)} <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}`);
+      const alerts=S.alertsFor(state(),user());put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary>${alerts.map(a=>`<div class="history-item">${esc(a.message)} <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}`);
       buttons('data-ss-read',id=>{mutate(s=>S.readAlert(s,user(),id));refreshNotifications();});
     }
     return {show,hide,render,refreshNotifications};

@@ -1,5 +1,5 @@
-Payroll/HCM App v1.1.41 verification
-185 existing test blocks + 46 feature test groups (23 payment/account/reimbursement + 23 self-service); 1204 assertion call sites across three suites.
+Payroll/HCM App v1.2.1 verification
+185 existing test blocks + 60 feature test groups (23 payment/account/reimbursement + 37 self-service); 1293 assertion call sites across three suites.
 
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
@@ -121,7 +121,7 @@ PASS: manager approval and denial scopes, required comments, notifications and s
 PASS: withdraw pending only, approved deletion by direct manager, archive and payroll recalculation
 PASS: overdue reminder goes to manager and payroll once; each recipient can mark it read independently
 PASS: manager reassignment reroutes queue/alerts and removes prior manager access
-PASS: ESS finalised own payslips: exactly recent ten, date range and foreign/open exclusions
+PASS: ESS own payslips: recent ten, date range, open current pay and foreign exclusions
 PASS: MSS earnings use only direct reports and apply rate-based and non-taxable payments correctly
 PASS: MSS casual/HDA/fixed allowances save with correct source position and amount
 PASS: deleting approved leave after finalisation generates retro reversal without rewriting finalised pay
@@ -134,8 +134,22 @@ PASS: actual MSS tiles, direct reports, readonly details, auto-approved booking 
 PASS: actual monthly calendar is team-scoped, MSS timesheets blank and notification refresh preserves form input
 PASS: actual pending employee delete and approved manager delete obey workflow and notify
 PASS: next-pay MSS earnings are permitted but do not enter current pay
-PASS: actual ESS finalised payslip list excludes foreign/open rows and expands earlier dates
-PASS: 23 v1.1.41 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: actual ESS payslip list includes own open pay, excludes foreign rows and expands earlier dates
+PASS: all active substantive/acting managers see requests and reminders; decision recorded once
+PASS: multiple Reports To values and active occupants route to all; unresolved links stay errors
+PASS: Operations Manager auto-approves own leave without Reports To; validation and position limits remain
+PASS: Payroll-booked legacy and new leave show Payroll; manager bookings retain actual actor
+PASS: open ESS payslip visible but print/download disabled and guarded; disbursement finalised only
+PASS: ESS yearly and MSS monthly calendars reuse exact Payroll renderers and date navigation
+PASS: ESS/MSS Job Summary reuses exact Payroll columns and excludes unsaved drafts
+PASS: vertical form fills Payroll roster hours, follows dates and enforces partial-day limits
+PASS: MSS period plus stages rows; whole-period save/delete preserves other employees
+PASS: MSS delayed save rechecks scope before modifying payroll
+PASS: navigation uses bell, Back text and accessible home icon
+PASS: roster calculation follows effective changes and two-week pattern; public holidays count zero
+PASS: MSS whole-period save rolls back a valid first row if a later row fails validation
+PASS: MSS switching employees or pay periods during a delayed save cancels that save
+PASS: 37 v1.2.1 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
 
 All JavaScript syntax PASS.
 Actual UI rendering/event handlers exercised in a DOM harness.

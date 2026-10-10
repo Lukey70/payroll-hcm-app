@@ -137,3 +137,4 @@ main{margin:0 auto;align-self:start;}
 
 /* v1.1.33 isolated landing page and polished home navigation */
 .app-shell[hidden]{display:none!important}body.landing-active{overflow:hidden}.home-button{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;border-radius:10px}.home-button svg{width:21px;height:21px;display:block}.home-button:hover,.home-button:focus-visible{transform:translateY(-1px)}
+.ss-leave-form{display:flex;flex-direction:column;gap:16px;max-width:520px;margin:18px 0}.ss-leave-form>div{width:100%}.ss-notifications:not([open]){width:max-content;padding:8px 12px}.ss-notifications summary{cursor:pointer;list-style:none;font-size:22px}.ss-notifications summary::-webkit-details-marker{display:none}.notification-count{font-size:12px;vertical-align:top;margin-left:4px}.ss-layout main .calendar{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
