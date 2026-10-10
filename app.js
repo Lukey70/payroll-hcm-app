@@ -54,14 +54,31 @@
   const uid = prefix => DataStore.uid(prefix);
   const E = PayrollEngine;
   const S = E.selfService;
-  let ssUI=null;
+  let ssUI=null,supportUI=null;
+  const T=SupportRequests.create(E,S);
+  function mountSupport(container,options={}){
+    if(!supportUI)supportUI=SupportRequests.createUI({E,S,getState:()=>state,getUser:()=>currentUserId,esc,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save the request. Export a backup or remove large attachments before retrying.');renderAlerts();ssUI?.refreshNotifications();}});
+    supportUI.mount(container,options);
+  }
+  let certManagerId='',certContainer='certification';
+  function unmountSelfServiceCertification(){certManagerId='';certContainer='certification';}
+  function mountSelfServiceCertification(container,managerId){if(managerId!==currentUserId||!S.profile(state,currentUserId).mss)throw Error('Manager Self Service access is required.');certManagerId=managerId;certContainer=container;h('certification','');renderCertification();}
+  function certLines(c){const lines=Number(c.id)===Number(currentCycle().id)?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id));if(!certManagerId)return lines;const ids=S.directReports(state,certManagerId).map(e=>e.id);return lines.filter(p=>ids.includes(p.empId));}
+  function certGuard(p){if(certManagerId)S.assertScope(state,currentUserId,p.empId,'mss');else if(!S.profile(state,currentUserId).payroll)throw Error('Payroll Management access is required.');}
+  function certManagerToggle(cycleId,payId,checked){
+    const c=E.cycleById(cycleId),p=certLines(c).find(p=>String(p.id)===String(payId));if(!p)throw Error('Certification line is unavailable.');certGuard(p);
+    const rec=certificationRecord(c.id);if(rec.completed&&(Number(c.id)!==Number(currentCycle().id)||rec.locked))throw Error('Certification report is locked.');
+    const before=JSON.parse(JSON.stringify(rec));rec.managerLines=rec.managerLines||{};
+    certLines(c).filter(x=>x.empId===p.empId).forEach(x=>{rec.managerLines[String(x.id)]={certified:!!checked,certifiedBy:currentUserId,certifiedAt:checked?new Date().toISOString():'',employeeName:x.employeeName,payHash:checked?paySignature(x):''};});
+    rec.managerReviews={};if(!DataStore.save(state)){state.certifications[String(c.id)]=before;throw Error('Unable to save certification.');}renderCertOutput();
+  }
   let paymentManagerId='',paymentContainer='additionalEarnings';
   function unmountSelfServicePayments(){if(paymentManagerId){paymentManagerId='';paymentContainer='additionalEarnings';additionalDraftRows=[];additionalDirty=false;}}
   function mountSelfServicePayments(container,managerId){paymentManagerId=managerId;paymentContainer=container;additionalPeriodOffset=0;h('additionalEarnings','');renderAdditionalEarnings(true);}
   function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
 
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,mountSupport,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -73,6 +90,7 @@
 
   function init(){
     state = DataStore.migrate(state);
+    T.closeDue(state);
     E.reconcileAllEmploymentFromJobData(state);
     const lslMigration=E.reconcileLslSevenYearMigration(state,currentCycle().end);
     const personalLeaveBreakRepair=E.reconcilePersonalLeaveBreakRules(state,currentCycle().end);
@@ -89,7 +107,7 @@
     calculateAllForCurrent();
     if(E.ensureContractExpiryNotifications(state,todayIso())) save();
     renderAll();
-    if(typeof setInterval==='function') setInterval(()=>{ E.ensurePendingLeaveNotifications(state);S.syncNotifications(state);save();if(currentUserId){renderAlerts();if(ssUI&&$('selfServiceScreen')&&!$('selfServiceScreen').hidden)ssUI.refreshNotifications();} },60000);
+    if(typeof setInterval==='function') setInterval(()=>{ T.closeDue(state);E.ensurePendingLeaveNotifications(state);S.syncNotifications(state);save();if(currentUserId){renderAlerts();if(ssUI&&$('selfServiceScreen')&&!$('selfServiceScreen').hidden)ssUI.refreshNotifications();} },60000);
   }
 
   function attachGlobalEvents(){
@@ -199,8 +217,9 @@
     const dropdown=$('alertsDropdown'); const bell=$('alertsBell');
     if(dropdown) dropdown.setAttribute('hidden','');
     if(bell) bell.setAttribute('aria-expanded','false');
+      if(action?.page==='support'){if(S.profile(state,currentUserId).payroll){attemptShowTab('support',document.querySelector('.nav-btn[data-tab="support"]'));mountSupport('support',{mode:'payroll',caseId:action.caseId});}else{selfServiceUI().show('ess','support');mountSupport('ssSupport',{mode:'own',area:'ess',caseId:action.caseId});}return;}
     if(action&&action.area){
-      if(action.area==='mss'&&!S.profile(state,currentUserId).mss){attemptShowTab('leave',document.querySelector('.nav-btn[data-tab="leave"]'));return;}
+    if(action.area==='mss'&&!S.profile(state,currentUserId).mss){attemptShowTab('leave',document.querySelector('.nav-btn[data-tab="leave"]'));return;}
       selfServiceUI().show(action.area,action.page==='requests'?'leave':action.page);return;
     }
     if(!action || !action.tab) return;
@@ -238,7 +257,7 @@
   }
 
   function activePositionRowForEmployee(empId,onDate=todayIso()){
-    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&E.compare(r.effectiveDate,onDate)<=0)
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&(!r.endDate||r.endDate>=onDate)&&E.compare(r.effectiveDate,onDate)<=0)
       .slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
   }
   function accessProfileForEmployee(empId,onDate=todayIso()){
@@ -379,6 +398,7 @@
     if(!rec || !rec.lines) return;
     const byId=new Map((newResults||[]).map(p=>[String(p.id),p]));
     let changed=false;
+    Object.entries(rec.managerLines||{}).forEach(([id,line])=>{const p=byId.get(id);if(line.certified&&(!p||line.payHash!==paySignature(p))){line.certified=false;rec.managerReviews={};changed=true;}});
     Object.keys(rec.lines).forEach(lineId=>{
       const line=rec.lines[lineId];
       if(!line || !line.certified) return;
@@ -578,6 +598,7 @@
     if(tab==='bankDetails') renderBankDetails();
     if(tab==='superDetails') renderSuperDetails();
     if(tab==='certification') renderCertification();
+    if(tab==='support')mountSupport('support',{mode:'payroll'});
     if(tab==='reports') renderReports();
     if(tab==='payslip') renderPayslip();
     resetTabScroll();
@@ -1639,37 +1660,40 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
 return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segmentIndex} of ${p.segmentCount})`:''}</h2>${status}<div class="payslip-header"><div>${employeeBlock}</div><div class="payslip-details">${detailRows}</div></div><div class="section-title">Pay Summary</div>${table(['','Gross','Tax','Net'],[['Current',E.money(p.gross),E.money(p.tax),E.money(p.net)],['YTD',E.money(ytd.gross),E.money(ytd.tax),E.money(ytd.net)]])}<div class="section-title">Earnings</div><table><thead><tr><th>Description</th><th>Units</th><th>Rate</th><th>Amount</th><th>Begin Dt</th><th>End Dt</th></tr></thead><tbody>${rows}<tr><td><strong>Total</strong></td><td class="right"><strong>${Number(p.units||0).toFixed(2)}</strong></td><td></td><td class="right"><strong>${Number(p.gross||0).toFixed(2)}</strong></td><td></td><td></td></tr></tbody></table>${preTaxSection}<div class="section-title">Tax</div>${table(['Description','Amount'],taxRows)}${postTaxSection}<div class="section-title">Employer Superannuation</div>${table(['Description','Amount'],superRows)}${leaveSection}${disbursementSection}</div>`;
   }
 
-  function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); const selected=selectedCertCycleId && visible.some(c=>String(c.id)===String(selectedCertCycleId)) ? String(selectedCertCycleId) : String(currentCycle().id); h('certification', `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${String(c.id)===selected?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',()=>{ selectedCertCycleId=v('certCycle'); renderCertOutput(); }); renderCertOutput(); }
+  function renderCertification(){ const visible=E.PAY_CYCLES.filter(c=>c.id<=currentCycle().id || E.isFinalised(state,c)); const selected=selectedCertCycleId && visible.some(c=>String(c.id)===String(selectedCertCycleId)) ? String(selectedCertCycleId) : String(currentCycle().id); h(certContainer, `<h2>Certification Report</h2><p class="small-note">Reports are only available for the current/open pay and previous generated pay periods. Future reports are not shown.</p><div class="grid form-grid"><div><label>Pay Cycle</label><select id="certCycle">${visible.map(c=>`<option value="${c.id}" ${String(c.id)===selected?'selected':''}>${E.cycleDisplay(c)}</option>`).join('')}</select></div></div><div id="certOutput"></div>`); $('certCycle').addEventListener('change',()=>{ selectedCertCycleId=v('certCycle'); renderCertOutput(); }); renderCertOutput(); }
   function renderCertOutput(){
     const c=E.cycleById(v('certCycle')||currentCycle().id);
     const rec=certificationRecord(c.id);
     const isCurrent = Number(c.id)===Number(currentCycle().id);
     const locked=!!rec.completed && (!isCurrent || !!rec.locked);
-    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const lines=certLines(c);
     if(!lines.length){ h('certOutput','<p class="small-note">No payslips generated for this pay period.</p>'); return; }
-    const certifiedCount=lines.filter(p=>rec.lines && rec.lines[String(p.id)] && rec.lines[String(p.id)].certified).length;
+    const certifiedCount=lines.filter(p=>(certManagerId?rec.managerLines:rec.lines)?.[String(p.id)]?.certified).length;
+    const meta=certManagerId?(rec.managerReviews?.[currentUserId]||rec.managerDrafts?.[currentUserId]||{}):rec;
     const statusText=rec.completed ? '<p class="success-text"><strong>Certification report completed and locked.</strong></p>' : `<p class="small-note">${certifiedCount} of ${lines.length} pay lines certified. Progress auto-saves when each certify checkbox is ticked.</p>`;
-    h('certOutput', statusText + table(['Details','Employee','Position','Gross','Tax','Net','Certify'], lines.map(p=>{
-      const line=rec.lines[String(p.id)] || {};
-      const checked=locked || !!line.certified;
-      return [`<span data-cert-row="${esc(p.id)}"><button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button></span>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${checked?'checked':''} ${locked?'disabled':''}>`];
-    })) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(rec.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(rec.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${rec.declaration?'checked':''} ${locked?'disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Complete Certification Report</button>`);
+    h('certOutput', statusText + table(['Details','Employee','Position','Gross','Tax','Net',...(certManagerId?[]:['Manager Certified']),'Certify'], lines.map(p=>{
+      const line=(certManagerId?rec.managerLines:rec.lines)?.[String(p.id)] || {};
+      const checked=certManagerId?!!line.certified:locked || !!line.certified;
+      return [`<span data-cert-row="${esc(p.id)}"><button class="icon-btn" title="View pay breakdown" data-cert-detail="${esc(p.id)}">🔍</button></span>`,esc(p.employeeName),esc(p.position),E.money(p.gross),E.money(p.tax),E.money(p.net),...(certManagerId?[]:[rec.managerLines?.[String(p.id)]?.certified?'✓':'']),`<input type="checkbox" class="certLine" data-id="${esc(p.id)}" ${checked?'checked':''} ${locked?'disabled':''}>`];
+    })) + `<div class="divider"></div><div class="grid form-grid"><div><label>Name</label><input id="certName" ${locked?'readonly':''} value="${esc(meta.name||'')}"></div><div><label>Position</label><input id="certPosition" ${locked?'readonly':''} value="${esc(meta.position||'')}"></div></div><p><label><input type="checkbox" id="certDeclaration" ${meta.declaration?'checked':''} ${locked?'disabled':''}> I certify to the best of my knowledge, this pay is correct</label></p><button id="saveCert" ${locked?'disabled':''}>Complete Certification Report</button>`);
     document.querySelectorAll('[data-cert-detail]').forEach(b=>b.addEventListener('click',()=>openCertificationDetail(c.id,b.dataset.certDetail)));
-    document.querySelectorAll('.certLine').forEach(ch=>ch.addEventListener('change',()=>autoSaveCertLine(c.id,ch.dataset.id,ch.checked)));
+    document.querySelectorAll('.certLine').forEach(ch=>ch.addEventListener('change',()=>{try{certManagerId?certManagerToggle(c.id,ch.dataset.id,ch.checked):autoSaveCertLine(c.id,ch.dataset.id,ch.checked);}catch(e){alert(e.message);renderCertOutput();}}));
     ['certName','certPosition','certDeclaration'].forEach(id=>{ const el=$(id); if(el && !locked) el.addEventListener('change',()=>autoSaveCertMeta(c.id)); });
     if(!locked) $('saveCert').addEventListener('click',()=>saveCertification(c.id));
   }
   function openCertificationDetail(cycleId,payId){
     const c=E.cycleById(cycleId||currentCycle().id);
-    const lines=(c.id===currentCycle().id?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const lines=certLines(c);
     const p=lines.find(x=>String(x.id)===String(payId));
     if(!p) return alert('Pay breakdown was not found.');
+    certGuard(p);
     const summary=table(['Summary','Amount'],[['Gross',E.money(p.gross)],['Tax',E.money(p.tax)],['Pre-tax deductions',E.money(p.preTaxDeductionTotal||0)],['Post-tax deductions',E.money(p.postTaxDeductionTotal||0)],['Employer Superannuation',E.money(p.superAmt||0)],['Net Pay',E.money(p.net)]]);
     modal(`Pay Breakdown - ${p.employeeName}`, summary + payslipHtml(p), `<button type="button" data-close-modal class="secondary">Close</button>`, false);
   }
   function autoSaveCertMeta(cycleId){
     const rec=certificationRecord(cycleId);
     if(rec.completed) return;
+    if(certManagerId){const before=JSON.parse(JSON.stringify(rec));rec.managerDrafts=rec.managerDrafts||{};rec.managerDrafts[currentUserId]={name:v('certName'),position:v('certPosition'),declaration:!!$('certDeclaration')?.checked};if(!DataStore.save(state)){state.certifications[String(cycleId)]=before;alert('Unable to save manager certification details.');}return;}
     rec.name=v('certName');
     rec.position=v('certPosition');
     rec.declaration=!!($('certDeclaration') && $('certDeclaration').checked);
@@ -1679,9 +1703,10 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function autoSaveCertLine(cycleId, payId, checked){
     const c=E.cycleById(cycleId);
     const isCurrent=Number(c.id)===Number(currentCycle().id);
-    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const lines=certLines(c);
     const p=lines.find(x=>String(x.id)===String(payId));
     if(!p) return;
+    certGuard(p);
     const rec=certificationRecord(cycleId);
     if(rec.completed && !isCurrent) return;
     autoSaveCertMeta(cycleId);
@@ -1696,11 +1721,17 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const rec=certificationRecord(cycleId);
     const c=E.cycleById(cycleId);
     const isCurrent=Number(c.id)===Number(currentCycle().id);
-    const lines=(isCurrent?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id)));
+    const lines=certLines(c);
     const checks=[...document.querySelectorAll('.certLine')];
     if(checks.some(c=>!c.checked)) return alert('Please certify each pay line.');
     if(!v('certName')||!v('certPosition')) return alert('Enter name and position.');
     if(!$('certDeclaration').checked) return alert('Please tick the certification declaration.');
+    if(certManagerId){
+      if(!lines.length||lines.some(p=>!rec.managerLines?.[String(p.id)]?.certified))return alert('Please certify each employee.');
+      lines.forEach(certGuard);const before=JSON.parse(JSON.stringify(rec));rec.managerReviews=rec.managerReviews||{};rec.managerReviews[currentUserId]={name:v('certName'),position:v('certPosition'),declaration:true,completedAt:new Date().toISOString()};
+      if(!DataStore.save(state)){state.certifications[String(cycleId)]=before;return alert('Unable to save certification.');}toast('Manager certification saved. Payroll review is still required.');renderCertification();return;
+    }
+    lines.forEach(certGuard);
     rec.name=v('certName'); rec.position=v('certPosition'); rec.declaration=true; rec.completed=true; rec.locked=true; rec.completedAt=new Date().toISOString(); rec.savedAt=rec.completedAt;
     lines.forEach(p=>{ rec.lines[String(p.id)]={ certified:true, certifiedAt:rec.completedAt, employeeName:p.employeeName, payHash:paySignature(p) }; });
     clearCertificationAlerts(cycleId);
@@ -1717,7 +1748,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const map=new Map(); keys.forEach((key,i)=>map.set(key,i+1)); return map;
   }
   function statementRowsForEmployee(e,asAt){
-    let rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&r.effectiveDate&&E.compare(r.effectiveDate,asAt)<=0)
+    let rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&r.effectiveDate&&!/position\s*refresh/i.test(String(r.reason||'')+' '+String(r.action||''))&&E.compare(r.effectiveDate,asAt)<=0)
       .slice().sort((a,b)=>E.compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
     if(!rows.length&&e.startDate){
       const schedule=E.activeSchedule(state,e.id,e.startDate); const rate=E.activePayRate(state,e.id,e.startDate);
@@ -1836,13 +1867,14 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     $('downloadPositionStructure').addEventListener('click',()=>{ positionStructureAsOf=v('positionStructureAsOf')||positionStructureAsOf||currentCycle().end; positionStructurePreviewHtml=positionStructureReportHtml(positionStructureAsOf); const blob=new Blob([positionStructureStandaloneHtml(positionStructurePreviewHtml)],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Position-Structure-${positionStructureAsOf}.html`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),500); });
   }
 
-  function renderAudit(){ h('audit', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
+  function renderAudit(){ if(settingsView==='audit')h('settingsOutput', `<h2>Audit Log</h2>${state.auditLog.map(x=>`<div class="history-item">${esc(x)}</div>`).join('')}`); }
   function renderSettings(){
-    h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button><button id="settingsSuper" class="${settingsView==='super'?'':'secondary'}">Super</button></div><div id="settingsOutput"></div>`);
+    h('settings', `<h2>Settings</h2><p><strong>Current app version:</strong> v${APP_VERSION}</p><div class="controls"><button id="settingsGeneral" class="${settingsView==='general'?'':'secondary'}">General</button><button id="settingsPositions" class="${settingsView==='positions'?'':'secondary'}">Positions</button><button id="settingsSuper" class="${settingsView==='super'?'':'secondary'}">Super</button><button id="settingsAudit" class="${settingsView==='audit'?'':'secondary'}">Audit</button></div><div id="settingsOutput"></div>`);
     $('settingsGeneral').addEventListener('click',()=>{ settingsView='general'; renderSettings(); });
     $('settingsPositions').addEventListener('click',()=>{ settingsView='positions'; renderSettings(); });
     $('settingsSuper').addEventListener('click',()=>{settingsView='super';renderSettings();});
-    if(settingsView==='positions') renderPositionsSettings(); else if(settingsView==='super')renderSuperSettings();else renderGeneralSettings();
+    $('settingsAudit').addEventListener('click',()=>{settingsView='audit';renderSettings();});
+    if(settingsView==='audit')renderAudit();else if(settingsView==='positions') renderPositionsSettings(); else if(settingsView==='super')renderSuperSettings();else renderGeneralSettings();
   }
   function renderSuperSettings(){
     const funds=(state.superFunds||[]).filter(f=>!f.deleted).slice().sort((a,b)=>a.fundName.localeCompare(b.fundName));
@@ -1976,6 +2008,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.2.2',notes:['Added Support Requests in Payroll, ESS and MSS with assignments, messages, attachments, notifications, resolution notes and automatic closure after 14 days.','Added shared MSS manager certification and separate company-wide Payroll review, and direct-report payslips.','Acting assignments replace substantive manager access. Moved Audit to Settings, excluded Position Refresh from service statements, and aligned tiles and navigation icons.']},
     {version:'v1.2.1',notes:['Matched ESS/MSS Job Summary and calendars to Payroll Management. ESS shows open payslips; printing remains finalised-only. MSS payments now use the Payroll Management row editor. Added multiple active manager routing, Operations Manager automatic leave approval, payroll approver labels, roster-based request hours, vertical request forms and bell/home navigation.']},
     {version:'v1.1.41',notes:['Added Employee Self Service with Payslips, Leave & Timesheets and Personal Details tiles, each with an icon.','Added Manager Self Service with Approvals, Direct Reports, Leave & Timesheets, Payment Processing and Employee Details tiles.','Scoped ESS to the signed-in employee and MSS to current direct reports. Personal, bank, tax and super details are read-only; payroll retains editing rights.','Added pending request submission, manager approval/denial, employee notifications, deletion rules, reserved pending balances and missing-manager errors.','Three-day pending reminders notify the Reports To manager and payroll, with independent read status.','Reimbursement is excluded from tax and labelled Reimbursement (Non-Taxable), including retro display.','This remains a browser-local application, not a secure shared server service.']},
     {version:'v1.1.40',notes:['Added Settings → Super fund catalogue, effective-dated employee Super and Bank Details, and frozen finalised payslip disbursements.','Added post-tax Recovery Deduction with finalisation-only debt repayments and capped final repayments.','Added one reminder per leave request awaiting manager approval for more than three days.','Removed the payslip Super Account section and added the saved fund name to employer contribution labels.','Casual-only employees receive one payslip labelled Casual across all worked positions, retaining position names on earning lines. Mixed and non-casual employment retains position-based payslips.']},
@@ -2269,5 +2302,5 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = { getState:()=>state,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = { getState:()=>state,mountSupport,mountSelfServiceCertification,unmountSelfServiceCertification,certManagerToggle,renderCertification,renderCertOutput,paySignature,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();

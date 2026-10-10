@@ -1,5 +1,5 @@
 {
-  "version": "1.2.1",
-  "file": "payroll-hcm-app-v1.2.1.zip",
-  "notes": "Matched payroll/self-service views, open ESS payslips, roster-based leave hours, multiple manager routing and Operations Manager automatic approval"
+  "version": "1.2.2",
+  "file": "payroll-hcm-app-v1.2.2.zip",
+  "notes": "Support request case management, two-way messages and attachments, manager certification and separate payroll review, direct-report payslips, acting manager scope, Audit relocation and navigation updates"
 }

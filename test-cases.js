@@ -38,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.1'), 'sidebar/version label must show v1.2.1');
-  assert(data.includes("APP_VERSION = '1.2.1'"), 'data-store version must be 1.2.1');
+  assert(html.includes('v1.2.2'), 'sidebar/version label must show v1.2.2');
+  assert(data.includes("APP_VERSION = '1.2.2'"), 'data-store version must be 1.2.1');
 })();
 
 (function testAnchorPayCycle(){
@@ -993,8 +993,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const certIndex=html.indexOf('data-tab="certification"');
   const reportsIndex=html.indexOf('data-tab="reports"');
-  const auditIndex=html.indexOf('data-tab="audit"');
-  assert(certIndex>=0&&reportsIndex>certIndex&&auditIndex>reportsIndex,'Reports must be positioned between Certification Report and Audit');
+  const auditIndex=html.indexOf('data-tab="support"');
+  assert(certIndex>=0&&reportsIndex>certIndex&&auditIndex>reportsIndex,'Reports must be positioned between Certification Report and Support Requests');
   assert(html.includes('id="reports"'),'Reports section must exist');
   assert(app.includes('function statementOfServiceHtml')&&app.includes('Service History:')&&app.includes('Leave Without Pay Taken:'),'Statement of Service generator and required sections must exist');
   assert(app.includes('Print / Save PDF')&&app.includes('Download HTML'),'Statement of Service must support print/PDF and download');
@@ -1006,7 +1006,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}};
   const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp;
@@ -1062,7 +1062,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}};
   const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp;
@@ -1318,7 +1318,7 @@ console.log('PASS: v1.1.21 Job Data reconciliation replaces deleted fixed-term e
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp;
@@ -1614,7 +1614,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const helper=context.window.PayrollApp.deductionDateNeedsValidation;
@@ -1832,7 +1832,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const helper=context.window.PayrollApp.employeeVisibleInMonthlyAbsence;
   const e={id:'monthterm',firstName:'Month',lastName:'Term',startDate:'2026-01-01',employmentSegments:[{startDate:'2026-01-01',endDate:'2026-06-19',inclusiveEnd:false,terminationReason:'Resignation'}]};
@@ -1850,7 +1850,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp;
   assert.strictEqual(app.isAmountOnlyPayslipRow(bonus),true);
@@ -1863,7 +1863,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp;
   assert.strictEqual(app.payslipDisplayDescription({description:'Regular Pay Retro',kind:'retro',startDate:'2026-06-20',endDate:'2026-06-30'},'2026-07-16'),'Retro PFY','Retro sourced wholly before the current financial year must display as Retro PFY');
@@ -1915,7 +1915,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const html=context.window.PayrollApp.payslipHtml(current[0]);
   assert(html.includes('<td>Bonus Retro</td><td class="right"></td><td class="right"></td><td class="right">75.00</td>'),'Retro Bonus payslip line must show Amount with blank Units and Rate');
@@ -1928,7 +1928,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const app=context.window.PayrollApp; const state=app.getState();
   state.employees.push({id:'termleave130',firstName:'Taylor',lastName:'Worker',name:'Taylor Worker',startDate:'2026-01-01',status:'Active'});
@@ -2095,7 +2095,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert.strictEqual(ce.positionNumber,'C100'); assert.strictEqual(ce.casualBaseRate,50); assert.strictEqual(ce.casualLoadingRate,0.25); assert.strictEqual(ce.casualLoadedRate,62.5);
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}}; const windowStub={addEventListener:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub; vm.runInNewContext(appSource,context,{filename:'app.js'});
   const html=context.window.PayrollApp.payslipHtml(pays[0]);
   assert(html.includes('Casual Earnings - Casual Crew'),'Casual Earnings payslip description must include the selected position name');
   assert(!html.includes('<div class="section-title">Leave Balance</div>'),'Casual-only payslips must omit the Leave Balance section');
@@ -2137,7 +2137,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const rows=[
     {description:'Long Service Leave',kind:'leave',leaveBookingId:'lsl-book',bookingStartDate:'2026-09-07',bookingEndDate:'2026-09-18',startDate:'2026-09-07',endDate:'2026-09-07',units:7.5,rate:40,amount:300,position:'Officer',ote:true},
@@ -2192,7 +2192,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const appState=context.window.PayrollApp.getState(); Object.assign(appState,migrated);
   const ids=context.window.PayrollApp.loginEligibleEmployees().map(x=>x.id);
@@ -2204,7 +2204,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const st=context.window.PayrollApp.getState();
   st.employees.push({id:'act132',firstName:'Acting',lastName:'Manager',name:'Acting Manager',status:'Active',type:'Permanent',startDate:'2026-01-01',employmentSegments:[{id:'a132seg',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
@@ -2269,7 +2269,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const st=context.window.PayrollApp.getState();
   st.finalisedCycles={'1':{finalised:true}};
@@ -2300,7 +2300,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   assert(appSource.includes("'Acting Lower Level'"),'Job Data movement reasons must include Acting Lower Level');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'});
   const st=context.window.PayrollApp.getState();
   st.employees.push({id:'low133',firstName:'Low',lastName:'Actor',name:'Low Actor',type:'Permanent',startDate:'2026-01-01',originalStartDate:'2026-01-01',lslServiceDate:'2026-01-01',hourlyRate:50,employmentSegments:[{id:'ls',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}],status:'Active'});
@@ -2513,7 +2513,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   const appSource=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{appendChild:()=>{}}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}}; const sessionStorageStub={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:sessionStorageStub,console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:(fn)=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true}; windowStub.document=documentStub; windowStub.sessionStorage=sessionStorageStub;
   vm.runInNewContext(appSource,context,{filename:'app.js'}); const st=context.window.PayrollApp.getState();
   Object.assign(st,baseState()); st.positions=[{id:'mgr',positionNumber:'MGR',positionName:'Manager',department:'Operations',hourlyRate:60,reportsTo:'',active:true},{id:'off',positionNumber:'OFF',positionName:'Officer',department:'Operations',hourlyRate:40,reportsTo:'MGR',active:true},{id:'vac',positionNumber:'VAC',positionName:'Vacant Role',department:'Customer Services',hourlyRate:35,reportsTo:'MGR',active:true}];
   const e=addEmployee(st,{id:'struct136',position:'Officer',department:'Operations',employmentSegments:[{id:'seg',startDate:'2026-01-01',endDate:'',inclusiveEnd:false}]});
@@ -2666,7 +2666,7 @@ console.log('PASS: v1.1.37 retro Casual Earnings are source-date driven and surv
 function actingAppFixture138(){
   const documentStub={addEventListener:()=>{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null,documentElement:{},body:{classList:{add:()=>{},remove:()=>{}}}};
   const windowStub={addEventListener:()=>{},scrollTo:()=>{}};
-  const context={DataStore,PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
+  const context={DataStore,SupportRequests:require('./support-requests'),PayrollEngine:E,document:documentStub,window:windowStub,sessionStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},console,Intl,Date,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),Blob:function(){},URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},alert:()=>{},confirm:()=>true};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'app.js'),'utf8'),context,{filename:'app.js'});
   const app=windowStub.PayrollApp, state=app.getState(); Object.assign(state,baseState()); state.currentCycleId=11;
   const e=addEmployee(state,{id:'actor138',department:'Operations',employmentSegments:[{id:'seg138',startDate:'2026-10-09',endDate:'',inclusiveEnd:false}]});

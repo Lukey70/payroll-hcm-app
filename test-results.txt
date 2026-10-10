@@ -1,5 +1,5 @@
-Payroll/HCM App v1.2.1 verification
-185 existing test blocks + 60 feature test groups (23 payment/account/reimbursement + 37 self-service); 1293 assertion call sites across three suites.
+Payroll/HCM App v1.2.2 verification
+185 existing test blocks + 75 feature test groups (23 payment/account/reimbursement + 37 self-service + 15 support/certification/UI); 1411 assertion call sites across four suites.
 
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
@@ -135,7 +135,7 @@ PASS: actual monthly calendar is team-scoped, MSS timesheets blank and notificat
 PASS: actual pending employee delete and approved manager delete obey workflow and notify
 PASS: next-pay MSS earnings are permitted but do not enter current pay
 PASS: actual ESS payslip list includes own open pay, excludes foreign rows and expands earlier dates
-PASS: all active substantive/acting managers see requests and reminders; decision recorded once
+PASS: acting assignment replaces substantive manager access and returns on expiry or return row
 PASS: multiple Reports To values and active occupants route to all; unresolved links stay errors
 PASS: Operations Manager auto-approves own leave without Reports To; validation and position limits remain
 PASS: Payroll-booked legacy and new leave show Payroll; manager bookings retain actual actor
@@ -149,7 +149,23 @@ PASS: navigation uses bell, Back text and accessible home icon
 PASS: roster calculation follows effective changes and two-week pattern; public holidays count zero
 PASS: MSS whole-period save rolls back a valid first row if a later row fails validation
 PASS: MSS switching employees or pay periods during a delayed save cancels that save
-PASS: 37 v1.2.1 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: 37 v1.2.2 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: unique immutable case numbering and own-only ESS raised-for with submission receipt
+PASS: MSS raised-for includes non-direct reports and New Employee; rejects invalid IDs and missing access
+PASS: assignment list enforces current payroll access; assign/unassign correctly drives New and Open
+PASS: two-way messages, attachment bytes and independent employee/payroll notifications
+PASS: unassigned employee reply routes to payroll; empty/malformed/oversize attachments rejected without messages
+PASS: Awaiting Info, required resolution notes, exact resolution notification and 14-day auto closure
+PASS: work timer accumulates and stops on resolution; export/import preserves cases, attachments and sequence
+PASS: actual support UI submits ESS case, scopes list, shows conversation and payroll-only assignment controls
+PASS: support UI storage failure rolls back case, messages, sequence and notification together
+PASS: MSS form offers all employees and New Employee; list tabs, counts, search and pagination work
+PASS: actual manager certification scopes direct reports, shares checks across managers and leaves Payroll review unticked
+PASS: manager certification becomes stale after pay changes and storage failure rolls back ticks
+PASS: MSS direct report payslips use ESS controls and reject printing after manager reassignment
+PASS: statement omits Position Refresh; Audit moved to Settings; consistent tile rows and larger Home icon
+PASS: app wiring opens ESS support tile, submission bell links, MSS certification and direct-report payslips
+PASS: 15 v1.2.2 support/certification/UI test groups.
 
 All JavaScript syntax PASS.
 Actual UI rendering/event handlers exercised in a DOM harness.

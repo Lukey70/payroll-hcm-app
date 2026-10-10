@@ -1,19 +1,12 @@
-Payroll/HCM App v1.2.1 review
+Payroll/HCM App v1.2.2 review
 
-Shared renderers: Payroll Management and self-service call the same Job Summary and calendar functions. MSS mounts the existing Additional Earnings renderer with a scoped employee list. Its original hidden payroll editor is cleared to prevent duplicate DOM IDs; leaving the portal resets the mounted scope.
-
-MSS period saves stage rows, recheck manager scope, employee and cycle after the delay, validate each row through SelfService, then delete absent rows only in that employee/period. State and persistence roll back on error. Failed saves never show success. Rate-based source rows keep an empty amount override; fixed/amount earnings preserve engine semantics. HDA must exceed substantive pay; overpayment adjustments remain current-period-only.
-
-Multiple managers: active acting plus substantive reporting assignments, multiple reporting values and eligible position occupants resolve to a unique recipient list. Sequential superseded assignments do not accumulate permissions. Current routing controls request visibility, detail/payment scope and reminder recipients. Actual approval actor is frozen on decision; repeated decisions fail.
-
-Operations Manager: active position identity/name and current effective job assignment determine the exception. New own ESS requests approve automatically after normal validation. No missing-manager error or pending reminder is generated for those approved requests.
-
-Payroll approver labels: new payroll bookings carry source and approver metadata; legacy source-less payroll bookings display Payroll. ESS/MSS sources and actual decision actors remain distinguishable after export/import.
-
-ESS payslips combine scoped current payResults with historical payslips. Open pay is viewable. Export controls are disabled and handlers recheck finalisation. The existing payslip renderer retains finalised-only disbursements.
-
-Hours use the same engine booking validator as Payroll Management. UI resets/partial constraints follow payroll rules. Request submission continues using pending reservations in a cloned validation state.
-
-Version/cache metadata v1.2.1; storage key unchanged. Full existing regressions plus payment and integrated self-service DOM/event tests pass. Exact delivered archive is re-extracted and retested. No live-browser or real-data acceptance QA is claimed.
-
-Material limits unchanged: browser-local storage, browser-readable credentials, no server-side authorization, no shared multi-device database, no closed-app notifications.
+SupportRequests service rechecks actor, ownership and current Payroll access on case/assignment/status/messages/download. Manager creation allows any employee or New Employee independently of direct-report scope. No request deletion exposed.
+Case sequence checked against existing numbers. Number/Raised by/ESS Raised for are read only. Rendered text escaped; attachments downloaded as octet-stream blobs, not executable inline content.
+Attachment declared byte sizes/base64 and limits validated. FileReader sends recheck sender/case after asynchronous reads. Case mutations/notifications save together and roll back on persistence failure. Backup/import preserves support data.
+Resolution requires notes, stops work timer, and notifies raiser. Resolved/Closed read only. Auto closure uses 14 elapsed days from resolvedAt, at startup/minute intervals, idempotently. Own open tab retains Resolved until closure; Payroll uses separate resolved/closed filters.
+Independent per-recipient bell reads and case navigation. Payroll messages/resolution notify raiser; raiser replies notify assignee or eligible Payroll when unassigned.
+Current assignment alone grants reporting visibility. Expired acting rows fall back to unexpired substantive rows; return rows restore substantive reporting. Multiple active managers remain supported.
+MSS/Payroll share certification renderer and pay breakdown. MSS scoped to current direct reports. managerLines shared across managers; employee toggles update employee's scoped pay lines. Existing lines is separate Payroll review. Manager declarations are per manager. Pay-signature changes invalidate both stages; manager tick persistence failures roll back.
+MSS payslips reuse ESS controls and recheck scope/finalisation on export. Audit uses Settings output. Position Refresh filtered from service history. Tile sizes/rows and Home/bell updated.
+Regression suites and DOM/event harness pass; exact ZIP re-extracted/retested, HTTP bytes and manifest match. Live-browser and real-data acceptance QA unavailable.
+Browser-local storage/readable credentials/no server authorization/no shared multi-device sync remain material limitations.

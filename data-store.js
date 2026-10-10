@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.1';
+  const APP_VERSION = '1.2.2';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -11,6 +11,8 @@
       payRates: [],
       leaveBookings: [],
       leaveRequestArchive: [],
+      supportRequests: [],
+      supportSequence: 0,
       additionalEarnings: [],
       deductions: [],
       superFunds: [],
@@ -67,7 +69,7 @@
     const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
     // Preserve trustworthy pending-status timestamps; unknown legacy ages start now.

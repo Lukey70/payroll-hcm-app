@@ -15,11 +15,11 @@
     function assignments(s,id,date=today()){
       const rows=s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
       const current=rows[0];if(!current)return [];
-      const result=[current];
-      if(E.isActingJobDataRow(s,current)){
-        const substantive=rows.find(r=>!E.isActingJobDataRow(s,r));if(substantive)result.push(substantive);
-      }
-      return result.filter(r=>!r.endDate||r.endDate>=date);
+      // Temporary assignment replaces the substantive reporting relationship.
+      // On expiry, fall back to the latest unexpired substantive assignment.
+      if(!current.endDate||current.endDate>=date)return [current];
+      const substantive=rows.find(r=>!E.isActingJobDataRow(s,r)&&(!r.endDate||r.endDate>=date));
+      return substantive?[substantive]:[];
     }
     function isOperationsManager(s,id,date=today()){
       const j=job(s,id,date),p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(j?.positionNumber));
@@ -214,21 +214,23 @@
       area=mode;page=newPage;section='';target='';requestId='';slipId='';from='';to='';recent=true;earnId='';
       ['appShell','landingScreen'].forEach(id=>{if($(id))$(id).hidden=true;});$('selfServiceScreen').hidden=false;document.body.classList.remove('landing-active');render();
     }
-    function hide(){o.unmountPayments?.();if($('selfServiceScreen')){$('selfServiceScreen').hidden=true;$('selfServiceScreen').innerHTML='';}put('printArea','');}
+    function hide(){o.unmountPayments?.();o.unmountCertification?.();if($('selfServiceScreen')){$('selfServiceScreen').hidden=true;$('selfServiceScreen').innerHTML='';}put('printArea','');}
     function render(){
-      o.unmountPayments?.();
+      o.unmountPayments?.();o.unmountCertification?.();
       S.assertScope(state(),user(),user(),'ess');if(area==='mss'&&!S.profile(state(),user()).mss){hide();home();return;}
       E.ensurePendingLeaveNotifications(state());S.syncNotifications(state());
       const title=area==='ess'?'Employee Self Service':'Manager Self Service';
       const alerts=S.alertsFor(state(),user());
-      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home">⌂</button><button id="ssLogout" class="danger">Sign out</button></div></header><details id="ssNotifications" class="ss-notifications"></details><div id="ssBody"></div>`);
+      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v10h-6v-7H9v7H3z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><details id="ssNotifications" class="ss-notifications"></details><button id="ssLogout" class="danger">Sign out</button></div></header><div id="ssBody"></div>`);
       click('ssBack',()=>show(area));click('ssHome',()=>{hide();home();});click('ssLogout',()=>{hide();logout();});
       refreshNotifications();
       if(!page){
-        const tiles=area==='ess'?[['payslips','Payslips','📄'],['leave','Leave & Timesheets','📅'],['details','Personal Details','👤']]:[['approvals','Approvals','✅'],['reports','Direct Reports','👥'],['leave','Leave & Timesheets','📅'],['payments','Payment Processing','💳'],['details','Employee Details','👤']];
+        const tiles=area==='ess'?[['payslips','Payslips','📄'],['leave','Leave & Timesheets','📅'],['details','Personal Details','👤'],['support','My Support Requests','🎫']]:[['approvals','Approvals','✅'],['reports','Direct Reports','👥'],['leave','Leave & Timesheets','📅'],['payments','Payment Processing','💳'],['details','Employee Details','👤'],['certification','Certification Report','📋'],['support','My Support Requests','🎫']];
         put('ssBody',`<div class="ss-tiles">${tiles.map(([id,label,icon])=>`<button class="landing-tile" data-ss-tile="${id}"><span class="landing-tile-icon" aria-hidden="true">${icon}</span><span>${label}</span></button>`).join('')}</div>`);buttons('data-ss-tile',id=>{page=id;section='';target='';requestId='';render();});return;
       }
       put('ssBody','<div class="ss-layout"><aside id="ssSidebar"></aside><main id="ssMain"></main></div>');
+      if(page==='support'){put('ssBody','<main id="ssSupport" class="card"></main>');return o.mountSupport?.('ssSupport',{mode:'own',area});}
+      if(page==='certification'){put('ssSidebar','<h2>Certification Report</h2>');return o.mountCertification?.('ssMain',user());}
       if(page==='payslips')return renderPayslips();
       if(page==='approvals')return renderApprovals();
       if(page==='reports')return renderReports();
@@ -244,16 +246,18 @@
     }
     function bindSelector(){change('ssEmployee',()=>{target=v('ssEmployee');earnId='';render();});}
     function selected(){if(!target&&area==='ess')target=user();if(!target)return null;return S.assertScope(state(),user(),target,area);}
-    function renderPayslips(){
-      const all=S.payslips(state(),user(),'','',false),list=S.payslips(state(),user(),from,to,recent);
-      put('ssSidebar',`<h2>Payslips</h2><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button>${list.map(p=>`<button data-ss-slip="${esc(p.id)}" class="secondary">${E.ppeLabel(p.cycle)} — ${esc(p.position)} — ${p.finalised?'Finalised':'Open'} — ${E.money(p.net)}</button>`).join('')||'<p>No payslips.</p>'}`);
-      click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),user(),f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
+    function renderPayslips(employeeId=user()){
+      S.assertScope(state(),user(),employeeId,area);
+      const ownPays=()=>{S.assertScope(state(),user(),employeeId,area);return S.payslips(state(),employeeId,'','',false);};
+      const all=ownPays(),list=S.payslips(state(),employeeId,from,to,recent);
+      put(page==='reports'?'ssReportPays':'ssSidebar',`<h2>Payslips</h2><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button>${list.map(p=>`<button data-ss-slip="${esc(p.id)}" class="secondary">${E.ppeLabel(p.cycle)} — ${esc(p.position)} — ${p.finalised?'Finalised':'Open'} — ${E.money(p.net)}</button>`).join('')||'<p>No payslips.</p>'}`);
+      click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),employeeId,f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
       if(!list.some(p=>p.id===slipId))slipId=list[0]?.id||'';
       const p=list.find(p=>p.id===slipId);
       put('ssMain',p?`<div class="controls"><button id="ssPrint" ${p.finalised?'':'disabled'}>Print / Save as PDF</button><button id="ssDownload" class="secondary" ${p.finalised?'':'disabled'}>Download Payslip</button></div>${payslipHtml(p)}`:'<p>Only your own payslips are shown. Choose a wider date range to see earlier payslips.</p>');
       buttons('data-ss-slip',id=>{slipId=id;render();});
-      click('ssPrint',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
-      click('ssDownload',()=>{const current=S.payslips(state(),user(),'','',false).find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+      click('ssPrint',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
+      click('ssDownload',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     }
     function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',esc(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')]]);}
     function renderApprovals(){
@@ -266,7 +270,12 @@
     function renderReports(){
       const people=S.directReports(state(),user());put('ssSidebar',`<h2>Direct Reports</h2>${people.map(e=>`<button data-ss-report="${esc(e.id)}">${esc(E.employeeName(e))}</button>`).join('')||'<p>No direct reports.</p>'}`);
       if(!people.some(e=>e.id===target))target=people[0]?.id||'';
-      put('ssMain',target?jobSummary(selected()):'<p>Select a direct report.</p>');buttons('data-ss-report',id=>{target=id;render();});
+      const e=target?selected():null;
+      if(e){put('ssSidebar',$('ssSidebar').innerHTML+'<div class="divider"></div><button id="ssReportJob">Job Summary</button><button id="ssReportSlips">Payslips</button><div id="ssReportPays"></div>');
+        if(section==='payslips')renderPayslips(e.id);else put('ssMain',jobSummary(e));
+        click('ssReportJob',()=>{section='job';render();});click('ssReportSlips',()=>{section='payslips';slipId='';render();});
+      }else put('ssMain','<p>Select a direct report.</p>');
+      buttons('data-ss-report',id=>{target=id;slipId='';from='';to='';recent=true;render();});
     }
     function jobSummary(e){return `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p>${o.jobSummaryHtml?o.jobSummaryHtml(e.id):'<p>Job Summary unavailable.</p>'}`;}
     function renderDetails(){
@@ -333,7 +342,8 @@
       if(o.mountPayments)o.mountPayments('ssMain',user());else put('ssMain','<p>Payment Processing unavailable.</p>');
     }
     function refreshNotifications(){
-      const alerts=S.alertsFor(state(),user());put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary>${alerts.map(a=>`<div class="history-item">${esc(a.message)} <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}`);
+      const alerts=S.alertsFor(state(),user());put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary><div class="ss-notification-list">${alerts.map(a=>`<div class="history-item"><button class="secondary" data-ss-alert="${esc(a.id)}">${esc(a.message)}</button> <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}</div>`);
+      buttons('data-ss-alert',id=>{const a=S.alertsFor(state(),user()).find(a=>a.id===id);if(a?.action?.page==='support'){page='support';render();o.mountSupport?.('ssSupport',{mode:'own',area,caseId:a.action.caseId});}});
       buttons('data-ss-read',id=>{mutate(s=>S.readAlert(s,user(),id));refreshNotifications();});
     }
     return {show,hide,render,refreshNotifications};

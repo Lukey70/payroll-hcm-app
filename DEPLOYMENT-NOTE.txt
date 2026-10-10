@@ -1,29 +1,30 @@
-Payroll/HCM App v1.2.1
+Payroll/HCM App v1.2.2
 
-Export Data and retain the JSON backup before updating. Keep the same browser/site origin or import the backup.
+Export Data and keep the JSON backup before updating. Use the same browser/site origin or import the backup.
 
-Upload these eight runtime files together:
+Upload all nine runtime files together:
 index.html
 styles.css
 data-store.js
 payment-details.js
 self-service.js
 payroll-engine.js
+support-requests.js
 app.js
 latest-version.json
 
-Preserve index.html script order. self-service.js remains required. Tests/release notes are not runtime dependencies.
-Confirm v1.2.1 after refresh. Existing data migrates in place; finalised records, bank/super accounts, recovery ledgers and request archives are retained.
-
-Settings > Positions must have the correct payroll/MSS access flags. Reports To comes from effective Job Data/position reporting relationships. During an active acting assignment both acting and substantive reporting managers have access. Multiple active occupants of a reporting position are supported. Unresolved links remain Check for Errors items.
-The active position named Operations Manager is exempt from missing-manager errors and its occupant's new ESS requests automatically approve. Confirm the position's name and effective assignment.
-
-On a backed-up copy check: own open payslip preview with disabled printing/download and hidden disbursement; finalised slip export; Payroll approver; ESS yearly calendar; MSS monthly calendar; shared Job Summary; roster-based leave hours and evidence; all linked manager queues/reminders and one decision; Operations Manager auto-approval; MSS selected-period plus-row/save/delete.
+Keep index.html script order; Support Requests must load before app.js. Refresh and confirm v1.2.2. Existing storage key is preserved, with accounts, finalised pay, recoveries and request archives retained. Support requests/messages/attachments are included in Export Data.
+Payroll/MSS access is controlled by Settings > Positions. Acting assignments replace substantive manager visibility until return/expiry. Multiple Reports To on the current assignment share visibility. Operations Manager automatic leave approval remains.
+Managers certify in MSS; Payroll Management shows all employees with shared Manager Certified status and separate Certify controls for Payroll's second review. Pay changes invalidate affected checks.
+Attachment limits: five files per message, 1 MB per file, 2 MB per case total. Browser storage limits also apply; failed saves roll back the pending change.
+Resolved cases close after 14 days, checked at startup and every minute while running.
 
 Run:
 node test-cases.js
 node tests/payment-details-v140.test.js
 node tests/self-service-v121.test.js
+node tests/support-v122.test.js
 
-This ZIP uses browser-local data and browser-readable credentials. It does not provide server authorization or sync requests between employee devices. A backend is required for a secure shared staff portal. Notifications require the app to be open.
-Live-browser QA was unavailable; see test-results.txt and RELEASE-NOTES-v1.2.1.txt.
+Validate on a backed-up copy with your real employee data before live use.
+This is browser-local storage with browser-readable credentials, no shared multi-device database and no server authorization. Bell notifications are in-app, not email/push. No processing runs while closed. A backend is required for a secure shared staff portal.
+Live-browser and real employee export acceptance QA were unavailable. See test-results.txt and RELEASE-NOTES-v1.2.2.txt.

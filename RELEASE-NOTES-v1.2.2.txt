@@ -1,0 +1,31 @@
+Payroll/HCM App v1.2.2
+
+Support Requests
+- Payroll sidebar Support Requests and ESS/MSS My Support Requests tiles.
+- Own open/closed tabs, counts, search, pagination, New Support Request page and unique read-only number.
+- Raised by is fixed to logged-in employee. ESS Raised for is fixed to self; MSS can choose any employee or New Employee. Display First Name Last Name (Employee ID).
+- Subject/Description and automatic creation date; submission bell receipt.
+- Payroll case list: Subject with smaller case number, Raised by, Raised for, Status, Assigned to, Created. Assigned to me, Show Resolved, Show Closed filters.
+- Payroll case page: Number, Raised by, Raised for, Time worked Start/Pause timer, Assigned to, Subject, Description.
+- Assignment dropdown only offers current Payroll Management employees; person icon assigns to self. Assigning moves New to Open.
+- Shared messages and attachments: Raised by on right, Payroll on left, sender/employee ID, case number and date/time shown.
+- Payroll messages notify Raised by; employee replies notify assigned officer, or eligible Payroll users when unassigned.
+- Awaiting Info action. Resolved action opens required Resolution Notes dialog; saved notes visible to raiser and requested bell notification sent.
+- Resolved closes automatically after 14 elapsed days; checked at startup and every minute while open. Resolved/Closed requests are read only.
+- Up to five files/message, 1 MB/file, 2 MB/case total. Attachments included in backups; failed browser saves roll back changes.
+
+Manager access and reports
+- Acting/temporary assignment replaces substantive reporting manager(s) until return/expiry. Multiple Reports To on the current assignment still share access.
+- MSS Certification Report uses same report/pay-breakdown renderer, only current direct reports. Checks shared across managers for employee/pay cycle and visible in Payroll's Manager Certified column.
+- Payroll reports show all employees; its Certify controls remain the separate company-wide second review. Pay changes invalidate both manager and Payroll checks. Completed historical reports stay locked.
+- MSS Direct Reports has Job Summary and Payslips, matching ESS recent ten/date controls. Open payslips viewable; only finalised pay can print/download. Scope rechecked on export.
+- Maximum five tiles per row in ESS/MSS with consistent sizes. MSS Certification Report and My Support Requests on row two on wide screens.
+- Bell beside larger Home icon. Audit moved to Settings beside Super. Position Refresh excluded from Statement of Service.
+
+Validation
+185 existing regression blocks + 23 payment/account groups + 37 updated self-service groups + 15 new support/certification/UI groups. JavaScript syntax, extracted ZIP tests, SHA-256 manifest and local HTTP runtime assets verified.
+UI tests exercise actual rendering/event handlers in a DOM harness. Live-browser visual QA and real employee export acceptance QA were unavailable.
+
+Limits
+Browser-local storage and browser-readable credentials; no shared multi-device database/server authorization. Bell notifications are in-app only. Closed-app processing is not supplied. A backend is required for a secure shared staff portal.
+Export Data before replacing all nine runtime files; retain script order and confirm v1.2.2.
