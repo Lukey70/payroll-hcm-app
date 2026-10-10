@@ -1,15 +1,20 @@
-Payroll/HCM App v1.1.40
+Payroll/HCM App v1.1.41
 
-Export Data and retain the JSON backup before updating. Preserve the same site origin/browser so payrollAppData remains available, or import your backup.
+Export Data and retain the JSON backup before updating. Preserve the same site origin/browser, or import your backup.
 
-Upload index.html, styles.css, data-store.js, payment-details.js, payroll-engine.js, app.js and latest-version.json together. payment-details.js is a required NEW runtime asset. Keep the script order in index.html. Tests are not runtime dependencies.
+Upload index.html, styles.css, data-store.js, payment-details.js, self-service.js, payroll-engine.js, app.js and latest-version.json together. self-service.js is a required NEW runtime asset. Retain index.html script order. Tests are not runtime dependencies.
 
-Existing data migrates in place; finalised payslips remain stored and current pay recalculates. No bank/super assignment is invented. Create funds in Settings > Super, then enter employee Super and Bank Details for current/future pay-period starts. Run Check for Errors before finalising.
+Confirm v1.1.41. Existing data migrates in place, current pay recalculates, finalised records remain stored. Bank/super records and recovery ledgers are retained. leaveRequestArchive is added to preserve deleted request details.
 
-Test a backed-up copy of real data before operational use. Recovery Deduction is a fixed post-tax repayment with Opening Debt, not a correction of original earnings. Bank/super details and contribution reports do not send payments. No new bank/super masking, access restrictions, before-after audit or save-confirmation workflow is included.
+In Settings > Positions, set Payroll Management and Manager Self Service access flags. In effective Job Data set Reports To to the manager's position number. That position must have exactly one active occupant with MSS access. Run Check for Errors and resolve missing/ambiguous managers and bank/super issues before testing.
+
+Use a backed-up data copy to test: employee request -> manager approval/denial -> employee notification; pending deletion; approved manager deletion; direct-report earnings; recent/older finalised payslips; reimbursement tax exclusion; three-day reminders. Timesheet pages intentionally remain blank.
+
+This browser-local ZIP is for the existing local application workflow. It does not provide server-side authorization or shared employee-device data. Do not deploy as a production secure multi-user payroll portal without a backend. Existing credentials/data are browser-readable. Notifications require the app to be open; no email/push payment services are added.
 
 Run:
 node test-cases.js
 node tests/payment-details-v140.test.js
+node tests/self-service-v141.test.js
 
-See RELEASE-NOTES-v1.1.40.txt and test-results.txt for coverage and limits.
+See RELEASE-NOTES-v1.1.41.txt and test-results.txt. Refresh the page after uploading all files.

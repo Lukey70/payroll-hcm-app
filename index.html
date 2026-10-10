@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Payroll/HCM App</title>
-  <link rel="stylesheet" href="styles.css?v=1.1.40-casual">
+  <link rel="stylesheet" href="styles.css?v=1.1.41">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -43,7 +43,7 @@
     <aside class="sidebar no-print">
       <div>
         <h1>Payroll/HCM</h1>
-        <p id="versionLabel">v1.1.40</p>
+        <p id="versionLabel">v1.1.41</p>
       </div>
       <nav class="nav">
         <button class="nav-parent open" id="employeeDataToggle" type="button" aria-expanded="true">Employee Data <span>▾</span></button>
@@ -106,13 +106,15 @@
     </main>
   </div>
 
+  <div id="selfServiceScreen" hidden></div>
   <div id="modalRoot" class="modal-root no-print" aria-live="polite"></div>
   <div id="toast" class="toast no-print"></div>
   <div id="printArea"></div>
 
-  <script src="data-store.js?v=1.1.40-casual"></script>
-  <script src="payment-details.js?v=1.1.40-casual"></script>
-  <script src="payroll-engine.js?v=1.1.40-casual"></script>
-  <script src="app.js?v=1.1.40-casual"></script>
+  <script src="data-store.js?v=1.1.41"></script>
+  <script src="payment-details.js?v=1.1.41"></script>
+  <script src="self-service.js?v=1.1.41"></script>
+  <script src="payroll-engine.js?v=1.1.41"></script>
+  <script src="app.js?v=1.1.41"></script>
 </body>
 </html>

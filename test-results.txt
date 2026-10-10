@@ -1,5 +1,5 @@
-Payroll/HCM App v1.1.40 verification
-185 existing test blocks + 21 new feature test groups; 1049 assertion call sites across both suites.
+Payroll/HCM App v1.1.41 verification
+185 existing test blocks + 46 feature test groups (23 payment/account/reimbursement + 23 self-service); 1204 assertion call sites across three suites.
 
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
@@ -109,7 +109,33 @@ PASS: browser script order/version metadata and migration retain all account/led
 PASS: payslip omits Super Account and labels employer contributions with the frozen fund name
 PASS: casual-only combined payslip retains position lines, retro settlement, single recovery/account and final net
 PASS: casual-to-permanent and permanent-to-casual periods keep mixed-employment position grouping
-PASS: 21 v1.1.40 feature tests completed. UI tests use an event/DOM harness; live-browser QA is not claimed.
+PASS: draft reimbursement increases net only and excludes PAYG/STSL taxable bases
+PASS: draft reimbursement-only and retro reimbursement adjustments have zero tax
+PASS: 23 feature tests completed. UI tests use an event/DOM harness; live-browser QA is not claimed.
+PASS: manager position resolves only current eligible direct reports; ambiguous and missing managers are errors
+PASS: ESS submission is own-only, pending, manager-only initial alert and invisible to payroll processing
+PASS: restricted leave types, invalid dates/duration/evidence and manager-only AWOL are enforced
+PASS: pending overlap and balance reservations do not mutate committed balances
+PASS: future personal pending reservations also reduce available request capacity
+PASS: manager approval and denial scopes, required comments, notifications and stale request handling
+PASS: withdraw pending only, approved deletion by direct manager, archive and payroll recalculation
+PASS: overdue reminder goes to manager and payroll once; each recipient can mark it read independently
+PASS: manager reassignment reroutes queue/alerts and removes prior manager access
+PASS: ESS finalised own payslips: exactly recent ten, date range and foreign/open exclusions
+PASS: MSS earnings use only direct reports and apply rate-based and non-taxable payments correctly
+PASS: MSS casual/HDA/fixed allowances save with correct source position and amount
+PASS: deleting approved leave after finalisation generates retro reversal without rewriting finalised pay
+PASS: pending Annual Leave reserves later requests even when a new request is earlier
+PASS: suspended manager role or terminated actors cannot access team actions
+PASS: archive, scoped notifications and request state survive export/import without repayment or status changes
+PASS: ESS tiles, exact sidebar order, read-only tax/bank/super/job and blank timesheets render
+PASS: actual ESS form submits pending request; MSS queue shows full details and approves
+PASS: actual MSS tiles, direct reports, readonly details, auto-approved booking and scoped payments save
+PASS: actual monthly calendar is team-scoped, MSS timesheets blank and notification refresh preserves form input
+PASS: actual pending employee delete and approved manager delete obey workflow and notify
+PASS: next-pay MSS earnings are permitted but do not enter current pay
+PASS: actual ESS finalised payslip list excludes foreign/open rows and expands earlier dates
+PASS: 23 v1.1.41 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
 
 All JavaScript syntax PASS.
 Actual UI rendering/event handlers exercised in a DOM harness.

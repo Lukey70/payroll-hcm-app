@@ -1,13 +1,13 @@
-Payroll/HCM App v1.1.40 code review
+Payroll/HCM App v1.1.41 code review
 
-- Added payment-details.js: fund/assignment validation, effective account selection, frozen snapshots, contribution report, recovery ledger and pending reminders.
-- Stable fund IDs and soft-delete tombstones preserve assignment identity and error detection. USI edit/recreation does not reassign employees.
-- No historical bank/super editing or assignment deletion. Unique employee/date/sequence and latest-applicable selection yield one effective account. Account/member numbers stay strings.
-- Recovery debt derives from opening debt minus finalised repayments. Previews never repay. One idempotent cycle ledger entry aggregates all position deductions. Available-net caps apply to both whole pay and each position, including rounded residue.
-- Existing tax/OTE/employer-super calculation bases remain unchanged. New finalised payslips freeze all account details/contribution totals; old stored records are not backfilled.
-- Pending status entry sets a timer; migration uses trustworthy contiguous pending history or current time. More than 72 hours triggers once per episode; confidential leave wording remains private.
-- Bank/super changes invalidate open-pay certification. Tab navigation refreshes catalogue-linked details.
-- Casual-only grouping uses effective employment across the whole current period, not the selected earning position or a future appointment. All current/retro casual work shares a Casual payslip; source row positions remain for settlement matching. Mixed casual/non-casual periods retain position grouping. Existing finalised stored records are not rewritten.
-- Fixed employment-check helper signature while testing account warnings. Existing compatibility fixtures remain passing.
+- Added self-service.js service layer and standalone ESS/MSS UI adapter. Engine exports these for both browser and Node tests. Browser load order is DataStore, PaymentDetails, SelfService, PayrollEngine, App.
+- Scope checks occur at each service action; ESS derives employee ID from the signed-in user, ignoring submitted target IDs. MSS derives current direct reports from Reports To and effective position occupants. Self-approval and inactive manager roles are rejected.
+- Request validation uses a cloned validation state with pending requests temporarily treated as approved. Actual state/payroll remains unchanged until approval. Current/future pending reservations and later annual commitments are tested. Approval excludes its own request during revalidation.
+- Denial requires a comment. Employee withdrawal is pending-only; manager deletion is approved-only and archived. Finalised leave deletion is tested for retro reversal with frozen original payslips.
+- Alerts contain explicit recipient IDs and per-recipient read status. Initial manager submission alerts are excluded from the payroll bell; overdue reminders target manager and payroll. Current manager reassignment updates pending routing.
+- MSS earnings save validated source dates/type/units/positions. Rate-based amounts retain an empty amount override so the payroll engine calculates real rate-based earnings; fixed/date allowances follow engine rules. Current/previous/next periods mirror payroll Additional Earnings.
+- Read-only views construct scoped tables and expose no personal/bank/tax/super mutation controls. Full sensitive data still resides in localStorage; UI/service authorization is not a server-side security boundary.
+- Reimbursement nonTaxable flag propagates into current/retro tax handling; presentation label changes do not alter source descriptions used for settlement. Frozen old withholding is not silently rewritten.
+- Existing UI and regression tests pass alongside role/action/DOM-handler tests. A DOM harness dispatch bug was fixed in the harness while testing; no live browser QA is claimed.
 
-Full regression and feature tests, syntax, exact ZIP manifest/extracted tests and HTTP asset byte checks pass. UI event/DOM harness tests are not live-browser visual QA. No real employee export was supplied. No payment submission or closed-app notification service is implemented.
+Material limitations: browser-local shared-data model, existing browser-readable credentials, no server authentication/authorization, no closed-app notifications, no real employee data supplied. Production multi-user security remains a separate backend task, as documented.

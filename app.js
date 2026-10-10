@@ -53,6 +53,16 @@
   const esc = value => String(value == null ? '' : value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const uid = prefix => DataStore.uid(prefix);
   const E = PayrollEngine;
+  const S = E.selfService;
+  let ssUI=null;
+  function selfServiceUI(){
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    return ssUI;
+  }
+  function openSelfService(area){
+    if(sessionStorage.getItem('payrollAuthed')!=='true'||!currentUserId)return logout();
+    try{selfServiceUI().show(area);}catch(err){alert(err.message);showLanding();}
+  }
 
   document.addEventListener('DOMContentLoaded', init);
 
@@ -74,7 +84,7 @@
     calculateAllForCurrent();
     if(E.ensureContractExpiryNotifications(state,todayIso())) save();
     renderAll();
-    if(typeof setInterval==='function') setInterval(()=>{ if(E.ensurePendingLeaveNotifications(state)){save();renderAlerts();} },60000);
+    if(typeof setInterval==='function') setInterval(()=>{ E.ensurePendingLeaveNotifications(state);S.syncNotifications(state);save();if(currentUserId){renderAlerts();if(ssUI&&$('selfServiceScreen')&&!$('selfServiceScreen').hidden)ssUI.refreshNotifications();} },60000);
   }
 
   function attachGlobalEvents(){
@@ -106,7 +116,7 @@
     toggle.classList.toggle('open', open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  function unreadAlerts(){ return (state.alerts||[]).filter(a=>a && a.read !== true); }
+  function unreadAlerts(){ return S.alertsFor(state,currentUserId).filter(a=>!String(a.key||'').startsWith('leave-submit:')&&!String(a.key||'').startsWith('leave-withdraw:')); }
   function alertKeyExists(key){ return !!key && (state.alerts||[]).some(a=>a && a.key===key); }
   function addAlert(message, key, type='info', action=null){
     if(!message) return;
@@ -117,7 +127,7 @@
   }
   function markAlertRead(alertId){
     const a=(state.alerts||[]).find(x=>x.id===alertId);
-    if(a){ a.read=true; a.readAt=new Date().toISOString(); save(); renderAlerts(); }
+    if(a){try{S.readAlert(state,currentUserId,alertId);}catch(_){return;}a.readAt=new Date().toISOString();save();renderAlerts();}
   }
   function clearCertificationAlerts(cycleId){
     const cycleToken=String(cycleId);
@@ -184,6 +194,10 @@
     const dropdown=$('alertsDropdown'); const bell=$('alertsBell');
     if(dropdown) dropdown.setAttribute('hidden','');
     if(bell) bell.setAttribute('aria-expanded','false');
+    if(action&&action.area){
+      if(action.area==='mss'&&!S.profile(state,currentUserId).mss){attemptShowTab('leave',document.querySelector('.nav-btn[data-tab="leave"]'));return;}
+      selfServiceUI().show(action.area,action.page==='requests'?'leave':action.page);return;
+    }
     if(!action || !action.tab) return;
     if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
     if(action.tab==='absenceBalance' && action.empId) selectedReportEmp=String(action.empId);
@@ -231,7 +245,8 @@
       const name=String((activeRate&&activeRate.position)||e.position||'');
       position=(state.positions||[]).find(p=>p.active!==false&&String(p.positionName||'')===name)||null;
     }
-    return {payroll:!!(position&&position.accessPayrollManagement===true),mss:!!(position&&position.accessManagerSelfService===true),position,row};
+    const eligible=position&&position.active!==false&&E.isEmployedOn(e,onDate);
+    return {payroll:!!(eligible&&position.accessPayrollManagement===true),mss:!!(eligible&&position.accessManagerSelfService===true),position,row};
   }
   function ensureLoginCredential(empId){
     state.loginCredentials=state.loginCredentials||{};
@@ -260,11 +275,12 @@
     h('landingTiles',`<div class="landing-slot landing-slot-payroll">${payrollTile}</div><div class="landing-slot landing-slot-ess">${essTile}</div><div class="landing-slot landing-slot-mss">${mssTile}</div>`);
     document.querySelectorAll('[data-landing-area]').forEach(button=>button.addEventListener('click',()=>{
       if(button.dataset.landingArea==='payroll') openPayrollManagement();
-      else if(button.dataset.landingArea==='ess') modal('Employee Self-Service','<p>Coming Soon</p>','<button type="button" class="secondary" data-close-modal>Close</button>',true);
-      else modal('Manager Self Service','<p>Coming Soon</p>','<button type="button" class="secondary" data-close-modal>Close</button>',true);
+      else if(button.dataset.landingArea==='ess') openSelfService('ess');
+      else openSelfService('mss');
     }));
   }
   function showLanding(){
+    if(ssUI)ssUI.hide();
     if(sessionStorage.getItem('payrollAuthed')!=='true'||!currentUserId) return logout();
     const shell=$('appShell'); const landing=$('landingScreen');
     if(shell) shell.hidden=true;
@@ -275,6 +291,7 @@
     resetTabScroll();
   }
   function openPayrollManagement(){
+    if(ssUI)ssUI.hide();
     const profile=accessProfileForEmployee(currentUserId,todayIso());
     if(!profile.payroll){ showLanding(); return alert('You do not have access to Payroll Management.'); }
     const landing=$('landingScreen'); const shell=$('appShell');
@@ -321,6 +338,7 @@
     }else h('loginError','Incorrect password.');
   }
   function logout(){
+    if(ssUI)ssUI.hide();
     sessionStorage.removeItem('payrollAuthed');
     sessionStorage.removeItem('payrollUserId');
     currentUserId='';
@@ -382,6 +400,7 @@
     const c=currentCycle();
     const oldResults=state.payResults[String(c.id)] || [];
     const newResults=E.calculateAll(state,c.id,false);
+    S.syncNotifications(state);
     state.payResults[String(c.id)] = newResults;
     reconcileCertificationForCycle(c, oldResults, newResults);
     save();
@@ -438,6 +457,7 @@
     leave.status=status;
     leave.pendingApprovalSince=status==='Awaiting Manager Approval'?(new Date()).toISOString():'';
     leave.pendingApprovalNotifiedSince='';
+    S.notifyDecision(state,leave,status,currentUserId);
     state.auditLog=state.auditLog||[];
     state.auditLog.unshift(`Leave status changed for ${E.employeeName(emp(leave.empId)||{})}: ${leave.type} ${E.fmtPay(leave.startDate)} - ${E.fmtPay(leave.endDate)} -> ${status} (${source}).`);
     save(); calculateAllForCurrent(); renderAll();
@@ -528,6 +548,7 @@
     showTab(tab, btn);
   }
   function showTab(tab, btn){
+    if(currentUserId&&!S.profile(state,currentUserId).payroll){showLanding();return;}
     const leavingDeductions = document.getElementById('deductions').classList.contains('active') && tab !== 'deductions';
     const leavingPayslip = document.getElementById('payslip').classList.contains('active') && tab !== 'payslip';
     const leavingJobData = document.getElementById('jobData') && document.getElementById('jobData').classList.contains('active') && tab !== 'jobData';
@@ -1296,8 +1317,8 @@
     const requested = $('leaveDuration') && !$('leaveDuration').readOnly ? Number(v('leaveDuration')||0) : undefined;
     const evidenceProvided=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
     const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
-    const result=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),requested,undefined,{evidenceProvided,payOption});
-    if(!result.ok) return alert(result.message);
+    let result;
+    try{result=S.validateRequest(state,{empId:v('leaveEmp'),type:v('leaveType'),startDate:v('leaveStart'),endDate:v('leaveEnd'),requestedHours:requested,evidenceProvided,payOption});}catch(err){return alert(err.message);}
     state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
     save(); closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
@@ -1500,7 +1521,12 @@
     if(!sourceEnd) return false;
     return E.compare(sourceEnd,financialYearBounds(paymentDate).start)<0;
   }
-  function payslipDisplayDescription(row,paymentDate){ return isPreviousFinancialYearRetro(row,paymentDate)?'Retro PFY':String((row&&row.description)||'Additional Hours'); }
+  function payslipDisplayDescription(row,paymentDate){
+    const description=String((row&&row.description)||'Additional Hours');
+    if(description==='Reimbursement') return 'Reimbursement (Non-Taxable)';
+    if(description==='Reimbursement Retro') return isPreviousFinancialYearRetro(row,paymentDate)?'Reimbursement (Non-Taxable) Retro PFY':'Reimbursement (Non-Taxable) Retro';
+    return isPreviousFinancialYearRetro(row,paymentDate)?'Retro PFY':description;
+  }
   function isAmountOnlyPayslipRow(row){
     if(!row) return false;
     if(row.amountOnly===true) return true;
@@ -1881,6 +1907,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const warnings=[];
     const results=currentResults();
     warnings.push(...E.paymentDetailErrors(state,c,results));
+    warnings.push(...S.errors(state));
     (state.deductions||[]).filter(d=>d.saved!==false&&!d.deleted&&d.deductionType==='Recovery Deduction').forEach(d=>{try{E.validateRecoveryDeduction(d);}catch(err){warnings.push(`${E.employeeName(emp(d.empId)||{})}: ${err.message}`);}});
     state.employees.forEach(e=>{
       const active=employeeDisplayStatus(e)!=='Terminated';
@@ -1919,6 +1946,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.1.41',notes:['Added Employee Self Service with Payslips, Leave & Timesheets and Personal Details tiles, each with an icon.','Added Manager Self Service with Approvals, Direct Reports, Leave & Timesheets, Payment Processing and Employee Details tiles.','Scoped ESS to the signed-in employee and MSS to current direct reports. Personal, bank, tax and super details are read-only; payroll retains editing rights.','Added pending request submission, manager approval/denial, employee notifications, deletion rules, reserved pending balances and missing-manager errors.','Three-day pending reminders notify the Reports To manager and payroll, with independent read status.','Reimbursement is excluded from tax and labelled Reimbursement (Non-Taxable), including retro display.','This remains a browser-local application, not a secure shared server service.']},
     {version:'v1.1.40',notes:['Added Settings → Super fund catalogue, effective-dated employee Super and Bank Details, and frozen finalised payslip disbursements.','Added post-tax Recovery Deduction with finalisation-only debt repayments and capped final repayments.','Added one reminder per leave request awaiting manager approval for more than three days.','Removed the payslip Super Account section and added the saved fund name to employer contribution labels.','Casual-only employees receive one payslip labelled Casual across all worked positions, retaining position names on earning lines. Mixed and non-casual employment retains position-based payslips.']},
     {version:'v1.1.39',notes:[
       'Consolidated Higher Duties Allowance by position, rate and source pay period, and ordered payslip earnings by Begin Date from earliest to latest.',

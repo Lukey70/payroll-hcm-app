@@ -1,0 +1,39 @@
+Payroll/HCM App v1.1.41
+Built from the latest v1.1.40 with the tested reimbursement draft fix. Retains single Casual payslips, position/acting payslips, consolidated HDA, chronological earnings, retro settlement, Super/Bank records and Recovery Deduction.
+
+EMPLOYEE SELF SERVICE
+Three icon/text tiles: Payslips, Leave & Timesheets, Personal Details.
+- Payslips: signed-in employee only; finalised payslips only; most recent ten by default; From/To filters for earlier payslips; print/save as PDF and HTML download.
+- Leave & Timesheets sidebar: Absence Request, My Requests, Absence Balances, Leave Calendar, Timesheets. Timesheets main content is blank.
+- Employees request Personal Leave, Annual Leave, Long Service Leave, Bereavement Leave or Leave without Pay. Submitted requests are Awaiting Manager Approval; Reports To receives the initial notification. No initial request notification appears in Payroll Management.
+- My Requests shows employee, type, dates, hours, status, approver and decision comment. Employees can delete pending requests only.
+- Personal Details sidebar: Personal Details, Bank Details, Tax Details, Super, Job Summary. All own records only and read-only. Payroll remains the sole editor of personal/bank/tax/super details.
+- Home and Back to Employee Self Service on each page. Notifications are shown in the portal.
+
+MANAGER SELF SERVICE
+Five icon/text tiles: Approvals, Direct Reports, Leave & Timesheets, Payment Processing, Employee Details.
+- Approvals: pending direct-report requests in the sidebar, details in the main page, Approve/Deny actions; mandatory comment for denial. No self-approval or other-manager access.
+- Direct Reports: employee names in the sidebar, read-only Job Summary in main content.
+- Leave & Timesheets sidebar: Request Absence, View Request, Absence Balance, Timesheet Manager, Absence Monthly Calendar. Timesheet Manager is blank.
+- Managers book the five employee leave types plus Absent Without Leave. On-behalf bookings are automatically Approved and notify the employee. View Request includes all approved, denied and pending direct-report requests; managers can delete approved leave. Deletions preserve an archive and notify the employee. Post-finalisation deletion uses existing retro recalculation, preserving original finalised payslips.
+- Balances show actual/projected hours and pending reservations. Monthly calendar covers direct reports only.
+- Payment Processing: saved Additional Earnings for direct reports; add/edit/delete, previous/current/next pay periods, source work dates, Casual/HDA position selection and existing rate/fixed/amount calculations. No pay finalisation in MSS. Historical changes flow into retro payroll.
+- Employee Details sidebar: Personal Details, Bank Details, Tax Details, Super; read-only and direct reports only.
+- Home and Back to Manager Self Service on each page.
+
+REQUEST ROUTING, VALIDATION AND NOTIFICATIONS
+- Reports To is resolved from effective Job Data/position against exactly one active employee in an MSS-enabled manager position. Missing or ambiguous managers appear in Check for Errors; submissions cannot silently become unassigned. Current assignment changes reroute pending queues and submission alerts.
+- Pending requests reserve validation capacity and block date overlaps without entering payroll or reducing committed balances. Future reservations are included, including later annual requests when an earlier request is submitted. Existing schedule, employment, partial-day, evidence and entitlement rules apply. Approval revalidates the request.
+- Approval/denial notifications go to the employee, including denial comment.
+- More than 72 elapsed hours awaiting approval triggers one reminder per pending episode to Reports To and payroll. Each recipient has independent read status. Checks run at startup/calculation and every minute while the app is open; there is no closed-app push/email service.
+- Request deletions are archived. Employee cannot delete approved leave; unrelated managers cannot act on it. Bank/super save audit restrictions from v1.1.40 remain unchanged.
+
+REIMBURSEMENT
+Rows now carry nonTaxable=true. Current reimbursement is excluded from PAYG/STSL taxable bases, remains cash/net pay, and adds no hours/leave accrual/employer super. Label: Reimbursement (Non-Taxable); retro labels preserve Retro/Retro PFY. New and changed reimbursements use non-taxable treatment. Previously finalised payslips are not rewritten and prior withholding is not automatically refunded without a separate correction workflow.
+
+IMPORTANT DEPLOYMENT LIMIT
+This is the existing browser/localStorage app with scoped service/UI checks. It does NOT implement server-side authentication/authorization or shared multi-device persistence. All payroll data and existing credentials remain in that browser. Someone with browser developer access can inspect/change stored data. Separate employee devices do not share requests automatically. Do not treat this ZIP as a production secure multi-user payroll portal; a backend and migration are required for that use.
+
+VALIDATION
+Existing regression suite, account/recovery/reimbursement tests and self-service permission/workflow/UI-handler tests pass. Exact ZIP is extracted and retested, JavaScript syntax checked, manifest verified, and HTTP runtime assets byte-compared.
+UI tests use a DOM/event harness. No Chromium binary is available, so live-browser visual/interaction QA is not claimed. No actual employee payroll export was supplied; acceptance testing with a backed-up data copy remains necessary.
