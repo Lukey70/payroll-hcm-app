@@ -1,7 +1,6 @@
-Payroll/HCM App v1.2.2
+Payroll/HCM App v1.2.3
 
-Export Data and keep the JSON backup before updating. Use the same browser/site origin or import the backup.
-
+Export Data and retain the JSON backup before updating. Preserve browser/site origin or import the backup.
 Upload all nine runtime files together:
 index.html
 styles.css
@@ -12,19 +11,20 @@ payroll-engine.js
 support-requests.js
 app.js
 latest-version.json
+Keep script order. Refresh and confirm v1.2.3. Existing data migrates in place; finalised payroll, accounts, recoveries, leave and cases are retained. Support documents/messages/resolution history are included in backups.
 
-Keep index.html script order; Support Requests must load before app.js. Refresh and confirm v1.2.2. Existing storage key is preserved, with accounts, finalised pay, recoveries and request archives retained. Support requests/messages/attachments are included in Export Data.
-Payroll/MSS access is controlled by Settings > Positions. Acting assignments replace substantive manager visibility until return/expiry. Multiple Reports To on the current assignment share visibility. Operations Manager automatic leave approval remains.
-Managers certify in MSS; Payroll Management shows all employees with shared Manager Certified status and separate Certify controls for Payroll's second review. Pay changes invalidate affected checks.
-Attachment limits: five files per message, 1 MB per file, 2 MB per case total. Browser storage limits also apply; failed saves roll back the pending change.
-Resolved cases close after 14 days, checked at startup and every minute while running.
+Payroll/MSS access is configured in Settings > Positions. Current acting assignment replaces substantive reporting until return/expiry. All Payroll users can open all cases; ESS/MSS own-request lists are limited to Raised by. Payroll on-behalf creation requires Raised by and Raised for selections.
+Raiser replies notify only assignee, or nobody if unassigned. Payroll replies and resolution notify raiser. Reopening requires a reason and is available only while Resolved; Closed requires a new case. Fourteen-day auto closure checks startup/every minute while running.
+Attachments: up to five per submission/message, 1 MB each, 2 MB/case total. Browser quotas also apply; failed saves roll back changes.
+Certifiers auto-populate from current logged-in assignment. Shared manager tick is read only in Payroll; its Certify controls are separate company-wide review.
 
 Run:
 node test-cases.js
 node tests/payment-details-v140.test.js
 node tests/self-service-v121.test.js
 node tests/support-v122.test.js
+node tests/update-v123.test.js
 
-Validate on a backed-up copy with your real employee data before live use.
-This is browser-local storage with browser-readable credentials, no shared multi-device database and no server authorization. Bell notifications are in-app, not email/push. No processing runs while closed. A backend is required for a secure shared staff portal.
-Live-browser and real employee export acceptance QA were unavailable. See test-results.txt and RELEASE-NOTES-v1.2.2.txt.
+Before live use, validate your backed-up real employee data, particularly casual eligibility, Payroll/non-owner case access, on-behalf creation, attachments, reopening, assignment notifications and certification identities.
+This remains browser-local data with readable credentials, no shared multi-device database/server authorization, and in-app notifications only. No processing runs while closed. A backend is required for a secure shared staff portal.
+Live-browser visual QA and real employee export acceptance QA were unavailable; see test-results.txt.

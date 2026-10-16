@@ -1,0 +1,30 @@
+Payroll/HCM App v1.2.3
+
+Home and notifications
+- Centred three fixed home slots: Payroll Management left, ESS middle, MSS right. Inaccessible tiles are absent while remaining tiles retain their positions and existing sizes.
+- New recipient notifications fade in at bottom right, remain for 10 seconds, then fade out. Bell entries remain unread until explicitly marked read. Existing unread entries are not replayed on login, and new alerts show once per session. Changing users/logout clears popups.
+
+Support Requests
+- Attach Documents on the initial request page in ESS/MSS/Payroll. Submission documents appear beside case details and are downloadable. Existing limits remain five per submission/message, 1 MB/file, 2 MB/case total including initial documents.
+- Payroll Raise Support Request button. Raised by/Raised for start blank and must be selected; actual logged-in creator recorded separately in the case/audit history. Receipt/messages/resolution route to selected Raised by.
+- Every active employee with Payroll access can open every case, independently of assignment. Fixed stale portal-mode/field binding when switching from ESS/MSS and restored correct Payroll routing from case notifications.
+- Resolved cases can be reopened by Raised by using Re-open Support Request and a mandatory reason message. Assignment and history retained, Open status restored, previous resolution notes retained, and the previous closure countdown cleared. Each subsequent resolution starts a new 14-day countdown. Closed cases require a new request.
+- Newest messages at the top, retaining raiser right/Payroll left.
+- Raiser message notifies only Assigned to; unassigned cases send no message notification. Payroll replies notify Raised by. No broadcast to all Payroll employees.
+- Asynchronous attachment reads recheck form/case/user identity. Invalid files, read failures and save failures leave no partial case, receipt or sequence change.
+
+Certification
+- Name and Position automatically show logged-in employee/current effective position, including acting positions, in MSS and Payroll. These fields are read only; completed reports retain the saved signatory.
+- Payroll Manager Certified column is a disabled/read-only checkbox reflecting shared MSS certification. Separate Payroll Certify controls remain editable for the second review.
+
+Casual ESS
+- Login/session and ESS eligibility aligned. Active legacy casual records without ongoing position, roster or employment start-date segment can access their own ESS without inventing payroll/service dates or granting position access.
+- Terminated, closed historical employment and future starters remain blocked. Regular active casual appointments remain supported.
+
+Validation
+185 existing regression blocks and 93 feature groups: 23 payments/accounts, 37 self-service, 15 support/certification and 18 v1.2.3 update groups. Actual rendering/event handlers exercised in DOM harness. Exact ZIP extracted/retested; JavaScript syntax, SHA-256 manifest and runtime HTTP asset bytes verified.
+Live-browser visual testing and real employee export acceptance testing were unavailable.
+
+Update
+Export Data and retain the backup. Replace all nine runtime files together, keep index.html script order, refresh and confirm v1.2.3.
+Browser-local storage and readable credentials remain: no shared multi-device data or server-side authorization. Bell/popups are in-app, not email/push; no closed-app processing. Secure shared operation requires a backend.

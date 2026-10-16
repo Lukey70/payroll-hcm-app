@@ -4,14 +4,30 @@
     const uid=p=>`${p}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const today=()=>E.iso(new Date());
     const employee=(s,id)=>s.employees.find(e=>e.id===id);
-    const active=(e,date)=>!!e&&E.isEmployedOn(e,date);
+    function isActiveEmployee(s,e,date=today()){
+      if(!e||e.status==='Terminated'||E.isTerminatedOn(e,date))return false;
+      if(E.isEmployedOn(e,date))return true;
+      // Active legacy casual records may have no ongoing Job Data/roster/start date.
+      // Portal access does not invent employment dates or change payroll service.
+      const type=E.activeEmploymentType(s,e,date)||e.type;
+      if(type!=='Casual'||e.status!=='Active')return false;
+      const start=e.startDate||e.originalStartDate||'';
+      if(start&&start>date)return false;
+      if(E.employmentSegments(e).length)return false;
+      const rows=(s.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&r.effectiveDate).sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+      const current=rows.find(r=>r.effectiveDate<=date);
+      if(current?.action==='Termination'||!current&&rows.some(r=>r.action==='Commencement'&&r.effectiveDate>date))return false;
+      return true;
+    }
+    const active=(s,e,date)=>isActiveEmployee(s,e,date);
+
     const job=(s,id,date)=>s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date&&(!r.endDate||r.endDate>=date)).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
     function profile(s,id,date=today()){
       const e=employee(s,id),j=job(s,id,date),number=j?.positionNumber;
       const p=s.positions.find(p=>p.active!==false&&(number?String(p.positionNumber)===String(number):p.positionName===(E.activePayRate(s,id,date).position||e?.position)));
-      return {payroll:active(e,date)&&p?.accessPayrollManagement===true,mss:active(e,date)&&p?.accessManagerSelfService===true};
+      return {payroll:active(s,e,date)&&p?.accessPayrollManagement===true,mss:active(s,e,date)&&p?.accessManagerSelfService===true};
     }
-    function actor(s,id,date=today()){if(!active(employee(s,id),date))throw Error('Sign in as an active employee.');return employee(s,id);}
+    function actor(s,id,date=today()){if(!active(s,employee(s,id),date))throw Error('Sign in as an active employee.');return employee(s,id);}
     function assignments(s,id,date=today()){
       const rows=s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate<=date).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
       const current=rows[0];if(!current)return [];
@@ -23,7 +39,7 @@
     }
     function isOperationsManager(s,id,date=today()){
       const j=job(s,id,date),p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(j?.positionNumber));
-      return active(employee(s,id),date)&&!!p&&String(p.positionName||'').trim().toLowerCase()==='operations manager';
+      return active(s,employee(s,id),date)&&!!p&&String(p.positionName||'').trim().toLowerCase()==='operations manager';
     }
     function managerFor(s,id,date=today()){
       const e=employee(s,id),rows=assignments(s,id,date);
@@ -33,13 +49,13 @@
         return (Array.isArray(value)?value:String(value).split(',')).map(x=>String(x).trim()).filter(Boolean);
       }))];
       if(!positions.length)return {managerId:'',managerIds:[],managerName:'',message:isOperationsManager(s,id,date)?'Automatically Approved':'No Reports To position is assigned.',automatic:isOperationsManager(s,id,date)};
-      const matches=s.employees.filter(m=>m.id!==id&&active(m,date)&&profile(s,m.id,date).mss&&positions.some(n=>String(job(s,m.id,date)?.positionNumber||'')===n));
+      const matches=s.employees.filter(m=>m.id!==id&&active(s,m,date)&&profile(s,m.id,date).mss&&positions.some(n=>String(job(s,m.id,date)?.positionNumber||'')===n));
       const unresolved=positions.filter(n=>!matches.some(m=>String(job(s,m.id,date)?.positionNumber||'')===n));
       return {managerId:matches[0]?.id||'',managerIds:matches.map(m=>m.id),managerName:matches.map(E.employeeName).join(', '),reportsTo:positions.join(', '),automatic:isOperationsManager(s,id,date),message:unresolved.length?'Reports To has no active manager with MSS access: '+unresolved.join(', '):''};
     }
     function directReports(s,id,date=today()){
       actor(s,id,date);if(!profile(s,id,date).mss)throw Error('Manager Self Service access is required.');
-      return s.employees.filter(e=>e.id!==id&&active(e,date)&&managerFor(s,e.id,date).managerIds.includes(id));
+      return s.employees.filter(e=>e.id!==id&&active(s,e,date)&&managerFor(s,e.id,date).managerIds.includes(id));
     }
     function assertScope(s,id,target,area='ess',date=today()){
       actor(s,id,date);
@@ -133,7 +149,7 @@
       });
     }
     function errors(s,date=today()){
-      return s.employees.filter(e=>active(e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[`${E.employeeName(e)}: ${m.message}`];});
+      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[`${E.employeeName(e)}: ${m.message}`];});
     }
     function syncNotifications(s,date=today()){
       const payroll=s.employees.filter(e=>profile(s,e.id,date).payroll).map(e=>e.id);
@@ -146,7 +162,7 @@
       }
     }
     function alertsFor(s,id,date=today()){
-      if(!active(employee(s,id),date))return [];
+      if(!active(s,employee(s,id),date))return [];
       return s.alerts.filter(a=>a.recipientIds? a.recipientIds.includes(id)&&!(a.readBy||[]).includes(id):profile(s,id,date).payroll&&a.read!==true);
     }
     function readAlert(s,id,alertId,date=today()){
@@ -197,7 +213,7 @@
       if(a.earningType==='Motor Vehicle Allowance - Return Trip')return 50;
       return E.round2(Number(a.hours||0)*Number(E.activePayRate(s,a.empId,a.startDate).hourlyRate||0)*(a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1));
     }
-    return {EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,saveAdditional,deleteAdditional,additionalAmount};
+    return {isActiveEmployee,EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,saveAdditional,deleteAdditional,additionalAmount};
   }
   function createUI(o){
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
@@ -342,8 +358,8 @@
       if(o.mountPayments)o.mountPayments('ssMain',user());else put('ssMain','<p>Payment Processing unavailable.</p>');
     }
     function refreshNotifications(){
-      const alerts=S.alertsFor(state(),user());put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary><div class="ss-notification-list">${alerts.map(a=>`<div class="history-item"><button class="secondary" data-ss-alert="${esc(a.id)}">${esc(a.message)}</button> <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}</div>`);
-      buttons('data-ss-alert',id=>{const a=S.alertsFor(state(),user()).find(a=>a.id===id);if(a?.action?.page==='support'){page='support';render();o.mountSupport?.('ssSupport',{mode:'own',area,caseId:a.action.caseId});}});
+      const alerts=S.alertsFor(state(),user());o.onNotifications?.(alerts);put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary><div class="ss-notification-list">${alerts.map(a=>`<div class="history-item"><button class="secondary" data-ss-alert="${esc(a.id)}">${esc(a.message)}</button> <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}</div>`);
+      buttons('data-ss-alert',id=>{const a=S.alertsFor(state(),user()).find(a=>a.id===id);if(a?.action?.page==='support'){if(o.openSupportCase)return o.openSupportCase(a.action.caseId);page='support';render();o.mountSupport?.('ssSupport',{mode:'own',area,caseId:a.action.caseId});}});
       buttons('data-ss-read',id=>{mutate(s=>S.readAlert(s,user(),id));refreshNotifications();});
     }
     return {show,hide,render,refreshNotifications};
