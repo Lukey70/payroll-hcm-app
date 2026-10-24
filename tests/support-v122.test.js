@@ -92,7 +92,7 @@ await test('manager certification becomes stale after pay changes and storage fa
  f.context.DataStore.save=()=>false;assert.throws(()=>f.app.certManagerToggle(11,pay.id,true),/save/);assert(!f.s.certifications['11'].managerLines[pay.id].certified);
 });
 await test('MSS direct report payslips use ESS controls and reject printing after manager reassignment',async()=>{
- const f=uiFixture();f.s.payResults['11']=E.calculateAll(f.s,11);f.setUser('manager');f.ui.show('mss','reports');await f.click('ssReportSlips');assert(f.nodes.has('ssPayRecent'));assert(f.nodes.get('ssPrint').disabled);assert(f.html('ssReportPays').includes('Open'));
+ const f=uiFixture();f.s.payResults['11']=E.calculateAll(f.s,11);f.setUser('manager');f.ui.show('mss','reports');await f.click('ssReportSlips');assert(f.nodes.has('ssPayRecent'));assert(f.html('ssMain').includes('Open'));assert(!f.nodes.has('ssPrint'));await f.choose('data-ss-slip',S.payslips(f.s,'worker','','',false,DATE)[0].id);assert(f.nodes.get('ssPrint').disabled);
  f.s.jobDataRows.find(j=>j.empId==='worker').reportsTo='MGR2';f.nodes.get('ssPrint').disabled=false;await f.click('ssPrint');assert(f.errors.some(e=>e.includes('access')));
 });
 await test('statement omits Position Refresh; Audit moved to Settings; consistent tile rows and larger Home icon',async()=>{
@@ -104,9 +104,9 @@ await test('statement omits Position Refresh; Audit moved to Settings; consisten
 await test('app wiring opens ESS support tile, submission bell links, MSS certification and direct-report payslips',async()=>{
  const f=uiFixture();f.login('worker');f.app.openSelfService('ess');await f.choose('data-ss-tile','support');assert(f.html('ssSupport').includes('My Support Requests'));
  await f.click('supportNew');f.set('supportSubject','Integrated request');f.set('supportDescription','Check integration');await f.click('supportSubmit');assert.equal(f.s.supportRequests.length,1);
- assert(f.html('ssNotifications').includes('has been submitted to Payroll'));await f.choose('data-ss-alert',f.s.alerts.find(a=>a.type==='Support Request').id);assert(f.html('ssSupport').includes('Integrated request'));
+ assert(f.html('alertsDropdown').includes('has been submitted to Payroll'));await f.choose('data-alert-go',f.s.alerts.find(a=>a.type==='Support Request').id);assert(f.html('ssSupport').includes('Integrated request'));
  f.login('manager');f.s.payResults['11']=E.calculateAll(f.s,11);f.app.openSelfService('mss');await f.choose('data-ss-tile','certification');assert(f.html('certOutput').includes('worker Test'));assert(!f.html('certOutput').includes('outsider Test'));
- f.app.openSelfService('mss');await f.choose('data-ss-tile','reports');await f.click('ssReportSlips');assert(f.nodes.has('ssPrint'));assert(f.nodes.get('ssPrint').disabled);
+ f.app.openSelfService('mss');await f.choose('data-ss-tile','reports');await f.click('ssReportSlips');assert(!f.nodes.has('ssPrint'));await f.choose('data-ss-slip',S.payslips(f.s,'worker','','',false,DATE)[0].id);assert(f.nodes.get('ssPrint').disabled);
  assert.deepStrictEqual(f.errors,[]);
 });
 console.log(`PASS: ${count} v1.2.4 support/certification/UI test groups.`);

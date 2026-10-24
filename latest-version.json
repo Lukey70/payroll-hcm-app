@@ -1,6 +1,6 @@
 {
-  "version": "1.2.4",
+  "version": "1.2.5",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Dashboard, report tiles and earnings PDF, leave screen, compensation leave, salary packaging, manager request templates, activity history, cash-out migration and casual login fix",
-  "releaseNotes": "RELEASE-NOTES-v1.2.4.md"
+  "notes": "Support request redesign and separate window, notification pane, ESS/MSS payslip lists, simplified manager templates, Additional Earnings navigation, leave balance cards and payroll-only overpayment adjustments",
+  "releaseNotes": "RELEASE-NOTES-v1.2.5.md"
 }

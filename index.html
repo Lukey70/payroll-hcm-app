@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Payroll/HCM App</title>
-  <link rel="stylesheet" href="styles.css?v=1.2.4">
+  <link rel="stylesheet" href="styles.css?v=1.2.5">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -43,7 +43,7 @@
     <aside class="sidebar no-print">
       <div>
         <h1>Payroll/HCM</h1>
-        <p id="versionLabel">v1.2.4</p>
+        <p id="versionLabel">v1.2.5</p>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
@@ -77,8 +77,8 @@
         <input id="importFile" type="file" accept="application/json" hidden>
         <button id="homeButton" class="home-button" type="button" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 10.75 12 3l9 7.75v9.5a.75.75 0 0 1-.75.75h-5.5a.75.75 0 0 1-.75-.75V15h-4v5.25a.75.75 0 0 1-.75.75h-5.5A.75.75 0 0 1 3 20.25z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m1.75 11.75 10.25-9 10.25 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="alerts-menu" id="alertsMenu">
-          <button id="alertsBell" class="alert-bell" type="button" aria-haspopup="true" aria-expanded="false" title="Alerts">🔔<span id="alertsBadge" class="alerts-badge hide">0</span></button>
-          <div id="alertsDropdown" class="alerts-dropdown" hidden>No New Alerts</div>
+          <button id="alertsBell" class="alert-bell" type="button" aria-controls="alertsDropdown" aria-expanded="false" title="Notifications" aria-label="Notifications">🔔<span id="alertsBadge" class="alerts-badge hide">0</span></button>
+
         </div>
       </div>
 
@@ -109,20 +109,21 @@
   </div>
 
   <div id="selfServiceScreen" hidden></div>
+  <aside id="alertsDropdown" class="notification-pane" aria-label="Notifications" tabindex="-1" hidden></aside>
   <div id="modalRoot" class="modal-root no-print" aria-live="polite"></div>
   <div id="toast" class="toast no-print"></div>
   <div id="printArea"></div>
 
   <div id="notificationPopups" class="notification-popups no-print" aria-live="polite" aria-relevant="additions"></div>
-  <script src="data-store.js?v=1.2.4"></script>
-  <script src="payment-details.js?v=1.2.4"></script>
-  <script src="self-service.js?v=1.2.4"></script>
-  <script src="payroll-engine.js?v=1.2.4"></script>
-  <script src="support-requests.js?v=1.2.4"></script>
-  <script src="pdf-fonts.js?v=1.2.4"></script>
-  <script src="payroll-features.js?v=1.2.4"></script>
-  <script src="ui-enhancements.js?v=1.2.4"></script>
-  <script src="app.js?v=1.2.4"></script>
+  <script src="data-store.js?v=1.2.5"></script>
+  <script src="payment-details.js?v=1.2.5"></script>
+  <script src="self-service.js?v=1.2.5"></script>
+  <script src="payroll-engine.js?v=1.2.5"></script>
+  <script src="support-requests.js?v=1.2.5"></script>
+  <script src="pdf-fonts.js?v=1.2.5"></script>
+  <script src="payroll-features.js?v=1.2.5"></script>
+  <script src="ui-enhancements.js?v=1.2.5"></script>
+  <script src="app.js?v=1.2.5"></script>
 </body>
 </html>
 

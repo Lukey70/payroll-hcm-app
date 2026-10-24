@@ -58,10 +58,28 @@
   const nativeAlert=globalThis.alert;function alert(message){if(typeof PayrollUI!=='undefined')PayrollUI.error(message);else nativeAlert(message);}
   let ssUI=null;const supportUIs=new Map();
   const T=SupportRequests.create(E,S);
+  let supportWindowRef=null;const supportWindowName=uid('PayrollSupportRequests');
+  function supportWindowAccess(actorId=currentUserId){return !!actorId&&actorId===currentUserId&&sessionStorage.getItem('payrollAuthed')==='true'&&S.profile(state,actorId).payroll;}
+  function supportViewsChanged(source){
+    renderAlerts();ssUI?.refreshNotifications();
+    for(const [id,ui] of supportUIs)if(id!==source&&$(id)&&!$(id).hidden&&(id!=='support'||$(id).classList.contains('active')))ui.refresh?.();
+  }
+  function commitSupportWindowChanges(actorId){
+    if(!supportWindowAccess(actorId))throw Error('Payroll Management access is required.');
+    if(!DataStore.save(state))throw Error('Unable to save the request. Export a backup or remove large attachments before retrying.');
+    supportViewsChanged('window');
+  }
+  function openSupportWindow(caseId=''){
+    if(!supportWindowAccess())return alert('Payroll Management access is required.');
+    if(supportWindowRef&&!supportWindowRef.closed&&supportWindowRef.PayrollSupportWindow){supportWindowRef.focus();supportWindowRef.PayrollSupportWindow.navigate(caseId);return;}
+    const url=new URL('support-window.html',window.location.href);if(caseId)url.searchParams.set('case',caseId);
+    supportWindowRef=window.open(url.href,supportWindowName,'popup,width=1250,height=900,resizable=yes,scrollbars=yes');
+    if(!supportWindowRef)return alert('Allow pop-ups for this app to open Support Requests in a separate window.');
+    supportWindowRef.focus();
+  }
   function mountSupport(container,options={}){
-    // Remove inactive support markup so shared field IDs cannot bind another portal.
     for(const id of ['support','ssSupport'])if(id!==container)h(id,'');
-    if(!supportUIs.has(container))supportUIs.set(container,SupportRequests.createUI({E,S,getState:()=>state,getUser:()=>currentUserId,esc,reportError:alert,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save the request. Export a backup or remove large attachments before retrying.');renderAlerts();ssUI?.refreshNotifications();}}));
+    if(!supportUIs.has(container))supportUIs.set(container,SupportRequests.createUI({E,S,getState:()=>state,getUser:()=>currentUserId,esc,reportError:alert,openWindow:openSupportWindow,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save the request. Export a backup or remove large attachments before retrying.');supportViewsChanged(container);}}));
     supportUIs.get(container).mount(container,options);
   }
   function openSupportCase(caseId){
@@ -101,7 +119,7 @@
   function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
 
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:presentNotificationPopups,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -150,7 +168,7 @@
     if(employeeDataToggle) employeeDataToggle.addEventListener('click', toggleEmployeeDataNav);
     const alertsBell = $('alertsBell');
     if(alertsBell) alertsBell.addEventListener('click', toggleAlertsDropdown);
-    document.addEventListener('click', closeAlertsWhenClickingAway);
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')closeNotificationPane();});
     window.addEventListener('afterprint', ()=>h('printArea',''));
     ['mousemove','mousedown','keydown','touchstart','click'].forEach(evt=>document.addEventListener(evt, resetInactivityTimers, {passive:true}));
   }
@@ -163,7 +181,7 @@
     toggle.classList.toggle('open', open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  function unreadAlerts(){ return S.alertsFor(state,currentUserId).filter(a=>!String(a.key||'').startsWith('leave-submit:')&&!String(a.key||'').startsWith('leave-withdraw:')); }
+  function unreadAlerts(){ return S.alertsFor(state,currentUserId); }
   function alertKeyExists(key){ return !!key && (state.alerts||[]).some(a=>a && a.key===key); }
   function addAlert(message, key, type='info', action=null){
     if(!message) return;
@@ -173,8 +191,10 @@
     save();
   }
   function markAlertRead(alertId){
-    const a=(state.alerts||[]).find(x=>x.id===alertId);
-    if(a){try{S.readAlert(state,currentUserId,alertId);}catch(_){return;}a.readAt=new Date().toISOString();save();renderAlerts();}
+    const before=DataStore.clone(state.alerts);
+    try{S.readAlert(state,currentUserId,alertId);if(!DataStore.save(state))throw Error('Unable to dismiss this notification. Please try again.');}
+    catch(err){state.alerts=before;return alert(err.message);}
+    renderAlerts();ssUI?.refreshNotifications();
   }
   function clearCertificationAlerts(cycleId){
     const cycleToken=String(cycleId);
@@ -224,30 +244,40 @@
     if(alert && /Certification report|Certification Report|Certification removed/.test(String(alert.message||''))) return { tab:'certification' };
     return null;
   }
+  let notificationTrigger=null;
+  function closeNotificationPane(){
+    const pane=$('alertsDropdown');if(pane)pane.hidden=true;document.body.classList.remove('notification-pane-open');
+    for(const id of ['alertsBell','ssNotifications'])$(id)?.setAttribute('aria-expanded','false');
+  }
+  function renderNotificationPane(alerts=unreadAlerts()){
+    const pane=$('alertsDropdown');if(!pane)return;
+    const glyph=name=>typeof PayrollUI!=='undefined'?PayrollUI.icon(name):'';
+    const ordered=alerts.map((a,i)=>({a,i})).sort((x,y)=>(Date.parse(y.a.createdAt||y.a.date)||0)-(Date.parse(x.a.createdAt||x.a.date)||0)||x.i-y.i).map(x=>x.a);
+    pane.innerHTML=`<header class="notification-pane-header"><div><h2>Notifications</h2><span>${alerts.length} notification${alerts.length===1?'':'s'}</span></div><button id="notificationPaneClose" class="notification-close" type="button" aria-label="Close notifications">×</button></header><div class="notification-pane-list">${ordered.map(a=>{const date=new Date(a.createdAt||a.date||'');return `<article class="notification-entry"><span class="notification-entry-icon" aria-hidden="true">${glyph(/Leave/i.test(a.message||a.type)?'calendar':a.action?.page==='support'?'support':'report')}</span><div><button type="button" class="notification-text" data-alert-go="${esc(a.id)}">${esc(a.message||a.title||'Notification')}</button>${Number.isNaN(date.getTime())?'':`<time datetime="${esc(date.toISOString())}">${esc(date.toLocaleString('en-AU',{dateStyle:'medium',timeStyle:'short'}))}</time>`}</div><button type="button" class="notification-dismiss" data-alert-read="${esc(a.id)}" aria-label="Dismiss notification: ${esc(a.message||a.title||'Notification')}">×</button></article>`;}).join('')||`<div class="notification-empty">${glyph('bell')}<strong>No notifications</strong><p>You’re all caught up.</p></div>`}</div>`;
+    $('notificationPaneClose')?.addEventListener('click',()=>{closeNotificationPane();notificationTrigger?.focus();});
+    pane.querySelectorAll('[data-alert-read]').forEach(b=>b.addEventListener('click',event=>{event.stopPropagation();markAlertRead(b.dataset.alertRead);}));
+    pane.querySelectorAll('[data-alert-go]').forEach(b=>b.addEventListener('click',event=>{event.stopPropagation();navigateFromAlert(b.dataset.alertGo);}));
+  }
   function renderAlerts(){
-    ensureCertificationAlerts();
-    const alerts = unreadAlerts();
-    presentNotificationPopups(alerts);
-    const badge = $('alertsBadge'); const dropdown = $('alertsDropdown');
-    if(badge){ badge.textContent = String(alerts.length); badge.classList.toggle('hide', alerts.length === 0); }
-    if(dropdown){
-      dropdown.innerHTML = alerts.length ? alerts.map(a=>`<div class="alert-item"><button type="button" class="alert-action" data-alert-go="${esc(a.id)}">${esc(a.message || a.title || 'Alert')}</button><button type="button" class="alert-read" data-alert-read="${esc(a.id)}">Mark as read</button></div>`).join('') : '<div class="alert-empty">No New Alerts</div>';
-      dropdown.querySelectorAll('[data-alert-read]').forEach(b=>b.addEventListener('click', event=>{ event.stopPropagation(); markAlertRead(b.dataset.alertRead); }));
-      dropdown.querySelectorAll('[data-alert-go]').forEach(b=>b.addEventListener('click', event=>{ event.stopPropagation(); navigateFromAlert(b.dataset.alertGo); }));
-    }
+    ensureCertificationAlerts();const alerts=unreadAlerts();presentNotificationPopups(alerts);
+    const badge=$('alertsBadge');if(badge){badge.textContent=String(alerts.length);badge.classList.toggle('hide',alerts.length===0);}
+    renderNotificationPane(alerts);
   }
   function navigateFromAlert(alertId){
-    const alert=(state.alerts||[]).find(a=>a.id===alertId);
+    try{
+    const alert=S.alertsFor(state,currentUserId).find(a=>a.id===alertId);if(!alert)return;
     const action=inferredAlertAction(alert);
-    const dropdown=$('alertsDropdown'); const bell=$('alertsBell');
-    if(dropdown) dropdown.setAttribute('hidden','');
-    if(bell) bell.setAttribute('aria-expanded','false');
+    closeNotificationPane();
     if(action?.page==='support'){openSupportCase(action.caseId);return;}
     if(action&&action.area){
-    if(action.area==='mss'&&!S.profile(state,currentUserId).mss){attemptShowTab('leave',document.querySelector('.nav-btn[data-tab="leave"]'));return;}
-      selfServiceUI().show(action.area,action.page==='requests'?'leave':action.page);return;
+    if(action.area==='mss'&&!S.profile(state,currentUserId).mss){if(!S.profile(state,currentUserId).payroll)return;leaveFilterEmp=action.empId||state.leaveBookings.find(l=>l.id===action.requestId)?.empId||'';openPayrollManagement();showTab('leave',document.querySelector('.nav-btn[data-tab="leave"]'));renderLeave();return;}
+      selfServiceUI().navigateNotification(action);return;
     }
     if(!action || !action.tab) return;
+    if(!S.profile(state,currentUserId).payroll)return;
+    if($('appShell')?.hidden)openPayrollManagement();
+    if(action.tab==='leave'&&action.empId){leaveFilterEmp=action.empId;renderLeave();}
+    if(action.tab==='payslip'&&action.empId){selectedPayslipEmp=action.empId;renderPayslip();}
     if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
     if(action.tab==='absenceBalance' && action.empId) selectedReportEmp=String(action.empId);
     if(action.tab==='jobData' && action.empId) selectedJobDataEmp=String(action.empId);
@@ -264,21 +294,14 @@
         }
       }
     }, 30);
+    }catch(err){alert(err.message||'This notification is no longer available.');}
   }
   function toggleAlertsDropdown(event){
-    event.stopPropagation();
-    renderAlerts();
-    const dropdown = $('alertsDropdown'); const bell = $('alertsBell');
-    if(!dropdown || !bell) return;
-    const isHidden = dropdown.hasAttribute('hidden');
-    if(isHidden) dropdown.removeAttribute('hidden'); else dropdown.setAttribute('hidden','');
-    bell.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
-  }
-  function closeAlertsWhenClickingAway(event){
-    const menu = $('alertsMenu'); const dropdown = $('alertsDropdown'); const bell = $('alertsBell');
-    if(!menu || !dropdown || menu.contains(event.target)) return;
-    dropdown.setAttribute('hidden','');
-    if(bell) bell.setAttribute('aria-expanded','false');
+    event?.stopPropagation?.();renderAlerts();const pane=$('alertsDropdown');if(!pane)return;
+    if(!pane.hidden){closeNotificationPane();return;}notificationTrigger=event?.currentTarget||event?.target||$('alertsBell');
+    pane.hidden=false;document.body.classList.add('notification-pane-open');
+    for(const id of ['alertsBell','ssNotifications'])$(id)?.setAttribute('aria-expanded','true');
+    pane.focus();
   }
 
   function activePositionRowForEmployee(empId,onDate=todayIso()){
@@ -318,9 +341,9 @@
     const profile=accessProfileForEmployee(e.id,todayIso());
     const areas=landingAreasForEmployee(e.id,todayIso());
     h('landingWelcome',`Welcome ${esc(e.firstName||E.employeeName(e).split(' ')[0]||'')}`);
-    const payrollTile=areas.includes('payroll')?`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`:'';
-    const essTile=`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`;
-    const mssTile=areas.includes('mss')?`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`:'';
+    const payrollTile=areas.includes('payroll')?`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" data-ui-icon="payroll" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`:'';
+    const essTile=`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" data-ui-icon="employee" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`;
+    const mssTile=areas.includes('mss')?`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" data-ui-icon="manager" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`:'';
     h('landingTiles',`<div class="landing-slot landing-slot-payroll">${payrollTile}</div><div class="landing-slot landing-slot-ess">${essTile}</div><div class="landing-slot landing-slot-mss">${mssTile}</div>`);
     document.querySelectorAll('[data-landing-area]').forEach(button=>button.addEventListener('click',()=>{
       if(button.dataset.landingArea==='payroll') openPayrollManagement();
@@ -329,6 +352,7 @@
     }));
   }
   function showLanding(){
+    closeNotificationPane();
     if(ssUI)ssUI.hide();
     if(sessionStorage.getItem('payrollAuthed')!=='true'||!currentUserId) return logout();
     const shell=$('appShell'); const landing=$('landingScreen');
@@ -347,6 +371,7 @@
     if(landing) landing.hidden=true;
     if(shell) shell.hidden=false;
     document.body.classList.remove('landing-active');
+    additionalPeriodOffset=0;
     renderAll();
     resetTabScroll();
   }
@@ -387,6 +412,8 @@
     }else h('loginError','Incorrect password.');
   }
   function logout(){
+    closeNotificationPane();h('alertsDropdown','');
+    if(supportWindowRef&&!supportWindowRef.closed)supportWindowRef.PayrollSupportWindow?.lock('You have signed out of the main payroll window.');
     if(ssUI)ssUI.hide();
     sessionStorage.removeItem('payrollAuthed');
     sessionStorage.removeItem('payrollUserId');
@@ -616,7 +643,7 @@
       if(toggle){ toggle.classList.add('open'); toggle.setAttribute('aria-expanded','true'); }
     }
     resetTabScroll();
-    if(tab==='additionalEarnings') loadAdditionalDraft();
+    if(tab==='additionalEarnings'){ additionalPeriodOffset=0; loadAdditionalDraft(); }
     if(tab==='jobData') renderJobData();
     if(tab==='deductions') renderDeductions();
     if(tab==='taxDetails') renderTaxDetails();
@@ -1008,12 +1035,12 @@
     const scoped=!!paymentManagerId;
     const list=scoped?S.directReports(state,paymentManagerId):employeeList(showTerminatedByTab.additionalEarnings);
     if(additionalPeriodOffset === undefined) additionalPeriodOffset = 0;
-    h(paymentContainer, `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${scoped?'':showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(list)}</select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="saveAdditional">Save</button></div>`);
-    if(!scoped)bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addRow').addEventListener('click',addAdditionalRow); $('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
+    h(paymentContainer, `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${scoped?'':showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(list)}</select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addCurrentPeriod" class="secondary">Current Pay Period</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="saveAdditional">Save</button></div>`);
+    if(!scoped)bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addCurrentPeriod').addEventListener('click',()=>{ additionalPeriodOffset=0; loadAdditionalDraft(); }); $('addRow').addEventListener('click',addAdditionalRow); $('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
   }
   function additionalCycle(){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const idx=Math.min(currentIndex+1,Math.max(0,currentIndex+additionalPeriodOffset)); return E.PAY_CYCLES[idx] || currentCycle(); }
   function moveAdditionalPeriod(n){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const nextOffset=additionalPeriodOffset+n; const idx=currentIndex+nextOffset; if(idx<0 || idx>currentIndex+1) return; additionalPeriodOffset=nextOffset; loadAdditionalDraft(); }
-  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&(!paymentManagerId||(!a.legacyCashOutId&&!Features?.CASH_TYPES.includes(a.earningType)))).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
+  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); if($('addCurrentPeriod')) $('addCurrentPeriod').disabled=c.id===currentCycle().id; const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&(!paymentManagerId||S.canManageAdditional(a))).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
   function markAdditionalDirty(){ additionalDirty=true; h('additionalNote','Unsaved changes. Additional earnings will not appear on payslips until saved.'); }
   function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function casualPositionOptions(a){
@@ -1058,7 +1085,7 @@
       const fixedAmount=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
       const isAmountOnly=userAmount||fixedAmount;
       const amount=frozenCash?Number(a.amount||0):additionalDraftAmount(a);
-      const options=['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'].map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
+      const options=(paymentManagerId?S.EARNINGS:['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement']).map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
       const positionBased=isCasual||isHigherDuties;
       const positionSelect=`<select data-add-field="${i}|positionNumber" ${positionBased?'':'disabled class="readonly"'}>${positionBased?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
       return [`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
@@ -1067,6 +1094,7 @@
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
       if(additionalRowsRendering)return;
       const [i,field]=el.dataset.addField.split('|'); const row=additionalDraftRows[Number(i)];
+      if(paymentManagerId&&field==='earningType'&&!S.EARNINGS.includes(el.value)){el.value=row.earningType;return alert('Select an earning type available in Manager Self Service.');}
       if(field==='earningType' && el.value==='Overpayment Adjustment' && Number(additionalCycle().id)!==Number(currentCycle().id)){ el.value=row.earningType||'Additional Hours'; return alert('Overpayment Adjustment can only be entered in the current open pay period.'); }
       row[field]=(field==='hours'||field==='amount')?Number(el.value||0):el.value;
       if(field==='earningType'&&!Features?.CASH_TYPES.includes(row.earningType)){delete row.legacyCashOutId;delete row.migrated;}
@@ -1094,6 +1122,7 @@
     const empId=v('addEmp'); if(!empId) return alert('Select an employee first.');
     guardPaymentEmployee(empId);
     const managerId=paymentManagerId;
+    if(managerId&&additionalDraftRows.some(a=>!S.canManageAdditional(a)))return alert('These earnings can only be changed by Payroll Management.');
     const c=additionalCycle();
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
@@ -1122,7 +1151,7 @@
         const backup=DataStore.clone(state);
         try{
           const source=stagedRows.map(a=>Object.assign({},a,{empId,cycleId:c.id}));
-          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&!a.legacyCashOutId&&!Features?.CASH_TYPES.includes(a.earningType));
+          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&S.canManageAdditional(a));
 for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assign({},a,{id:existing.some(old=>old.id===a.id)?a.id:undefined}));a.id=saved.id;}
           const ids=new Set(source.map(a=>a.id));for(const a of existing)if(!ids.has(a.id))S.deleteAdditional(state,managerId,a.id);
           calculateAllForCurrent();
@@ -1148,7 +1177,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
         state.additionalEarnings.push(row);
       });
       try{F?.syncCashOuts(state,empId,c);calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save earnings.');}catch(err){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,additionalBackup);throw err;}
-      additionalDirty=false;renderAll();
+      additionalDirty=false;renderAll();setv('addEmp',empId);loadAdditionalDraft();
     },700);
   }
 
@@ -1323,18 +1352,25 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     save(); calculateAllForCurrent(); toast('Save Successful'); renderAll();
   }
 
-  let leaveFrom='',leaveTo='',leaveTypeFilter='',leaveStatusFilter='';
+  let leaveFrom=null,leaveTo='',leaveTypeFilter='',leaveStatusFilter='';
+  function leaveBalanceCardsHtml(b){
+    const cards=[['annual','Annual Leave','calendar'],['personal','Personal Leave','health'],['lslAccrued','Accrued LSL','clock']];
+    return `<section class="leave-balance-summary" aria-labelledby="leaveBalanceHeading"><h3 id="leaveBalanceHeading">Leave balances</h3><dl class="leave-balance-cards">${cards.map(([key,label,icon])=>{
+      const hours=Number(b[key]||0),negative=hours<0;
+      return `<div class="leave-balance-card leave-balance-${key}${negative?' leave-balance-negative':''}"><dt><span class="leave-balance-icon" aria-hidden="true">${typeof PayrollUI!=='undefined'?PayrollUI.icon(icon):''}</span>${label}</dt><dd><span class="leave-balance-number">${hours.toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><span class="leave-balance-unit">hours</span>${negative?'<span class="leave-balance-status">Below zero</span>':''}</dd></div>`;
+    }).join('')}</dl></section>`;
+  }
   function renderLeave(){
     const people=employeeList(showTerminatedByTab.leave);if(!people.some(e=>e.id===leaveFilterEmp))leaveFilterEmp='';
-    const from=leaveFrom||currentCycle().start,to=leaveTo||currentCycle().end;
-    const list=state.leaveBookings.filter(l=>leaveFilterEmp&&l.empId===leaveFilterEmp&&l.startDate<=to&&l.endDate>=from&&(!leaveTypeFilter||l.type===leaveTypeFilter)&&(!leaveStatusFilter||l.status===leaveStatusFilter)).sort((a,b)=>b.startDate.localeCompare(a.startDate));
+    const from=leaveFrom===null?E.addYearsClamped(todayIso(),-2):leaveFrom,to=leaveTo;
+    const list=state.leaveBookings.filter(l=>leaveFilterEmp&&l.empId===leaveFilterEmp&&(!to||l.startDate<=to)&&(!from||l.endDate>=from)&&(!leaveTypeFilter||l.type===leaveTypeFilter)&&(!leaveStatusFilter||l.status===leaveStatusFilter)).sort((a,b)=>b.startDate.localeCompare(a.startDate));
     const types=[...new Set(state.leaveBookings.map(l=>l.type))].sort(),e=emp(leaveFilterEmp),b=e?E.projectedBalances(state,e,currentCycle(),false):null;
-    h('leave',`<h2>Leave</h2><div class="grid form-grid"><label>Search employees<input id="leaveEmployeeSearch" type="search" placeholder="Name or employee ID"></label><label>Employee<select id="leaveSelectedEmp">${employeeOptions(people)}</select></label><div>${showTerminatedControl('leavePageTerminated','leave')}</div></div>${e?`<div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="secondary">Yearly Absence Calendar</button></div><p>Annual Leave: ${Number(b.annual).toFixed(2)} hours · Personal Leave: ${Number(b.personal).toFixed(2)} hours · Accrued LSL: ${Number(b.lslAccrued).toFixed(2)} hours</p><div class="grid form-grid"><label>From date<input id="leaveFilterFrom" type="date" value="${esc(from)}"></label><label>To date<input id="leaveFilterTo" type="date" value="${esc(to)}"></label><label>Leave type<select id="leaveFilterType"><option value="">All leave types</option>${types.map(t=>`<option ${t===leaveTypeFilter?'selected':''}>${esc(t)}</option>`).join('')}</select></label><label>Approval status<select id="leaveFilterStatus"><option value="">All statuses</option>${['Approved','Awaiting Manager Approval','Denied'].map(t=>`<option ${t===leaveStatusFilter?'selected':''}>${t}</option>`).join('')}</select></label></div><button id="applyLeaveFilters" class="secondary">Apply Filters</button><div id="leaveList">${table(['Type','Start','End','Hours','Status','Action'],list.map(l=>[esc(l.type==='LWOP'?'Leave Without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours).toFixed(2),leaveStatusButton(l),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`]))}</div><div id="leaveCalendar"></div>`:'<p>Select an employee to view and book leave.</p>'}`);
+    h('leave',`<h2>Leave</h2><div class="grid form-grid"><label>Search employees<input id="leaveEmployeeSearch" type="search" placeholder="Name or employee ID"></label><label>Employee<select id="leaveSelectedEmp">${employeeOptions(people)}</select></label><div>${showTerminatedControl('leavePageTerminated','leave')}</div></div>${e?`<div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="secondary">Yearly Absence Calendar</button></div>${leaveBalanceCardsHtml(b)}<div class="grid form-grid"><label>From date<input id="leaveFilterFrom" type="date" value="${esc(from)}"></label><label>To date<input id="leaveFilterTo" type="date" value="${esc(to)}"></label><label>Leave type<select id="leaveFilterType"><option value="">All leave types</option>${types.map(t=>`<option ${t===leaveTypeFilter?'selected':''}>${esc(t)}</option>`).join('')}</select></label><label>Approval status<select id="leaveFilterStatus"><option value="">All statuses</option>${['Approved','Awaiting Manager Approval','Denied'].map(t=>`<option ${t===leaveStatusFilter?'selected':''}>${t}</option>`).join('')}</select></label></div><button id="applyLeaveFilters" class="secondary">Apply Filters</button><div id="leaveList">${table(['Type','Start','End','Hours','Status','Action'],list.map(l=>[esc(l.type==='LWOP'?'Leave Without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours).toFixed(2),leaveStatusButton(l),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`]))}</div><div id="leaveCalendar"></div>`:'<p>Select an employee to view and book leave.</p>'}`);
     setv('leaveSelectedEmp',leaveFilterEmp);$('leaveSelectedEmp').addEventListener('change',()=>{leaveFilterEmp=v('leaveSelectedEmp');renderLeave();});
     $('leaveEmployeeSearch').addEventListener('input',()=>{const q=v('leaveEmployeeSearch').toLowerCase();h('leaveSelectedEmp',employeeOptions(people.filter(e=>(E.employeeName(e)+' '+e.id).toLowerCase().includes(q))));setv('leaveSelectedEmp',leaveFilterEmp);});
     bindShowTerminated('leavePageTerminated','leave',renderLeave);if(!e)return;
     $('bookLeaveBtn').addEventListener('click',openLeaveModal);$('absenceCalendarBtn').addEventListener('click',()=>{selectedCalendarEmp=leaveFilterEmp;selectedCalendarYear=E.parseDate(currentCycle().start).getFullYear();openAbsenceCalendar();});
-    $('applyLeaveFilters').addEventListener('click',()=>{if(v('leaveFilterFrom')>v('leaveFilterTo'))return alert('From date cannot be after To date.');leaveFrom=v('leaveFilterFrom');leaveTo=v('leaveFilterTo');leaveTypeFilter=v('leaveFilterType');leaveStatusFilter=v('leaveFilterStatus');renderLeave();});
+    $('applyLeaveFilters').addEventListener('click',()=>{if(v('leaveFilterFrom')&&v('leaveFilterTo')&&v('leaveFilterFrom')>v('leaveFilterTo'))return alert('From date cannot be after To date.');leaveFrom=v('leaveFilterFrom');leaveTo=v('leaveFilterTo');leaveTypeFilter=v('leaveFilterType');leaveStatusFilter=v('leaveFilterStatus');renderLeave();});
     document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Delete this leave entry?','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));document.querySelectorAll('[data-leave-status]').forEach(el=>el.addEventListener('change',()=>setLeaveStatus(el.dataset.leaveStatus,el.value)));
   }
   function openLeaveModal(){
@@ -2078,6 +2114,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.2.5',notes:['Redesigned support requests and added a separate Payroll support window sharing the main window state.','Added a right-side notification pane with per-user dismissal and targeted navigation. ESS/MSS payslips now open from dated list rows with Back navigation.','Simplified manager requests with automatic subjects, daily roster grids, position-derived reporting and last-working-day-only termination.','Added current-pay navigation, persistent Additional Earnings saves, leave balance cards and two-year date defaults. Updated home icons and restricted overpayment adjustments to Payroll.']},
     {version:'v1.2.4',notes:['Added Dashboard, report tiles, Pay Errors and Statement of Earnings PDF.','Added Payroll-only Workers Compensation Leave, salary packaging, new termination reasons and cash-outs in Additional Earnings.','Added manager Job Data request templates, activity history, casual login reconciliation and interface improvements.']},
     {version:'v1.2.3',notes:['Centred fixed home tile slots; added documents on support submission and Payroll on-behalf cases.','Fixed Payroll case access/navigation and active casual ESS eligibility.','Added reopening with mandatory reason, newest-first conversations, precise message recipient routing and ten-second notification popups.','Certification signatories auto-populate; Manager Certified shows a read-only checkbox in Payroll.']},
     {version:'v1.2.2',notes:['Added Support Requests in Payroll, ESS and MSS with assignments, messages, attachments, notifications, resolution notes and automatic closure after 14 days.','Added shared MSS manager certification and separate company-wide Payroll review, and direct-report payslips.','Acting assignments replace substantive manager access. Moved Audit to Settings, excluded Position Refresh from service statements, and aligned tiles and navigation icons.']},
@@ -2374,6 +2411,6 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = {features:F,renderReports,renderLeave, getState:()=>state,openSupportCase,presentNotificationPopups,resetNotificationPopups,navigateFromAlert,showTab,mountSupport,mountSelfServiceCertification,unmountSelfServiceCertification,certManagerToggle,renderCertification,renderCertOutput,paySignature,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = {toggleNotifications:toggleAlertsDropdown,renderNotificationPane,closeNotificationPane,supportWindowAccess,commitSupportWindowChanges,openSupportWindow,features:F,renderReports,renderLeave, getState:()=>state,openSupportCase,presentNotificationPopups,resetNotificationPopups,navigateFromAlert,showTab,mountSupport,mountSelfServiceCertification,unmountSelfServiceCertification,certManagerToggle,renderCertification,renderCertOutput,paySignature,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();
 

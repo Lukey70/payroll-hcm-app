@@ -1,3 +1,11 @@
+Payroll/HCM App v1.2.5 - 24 October 2026
+
+NODE REGRESSION
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> payroll-hcm-app@1.2.5 test
+> node tests/run-all.cjs
+
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -146,7 +154,9 @@ PASS: navigation uses bell, Back text and accessible home icon
 PASS: roster calculation follows effective changes and two-week pattern; public holidays count zero
 PASS: MSS whole-period save rolls back a valid first row if a later row fails validation
 PASS: MSS switching employees or pay periods during a delayed save cancels that save
-PASS: 37 v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: MSS cannot create, amend, convert or delete Overpayment Adjustments
+PASS: MSS saving and removing ordinary earnings preserves Payroll Overpayment Adjustments
+PASS: 39 v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
 PASS: unique immutable case numbering and own-only ESS raised-for with submission receipt
 PASS: MSS raised-for includes non-direct reports and New Employee; rejects invalid IDs and missing access
 PASS: assignment list enforces current payroll access; assign/unassign correctly drives New and Open
@@ -201,9 +211,26 @@ PASS: acting regular earnings use the effective acting rate and future rate chan
 PASS: MSS edits preserve Payroll cash-outs and cannot convert or delete their protected source rows
 PASS: native PDF embeds its fonts with correct byte offsets and offers printing for unsupported characters
 PASS: 18 v1.2.4 feature test groups.
-PASS: all six Node.js payroll regression suites.
+PASS: all structured request types submit without subject or description, use default subjects and preserve Job Data
+PASS: default subjects are enforced by the service, while general enquiries still require both fields
+PASS: Reports To is derived from active Position Data, including multiple reporting positions and no supervisor
+PASS: one-week and two-week rosters retain numeric daily hours and allow an alternating week off
+PASS: empty, free-text, malformed and invalid daily rosters are rejected; two weeks require both grids
+PASS: casual requests follow Job Data with a zero fixed roster, without requiring hours
+PASS: termination accepts only Last Working Day, ignores extra reason/effective-date input and validates dates
+PASS: roster variations use daily grids; other variations retain change details and no roster requirement
+PASS: manager-only restrictions and backup/import preserve structured roster records
+PASS: 9 simplified request template rule groups.
+PASS: all seven Node.js payroll regression suites.
+
+BROWSER REGRESSION - Chromium 153 / Playwright 1.62.1
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> payroll-hcm-app@1.2.5 test:browser
+> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js
 
 PASS: Chromium Dashboard, five reports, PDF download, selected employee leave, compensation roster hours, packaging inline validation/save, cash-out credit validation/save/delete, MSS templates, case history and casual-only ESS login; no JavaScript page errors.
+PASS: real support popup, shared data with unsaved parent work, single-window reuse, popup blocking, failed-save rollback, draft preservation, parent closure, direct-link rejection and logout access; notification pane, per-user dismissal and navigation; ESS/MSS payslip rows, dedicated views, date-preserving Back and finalisation controls.
+PASS: automatic subjects, no structured description requirement, daily/two-week roster entry and totals, readonly position reporting, last-day-only termination, casual roster rules, saved schedule display, general field restoration and mobile layout; no Job Data changes or browser errors.
 
-PASS: all root JavaScript files parse.
-PASS: both earnings PDFs render as one portrait A4 page; native fonts embedded; visual review completed.
+PASS: JavaScript syntax checks for 23 files.

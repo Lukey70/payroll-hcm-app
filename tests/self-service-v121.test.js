@@ -133,7 +133,7 @@ function uiFixture(){
   const s=fixture(),nodes=new Map();let id='worker';const errors=[],timers=[],timeouts=[];
   function node(tag,attrs){
     const attributes={};for(const m of attrs.matchAll(/([\w-]+)="([^"]*)"/g))attributes[m[1]]=m[2];
-    const classes=new Set((attributes.class||'').split(' ').filter(Boolean));const events={};const dataset={};for(const [k,value]of Object.entries(attributes))if(k.startsWith('data-'))dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=value;const n={tag,attributes,dataset,style:{},readOnly:/\breadonly\b/.test(attrs),querySelectorAll:()=>[],setAttribute(k,v){attributes[k]=v;},focus(){},remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);},appendChild(child){this.children=this.children||[];child.parentNode=this;this.children.push(child);},showModal(){this.open=true;},close(){this.open=false;},value:attributes.value||'',checked:/\bchecked\b/.test(attrs),disabled:/\bdisabled\b/.test(attrs),hidden:/\bhidden\b/.test(attrs),innerText:'',textContent:'',classList:{remove(...xs){xs.forEach(x=>classes.delete(x));},add(...xs){xs.forEach(x=>classes.add(x));},toggle(x){if(classes.has(x))classes.delete(x);else classes.add(x);},contains(x){return classes.has(x);}},getAttribute:k=>attributes[k],addEventListener:(k,f)=>(events[k]||(events[k]=[])).push(f),fire(k='click'){if(this.disabled)return;return Promise.all([...events[k]||[]].map(f=>f({target:n,stopPropagation(){}})));},click(){n.fire();}};
+    const classes=new Set((attributes.class||'').split(' ').filter(Boolean));const events={};const dataset={};for(const [k,value]of Object.entries(attributes))if(k.startsWith('data-'))dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=value;const n={tag,attributes,dataset,style:{},readOnly:/\breadonly\b/.test(attrs),querySelectorAll(selector){const attr=selector.match(/^\[([^\]]+)\]$/)?.[1];return attr?(this.children||[]).filter(x=>Object.hasOwn(x.attributes,attr)):[];},setAttribute(k,v){attributes[k]=v;},focus(){},remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);},appendChild(child){this.children=this.children||[];child.parentNode=this;this.children.push(child);},showModal(){this.open=true;},close(){this.open=false;},value:attributes.value||'',checked:/\bchecked\b/.test(attrs),disabled:/\bdisabled\b/.test(attrs),hidden:/\bhidden\b/.test(attrs),innerText:'',textContent:'',classList:{remove(...xs){xs.forEach(x=>classes.delete(x));},add(...xs){xs.forEach(x=>classes.add(x));},toggle(x){if(classes.has(x))classes.delete(x);else classes.add(x);},contains(x){return classes.has(x);}},getAttribute:k=>attributes[k],addEventListener:(k,f)=>(events[k]||(events[k]=[])).push(f),fire(k='click'){if(this.disabled)return;return Promise.all([...events[k]||[]].map(f=>f({target:n,stopPropagation(){}})));},click(){n.fire();}};
     let html='';Object.defineProperty(n,'innerHTML',{get:()=>html,set:x=>{html=x;parse(x,n);}});if(attributes.id)nodes.set(attributes.id,n);return n;
   }
   let all=[];
@@ -196,8 +196,8 @@ test('next-pay MSS earnings are permitted but do not enter current pay',()=>{
 });
 test('actual ESS payslip list includes own open pay, excludes foreign rows and expands earlier dates',()=>{
   const f=uiFixture();for(let i=1;i<=12;i++)f.s.payslips.push({id:'slip'+i,empId:'worker',cycle:E.cycleById(i),finalised:true,position:'Officer',net:100});f.s.payslips.push({id:'FOREIGN',empId:'outsider',cycle:E.cycleById(12),finalised:true});f.s.payResults['11']=[{id:'OPEN',empId:'worker',cycle:E.cycleById(11),finalised:false,net:90}];
-  f.ui.show('ess','payslips');assert.strictEqual((f.html('ssSidebar').match(/data-ss-slip/g)||[]).length,10);assert(!f.html('ssSidebar').includes('FOREIGN'));assert(f.html('ssSidebar').includes('Open'));
-  f.set('ssPayFrom',E.cycleById(1).end);f.set('ssPayTo',E.cycleById(2).end);f.click('ssPayApply');assert.strictEqual((f.html('ssSidebar').match(/data-ss-slip/g)||[]).length,2);assert.strictEqual(f.errors.length,0);
+  f.ui.show('ess','payslips');assert.strictEqual((f.html('ssMain').match(/data-ss-slip/g)||[]).length,10);assert(!f.html('ssMain').includes('FOREIGN'));assert(f.html('ssMain').includes('Open'));
+  f.set('ssPayFrom',E.cycleById(1).end);f.set('ssPayTo',E.cycleById(2).end);f.click('ssPayApply');assert.strictEqual((f.html('ssMain').match(/data-ss-slip/g)||[]).length,2);assert.strictEqual(f.errors.length,0);
 });
 test('acting assignment replaces substantive manager access and returns on expiry or return row',()=>{
  const s=fixture();s.positions.push({positionNumber:'ACT',positionName:'Acting Officer',active:true,reportsTo:'MGR2'});
@@ -233,8 +233,8 @@ test('Payroll-booked legacy and new leave show Payroll; manager bookings retain 
 });
 test('open ESS payslip visible but print/download disabled and guarded; disbursement finalised only',()=>{
   const f=uiFixture();f.s.payResults['11']=E.calculateAll(f.s,11);f.ui.show('ess','payslips');
-  assert(f.html('ssSidebar').includes('Open'));assert(f.nodes.get('ssPrint').disabled);assert(f.nodes.get('ssDownload').disabled);
-  const p=S.payslips(f.s,'worker','','',false,DATE)[0];assert(!f.app.payslipHtml(p).includes('Disbursement Details'));
+  assert(f.html('ssMain').includes('Open'));assert(!f.nodes.has('ssPrint'));
+  const p=S.payslips(f.s,'worker','','',false,DATE)[0];f.choose('data-ss-slip',p.id);assert(f.nodes.get('ssPrint').disabled);assert(f.nodes.get('ssDownload').disabled);assert(!f.app.payslipHtml(p).includes('Disbursement Details'));
   f.nodes.get('ssPrint').disabled=false;f.click('ssPrint');assert(f.errors.pop().includes('until finalised'));
   f.nodes.get('ssDownload').disabled=false;f.click('ssDownload');assert(f.errors.pop().includes('until finalised'));
   const final=E.finaliseCurrentPay(f.s).payslips.find(p=>p.empId==='worker');f.ui.show('ess','payslips');f.choose('data-ss-slip',final.id);
@@ -276,7 +276,7 @@ test('MSS delayed save rechecks scope before modifying payroll',()=>{
 });
 test('navigation uses bell, Back text and accessible home icon',()=>{
   const f=uiFixture();S.submitLeave(f.s,'worker',input(),'ess',DATE);f.setUser('manager');f.ui.show('mss');
-  assert(f.html('selfServiceScreen').includes('>Back</button>'));assert(!f.html('selfServiceScreen').includes('Back to Manager'));assert(f.html('selfServiceScreen').includes('aria-label="Home"'));assert(f.html('ssNotifications').includes('🔔'));assert(f.html('ssNotifications').includes('aria-label="Notifications'));assert.deepStrictEqual(f.errors,[]);
+  assert(f.html('selfServiceScreen').includes('>Back</button>'));assert(!f.html('selfServiceScreen').includes('Back to Manager'));assert(f.html('selfServiceScreen').includes('aria-label="Home"'));assert(f.html('ssNotifications').includes('🔔'));assert(f.nodes.get('ssNotifications').getAttribute('aria-label').startsWith('Notifications'));assert.deepStrictEqual(f.errors,[]);
 });
 test('roster calculation follows effective changes and two-week pattern; public holidays count zero',()=>{
   const f=uiFixture();f.s.schedules.push({id:'change',empId:'worker',jobDataId:'job-worker',effectiveDate:'2026-10-20',rosterPattern:'2-week',hoursByDayWeek1:{1:4,2:4,3:4,4:4,5:4},hoursByDayWeek2:{1:6,2:6,3:6,4:6,5:6}});
@@ -292,6 +292,22 @@ test('MSS whole-period save rolls back a valid first row if a later row fails va
 test('MSS switching employees or pay periods during a delayed save cancels that save',()=>{
   const f=uiFixture();f.setUser('manager');f.ui.show('mss','payments');f.set('addEmp','worker');f.fire('addEmp');f.click('addRow');f.edit('data-add-field','0|hours','2');f.click('saveAdditional');
   f.click('addNext');f.flush();assert.strictEqual(f.s.additionalEarnings.length,0);assert(f.errors.some(x=>x.includes('selection changed')));
+});
+test('MSS cannot create, amend, convert or delete Overpayment Adjustments',()=>{
+  const s=fixture(),c=E.currentCycle(s),row={id:'payroll-overpayment',empId:'worker',cycleId:c.id,earningType:'Overpayment Adjustment',startDate:c.start,endDate:c.end,amount:-150,hours:0,saved:true};
+  s.additionalEarnings.push(row);const before=JSON.stringify(s.additionalEarnings);
+  assert(!S.EARNINGS.includes('Overpayment Adjustment'));
+  for(const input of [{...row,id:undefined},{...row,amount:-250},{...row,earningType:'Bonus',amount:100}])assert.throws(()=>S.saveAdditional(s,'manager',input,DATE),/Payroll Management/);
+  assert.throws(()=>S.deleteAdditional(s,'manager',row.id,DATE),/Payroll Management/);
+  assert.strictEqual(JSON.stringify(s.additionalEarnings),before);
+});
+test('MSS saving and removing ordinary earnings preserves Payroll Overpayment Adjustments',()=>{
+  const f=uiFixture(),c=E.currentCycle(f.s),row={id:'payroll-overpayment',empId:'worker',cycleId:c.id,earningType:'Overpayment Adjustment',startDate:c.start,endDate:c.end,amount:-150,hours:0,saved:true};
+  f.s.additionalEarnings.push(row);const before=JSON.stringify(row);f.setUser('manager');f.ui.show('mss','payments');f.set('addEmp','worker');f.fire('addEmp');
+  assert(!f.html('addRows').includes('Overpayment Adjustment'));f.click('addRow');assert(!f.html('addRows').includes('Overpayment Adjustment'));
+  f.edit('data-add-field','0|earningType','Bonus');f.edit('data-add-field','0|amount','125');f.click('saveAdditional');f.flush();
+  assert.strictEqual(JSON.stringify(f.s.additionalEarnings.find(a=>a.id===row.id)),before);const bonus=f.s.additionalEarnings.find(a=>a.earningType==='Bonus');assert.strictEqual(bonus.amount,125);
+  f.choose('data-del-add',bonus.id);f.click('confirmYes');f.click('saveAdditional');f.flush();assert.strictEqual(f.s.additionalEarnings.length,1);assert.strictEqual(JSON.stringify(f.s.additionalEarnings[0]),before);assert.deepStrictEqual(f.errors,[]);
 });
 if(require.main===module)console.log(`PASS: ${count} v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.`);
 

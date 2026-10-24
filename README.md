@@ -1,4 +1,4 @@
-# Payroll/HCM App v1.2.4
+# Payroll/HCM App v1.2.5
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
@@ -6,7 +6,18 @@ The app stores payroll data in the browser's localStorage. Export data before re
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
 
-## v1.2.4
+## v1.2.5
+
+- Additional Earnings opens on the current pay period, includes a Current Pay Period button, and retains the employee and period after saving.
+- Leave balances use separate cards; date filtering defaults to the previous two years with no To Date cutoff.
+- Support Requests has a redesigned list, grouped request forms, case details, attachment previews, newest-first conversations and activity history.
+- Payroll can open Support Requests in a separate window. It shares the parent application's live state and saves through the parent, preserving unrelated unsaved forms. The parent must remain open and signed in; access loss locks the support window. Unsent support drafts are preserved during background refreshes.
+- Every portal uses the shared right-side Notifications pane. Notifications have individual dismiss buttons, per-user read state and links to the relevant employee, request or page. Ten-second notification popups remain available.
+- ESS and MSS payslips use date-filtered list rows. Clicking a row opens the document; Back returns to the same list/filter. Open payslips remain visible, with print/download restricted to finalised pay.
+- Manager Job Data support requests use automatic “[Request Type] Request” subjects without requiring a description. Commencement, Movement and roster variations use daily one-week/two-week roster grids; casual rosters follow Job Data rules. Commencement and Movement reporting positions derive from Position Data. Termination requires only Last Working Day. Additional Comments and attachments remain optional.
+- New home icons identify Payroll Management, ESS and MSS. MSS cannot create, change, convert or delete Overpayment Adjustments; saving ordinary earnings preserves Payroll adjustments and leave cash-outs.
+
+## Previous release: v1.2.4
 
 - Dashboard is the first Payroll Management tab and contains the four pay summary cards.
 - Reports use five tiles: Statement of Service, Statement of Earnings, Monthly Absence Calendar, Position Structure Report and Pay Errors. Error checking moved out of Settings.
@@ -23,7 +34,7 @@ Default test password: `1234`. Existing stored credentials remain in use. New in
 
 ## Validation
 
-Run all six calculation/service/DOM regression suites with Node.js:
+Run all seven calculation/service/DOM regression suites with Node.js:
 
 ```sh
 npm test
@@ -37,6 +48,6 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.4.md` records the release checks and their limits.
+An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.5.md` records the release checks and their limits.
 
 Two historical payroll engine fixtures under `tests/` support regression checks for already-paid casual earnings and settlement compatibility. They are test references and are not loaded by the app.

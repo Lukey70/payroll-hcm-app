@@ -170,11 +170,11 @@
     }
     function alertsFor(s,id,date=today()){
       if(!active(s,employee(s,id),date))return [];
-      return s.alerts.filter(a=>a.recipientIds? a.recipientIds.includes(id)&&!(a.readBy||[]).includes(id):profile(s,id,date).payroll&&a.read!==true);
+      return s.alerts.filter(a=>a.recipientIds? a.recipientIds.includes(id)&&!(a.readBy||[]).includes(id):profile(s,id,date).payroll&&a.read!==true&&!(a.readBy||[]).includes(id));
     }
     function readAlert(s,id,alertId,date=today()){
       const a=alertsFor(s,id,date).find(a=>a.id===alertId);if(!a)throw Error('Notification is not available to this employee.');
-      if(a.recipientIds){a.readBy=[...new Set([...(a.readBy||[]),id])];}else a.read=true;
+      a.readBy=[...new Set([...(a.readBy||[]),id])];
     }
     function payslips(s,id,from='',to='',recent=true,date=today()){
       actor(s,id,date);if(from&&to&&from>to)throw Error('From Date cannot be after To Date.');
@@ -182,20 +182,21 @@
       const list=open.concat(s.payslips).filter(p=>p.empId===id&&(!from||p.cycle.end>=from)&&(!to||p.cycle.end<=to)).slice().sort((a,b)=>b.cycle.end.localeCompare(a.cycle.end)||Number(b.segmentIndex)-Number(a.segmentIndex));
       return recent?list.slice(0,10):list;
     }
-    const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement'];
+    const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Reimbursement'];
+    function canManageAdditional(a){return !a.legacyCashOutId&&!['Annual Leave Cash Out','Long Service Leave Cash Out','Overpayment Adjustment'].includes(a.earningType);}
     function saveAdditional(s,id,input,date=today()){
       assertScope(s,id,input.empId,'mss',date);
       const old=input.id&&s.additionalEarnings.find(a=>a.id===input.id);
       if(input.id&&(!old||old.empId!==input.empId))throw Error('Earnings record is not available for this employee.');
+      if(input.earningType==='Overpayment Adjustment'||old?.earningType==='Overpayment Adjustment')throw Error('Overpayment Adjustments can only be changed by Payroll Management.');
       if(old&&(old.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(old.earningType)))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       if(!EARNINGS.includes(input.earningType))throw Error('Select a valid earning type.');
       const cycle=E.PAY_CYCLES.find(c=>c.id===Number(input.cycleId));
-      if(input.earningType==='Overpayment Adjustment'&&cycle?.id!==E.currentCycle(s).id)throw Error('Overpayment Adjustment can only be entered in the current open pay period.');
       if(!cycle||cycle.id>E.currentCycle(s).id+1||input.startDate<cycle.start||input.startDate>cycle.end||input.endDate<input.startDate||input.endDate>cycle.end)throw Error('Choose work dates within the selected previous, current or next pay period.');
       if(!E.isEmployedOn(employee(s,input.empId),input.startDate)||!E.isEmployedOn(employee(s,input.empId),input.endDate))throw Error('Work dates must fall within employment.');
-      const amountOnly=['Travel Allowance','Bonus','Reimbursement','Overpayment Adjustment'].includes(input.earningType);
+      const amountOnly=['Travel Allowance','Bonus','Reimbursement'].includes(input.earningType);
       const dateBased=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(input.earningType);
-      if(!dateBased&&(!Number.isFinite(Number(amountOnly?input.amount:input.hours))||(amountOnly?input.earningType!=='Overpayment Adjustment'&&Number(input.amount)<0:Number(input.hours)<=0)))throw Error('Enter a valid amount or positive hours/units.');
+      if(!dateBased&&(!Number.isFinite(Number(amountOnly?input.amount:input.hours))||(amountOnly?Number(input.amount)<0:Number(input.hours)<=0)))throw Error('Enter a valid amount or positive hours/units.');
       const a={id:old?.id||uid('add'),empId:input.empId,cycleId:cycle.id,earningType:input.earningType,startDate:input.startDate,endDate:input.endDate,hours:amountOnly||dateBased?0:Number(input.hours),amount:amountOnly?Number(input.amount):'',saved:true,source:'Manager Self Service',enteredBy:id};
       if(['Casual Earnings','Higher Duties Allowance'].includes(a.earningType)){
         const p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(input.positionNumber));if(!p)throw Error('Choose an active position.');
@@ -208,6 +209,7 @@
     }
     function deleteAdditional(s,id,recordId,date=today()){
       const a=s.additionalEarnings.find(a=>a.id===recordId);if(!a)throw Error('Earnings record no longer exists.');assertScope(s,id,a.empId,'mss',date);
+      if(a.earningType==='Overpayment Adjustment')throw Error('Overpayment Adjustments can only be changed by Payroll Management.');
       if(a.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       s.additionalEarnings=s.additionalEarnings.filter(x=>x.id!==recordId);
       (s.auditLog||(s.auditLog=[])).unshift(`MSS earnings ${recordId} deleted by ${id} for ${a.empId}.`);
@@ -222,7 +224,7 @@
       if(a.earningType==='Motor Vehicle Allowance - Return Trip')return 50;
       return E.round2(Number(a.hours||0)*Number(E.activePayRate(s,a.empId,a.startDate).hourlyRate||0)*(a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1));
     }
-    return {isActiveEmployee,EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,saveAdditional,deleteAdditional,additionalAmount};
+    return {isActiveEmployee,EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,canManageAdditional,saveAdditional,deleteAdditional,additionalAmount};
   }
   function createUI(o){
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
@@ -247,8 +249,8 @@
       E.ensurePendingLeaveNotifications(state());S.syncNotifications(state());
       const title=area==='ess'?'Employee Self Service':'Manager Self Service';
       const alerts=S.alertsFor(state(),user());
-      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v10h-6v-7H9v7H3z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><details id="ssNotifications" class="ss-notifications"></details><button id="ssLogout" class="danger">Sign out</button></div></header><div id="ssBody"></div>`);
-      click('ssBack',()=>show(area));click('ssHome',()=>{hide();home();});click('ssLogout',()=>{hide();logout();});
+      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v10h-6v-7H9v7H3z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button id="ssNotifications" class="ss-notifications" type="button" aria-controls="alertsDropdown" aria-expanded="false"></button><button id="ssLogout" class="danger">Sign out</button></div></header><div id="ssBody"></div>`);
+      click('ssBack',()=>{if(slipId&&(page==='payslips'||page==='reports'&&section==='payslips')){slipId='';render();}else show(area);});click('ssHome',()=>{hide();home();});click('ssLogout',()=>{hide();logout();});
       refreshNotifications();
       if(!page){
         const tiles=area==='ess'?[['payslips','Payslips','📄'],['leave','Leave & Timesheets','📅'],['details','Personal Details','👤'],['support','My Support Requests','🎫']]:[['approvals','Approvals','✅'],['reports','Direct Reports','👥'],['leave','Leave & Timesheets','📅'],['payments','Payment Processing','💳'],['details','Employee Details','👤'],['certification','Certification Report','📋'],['support','My Support Requests','🎫']];
@@ -257,7 +259,7 @@
       put('ssBody','<div class="ss-layout"><aside id="ssSidebar"></aside><main id="ssMain"></main></div>');
       if(page==='support'){put('ssBody','<main id="ssSupport" class="card"></main>');return o.mountSupport?.('ssSupport',{mode:'own',area});}
       if(page==='certification'){put('ssSidebar','<h2>Certification Report</h2>');return o.mountCertification?.('ssMain',user());}
-      if(page==='payslips')return renderPayslips();
+      if(page==='payslips'){put('ssBody','<main id="ssMain" class="card ss-payslips-main"></main>');return renderPayslips();}
       if(page==='approvals')return renderApprovals();
       if(page==='reports')return renderReports();
       if(page==='payments')return renderPayments();
@@ -275,13 +277,18 @@
     function renderPayslips(employeeId=user()){
       S.assertScope(state(),user(),employeeId,area);
       const ownPays=()=>{S.assertScope(state(),user(),employeeId,area);return S.payslips(state(),employeeId,'','',false);};
-      const all=ownPays(),list=S.payslips(state(),employeeId,from,to,recent);
-      put(page==='reports'?'ssReportPays':'ssSidebar',`<h2>Payslips</h2><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button>${list.map(p=>`<button data-ss-slip="${esc(p.id)}" class="secondary">${E.ppeLabel(p.cycle)} — ${esc(p.position)} — ${p.finalised?'Finalised':'Open'} — ${E.money(p.net)}</button>`).join('')||'<p>No payslips.</p>'}`);
-      click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),employeeId,f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
-      if(!list.some(p=>p.id===slipId))slipId=list[0]?.id||'';
-      const p=list.find(p=>p.id===slipId);
-      put('ssMain',p?`<div class="controls"><button id="ssPrint" ${p.finalised?'':'disabled'}>Print / Save as PDF</button><button id="ssDownload" class="secondary" ${p.finalised?'':'disabled'}>Download Payslip</button></div>${payslipHtml(p)}`:'<p>Only your own payslips are shown. Choose a wider date range to see earlier payslips.</p>');
-      buttons('data-ss-slip',id=>{slipId=id;render();});
+      const all=ownPays(),list=S.payslips(state(),employeeId,from,to,recent),employee=state().employees.find(e=>e.id===employeeId);
+      const selectedPay=slipId?all.find(p=>p.id===slipId):null;if(slipId&&!selectedPay)slipId='';
+      if(!selectedPay){
+        const rows=list.map(p=>`<tr data-slip-row="${esc(p.id)}"><td><button class="ss-slip-link" data-ss-slip="${esc(p.id)}" aria-label="Open payslip for ${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}, ${esc(p.position)}">${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}</button></td><td>${esc(p.position||'Casual Earnings')}</td><td>${Number(p.segmentIndex||1)}</td><td class="ss-money">${E.money(p.gross||0)}</td><td class="ss-money">${E.money(p.tax||0)}</td><td class="ss-money">${E.money(p.net||0)}</td><td><span class="ss-slip-state ${p.finalised?'':'is-open'}">${p.finalised?'Finalised':'Open'}</span></td><td aria-hidden="true">›</td></tr>`).join('');
+        put('ssMain',`<header class="ss-payslip-header"><div><h2>Payslips</h2><p>${esc(E.employeeName(employee))}</p></div></header><div class="ss-pay-filters"><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><div><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button></div></div><div class="ss-payslip-list"><table><thead><tr><th>Pay Date</th><th>Position</th><th>Segment</th><th class="ss-money">Gross</th><th class="ss-money">Tax</th><th class="ss-money">Net</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ss-payslip-empty">No payslips found. Choose a wider date range to see earlier payslips.</div></td></tr>'}</tbody></table></div><p class="ss-payslip-count">${recent?'Most recent 10 payslips':'Selected date range'} · ${list.length} payslip${list.length===1?'':'s'}</p>`);
+        click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),employeeId,f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
+        const open=id=>{if(!ownPays().some(p=>p.id===id))throw Error('Payslip unavailable.');slipId=id;render();};
+        buttons('data-ss-slip',open);document.querySelectorAll('[data-slip-row]').forEach(row=>row.addEventListener('click',event=>{if(event.target.closest('button'))return;try{open(row.getAttribute('data-slip-row'));}catch(e){reportError(e.message);}}));return;
+      }
+      const p=selectedPay;
+      put('ssMain',`<div class="ss-slip-toolbar"><button id="ssPayBack">← Back to Payslips</button><div><button id="ssPrint" ${p.finalised?'':'disabled'}>Print / Save as PDF</button><button id="ssDownload" class="secondary" ${p.finalised?'':'disabled'}>Download Payslip</button></div></div>${p.finalised?'':'<p class="small-note">This pay is not finalised. Printing and downloading will be available after finalisation.</p>'}<div class="ss-slip-document">${payslipHtml(p)}</div>`);
+      click('ssPayBack',()=>{slipId='';render();});
       click('ssPrint',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
       click('ssDownload',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     }
@@ -368,11 +375,16 @@
       if(o.mountPayments)o.mountPayments('ssMain',user());else put('ssMain','<p>Payment Processing unavailable.</p>');
     }
     function refreshNotifications(){
-      const alerts=S.alertsFor(state(),user());o.onNotifications?.(alerts);put('ssNotifications',`<summary title="Notifications" aria-label="Notifications (${alerts.length})"><span aria-hidden="true">🔔</span><span class="notification-count">${alerts.length}</span></summary><div class="ss-notification-list">${alerts.map(a=>`<div class="history-item"><button class="secondary" data-ss-alert="${esc(a.id)}">${esc(a.message)}</button> <button data-ss-read="${esc(a.id)}">Mark as read</button></div>`).join('')||'<p>No notifications.</p>'}</div>`);
-      buttons('data-ss-alert',id=>{const a=S.alertsFor(state(),user()).find(a=>a.id===id);if(a?.action?.page==='support'){if(o.openSupportCase)return o.openSupportCase(a.action.caseId);page='support';render();o.mountSupport?.('ssSupport',{mode:'own',area,caseId:a.action.caseId});}});
-      buttons('data-ss-read',id=>{mutate(s=>S.readAlert(s,user(),id));refreshNotifications();});
+      const alerts=S.alertsFor(state(),user());o.onNotifications?.(alerts);const bell=$('ssNotifications');if(!bell)return;
+      bell.setAttribute('aria-label',`Notifications (${alerts.length})`);bell.setAttribute('aria-expanded',String(!!$('alertsDropdown')&&!$('alertsDropdown').hidden));bell.innerHTML=`<span aria-hidden="true">${global.PayrollUI?.icon('bell')||'🔔'}</span><span class="notification-count">${alerts.length}</span>`;
+      if(!bell.dataset.notificationBound){bell.dataset.notificationBound='true';bell.addEventListener('click',event=>o.toggleNotifications?.(event));}
     }
-    return {show,hide,render,refreshNotifications};
+    function navigateNotification(action){
+      const mode=action.area||'ess';if(mode==='mss'&&!S.profile(state(),user()).mss)throw Error('Manager Self Service access is required.');
+      if(action.page==='approvals'&&action.requestId&&!S.requests(state(),user(),'mss').some(l=>l.id===action.requestId&&l.status==='Awaiting Manager Approval'))throw Error('This request is no longer awaiting your approval.');
+      show(mode,action.page==='requests'?'leave':action.page);if(action.page==='requests')section='requests';if(action.requestId)requestId=action.requestId;render();
+    }
+    return {show,hide,render,refreshNotifications,navigateNotification};
   }
   const api={create,createUI};global.SelfService=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

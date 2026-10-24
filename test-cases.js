@@ -38,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.4'), 'sidebar/version label must show v1.2.4');
-  assert(data.includes("APP_VERSION = '1.2.4'"), 'data-store version must be 1.2.1');
+  assert(html.includes('v1.2.5'), 'sidebar/version label must show v1.2.5');
+  assert(data.includes("APP_VERSION = '1.2.5'"), 'data-store version must be 1.2.5');
 })();
 
 (function testAnchorPayCycle(){
@@ -553,7 +553,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const styles = fs.readFileSync(path.join(root,'styles.css'),'utf8');
   const data = fs.readFileSync(path.join(root,'data-store.js'),'utf8');
   assert(html.includes('Employee Data') && html.includes('Personal Details') && html.includes('data-tab="bankDetails"') && html.includes('data-tab="superDetails"'), 'Employee Data dropdown should contain Personal Details, Bank Details, Tax Details and Super');
-  assert(html.includes('id="alertsBell"') && html.includes('id="alertsDropdown"') && app.includes('No New Alerts'), 'Top bar alert bell dropdown should exist and show No New Alerts when empty');
+  assert(html.includes('id="alertsBell"') && html.includes('id="alertsDropdown"') && app.includes('No notifications'), 'Notification bell and shared notification pane should exist with an empty state');
   const payslipSection = app.slice(app.indexOf('function payslipHtml'), app.indexOf('function renderCertification'));
   assert(payslipSection.includes("['LSL Entitlement Date'") && !payslipSection.includes("['LSL Pro-rata (Hours)'"), 'Payslip should show LSL Entitlement Date and not LSL pro-rata');
   assert(app.includes('clearOpenPayslip();') && app.includes('window.scrollTo({ top:0'), 'Tab changes should clear payslip content and reset scroll to top');
@@ -619,7 +619,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   const styles = fs.readFileSync(path.join(__dirname,'styles.css'),'utf8');
   assert(app.includes('function autoSaveCertLine') && app.includes('Certification progress saved'), 'Certification line checkboxes should auto-save progress');
   assert(app.includes('Certification removed:') && app.includes('reconcileCertificationForCycle'), 'Current/open pay changes after certification should uncertify affected lines and create an alert');
-  assert(app.includes('Mark as read') && app.includes('markAlertRead'), 'Alerts dropdown should support marking individual alerts as read');
+  assert(app.includes('Dismiss notification:') && app.includes('markAlertRead'), 'Notification pane should support dismissing individual notifications');
   assert(app.includes('has not yet been completed and is overdue. Please complete this certification report as soon as possible.'), 'Past incomplete certification reports should create daily overdue alerts');
   assert(app.includes('completed previous-period certification reports remain permanently locked') || app.includes('Completed previous-period certification reports remain permanently locked'), 'Change notes should state previous completed reports stay locked');
   assert(styles.includes('min-height:282mm!important') && styles.includes('v1.1.16 top-aligned tab layout'), 'v1.1.18 print CSS should enlarge the payslip to fill the A4 page better');

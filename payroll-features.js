@@ -39,17 +39,41 @@
    if(hours<=0||Number(rate.hourlyRate)<=0)throw Error('A valid roster and pay rate are required.');
    return {name:E.employeeName(e),type,hours,position:rate.position||e.position,regular:gross,gross,date,fullTime:hours>=E.STANDARD_WEEKLY_HOURS*2};
   }
-  function validateTemplate(type,d,raisedFor){
+  function validateTemplate(type,d,raisedFor,s){
    if(!Object.hasOwn(REASONS,type))throw Error('Select a valid request type.');
-   if(!REASONS[type].includes(d.reason))throw Error('Select a valid '+type+' reason.');
-   const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber','reportsTo','roster','firstName','lastName']:type==='Variation'?['effectiveDate','changes']:type==='Movement'?['effectiveDate','positionNumber','temporary','reportsTo','roster']:['effectiveDate','lastWorkingDay'];
-   for(const key of required)if(!String(d[key]||'').trim())throw Error('Enter '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');
-   for(const key of ['effectiveDate','lastWorkingDay','returnDate','contractEndDate'])if(d[key]&&(!/^\d{4}-\d{2}-\d{2}$/.test(d[key])||E.iso(E.parseDate(d[key]))!==d[key]))throw Error('Enter a valid '+key+'.');
+   const validDate=(key,value)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value||'')||E.iso(E.parseDate(value))!==value)throw Error('Enter a valid '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');};
    if(type!=='Commencement'&&raisedFor==='new-employee')throw Error('Select an existing employee for this request.');
-   if(type==='Termination'&&E.addDays(d.lastWorkingDay,1)!==d.effectiveDate)throw Error('Termination effective date must be the day after the last working day.');
+   if(type==='Termination'){if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {lastWorkingDay:d.lastWorkingDay};}
+   if(!REASONS[type].includes(d.reason))throw Error('Select a valid '+type+' reason.');
+   const rosterNeeded=type==='Commencement'||type==='Movement'||type==='Variation'&&d.reason==='Work Schedule Adjustment';
+   const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber','firstName','lastName']:type==='Variation'?['effectiveDate',...(rosterNeeded?[]:['changes'])]:['effectiveDate','positionNumber','temporary'];
+   for(const key of required)if(!String(d[key]||'').trim())throw Error('Enter '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');
+   validDate('effectiveDate',d.effectiveDate);
+   for(const key of ['returnDate','contractEndDate','dateOfBirth'])if(d[key])validDate(key,d[key]);
+   if(type==='Movement'&&!['Permanent','Temporary'].includes(d.temporary))throw Error('Select a valid assignment.');
    if(type==='Movement'&&d.temporary==='Temporary'&&(!d.returnDate||d.returnDate<=d.effectiveDate))throw Error('Enter a return date after the movement date.');
+   if(type==='Commencement'&&!['Permanent','Fixed Term','Casual'].includes(d.employmentType))throw Error('Select a valid employment type.');
    if(type==='Commencement'&&d.employmentType==='Fixed Term'&&(!d.contractEndDate||d.contractEndDate<d.effectiveDate))throw Error('Enter a valid contract end date.');
-   return Object.fromEntries(Object.entries(d).map(([k,v])=>[k,String(v).trim()]));
+   const fields=['reason','effectiveDate','firstName','lastName','dateOfBirth','email','address','employmentType','contractEndDate','positionNumber','changes','temporary','returnDate'];
+   const result=Object.fromEntries(fields.filter(k=>d[k]!==undefined&&String(d[k]).trim()!=='').map(k=>[k,String(d[k]).trim()]));
+   if(type==='Commencement'&&d.employmentType!=='Fixed Term')delete result.contractEndDate;
+   if(type==='Movement'&&d.temporary!=='Temporary')delete result.returnDate;
+   if(type==='Commencement'||type==='Movement'){
+    const pos=(s?.positions||[]).find(p=>p.active!==false&&String(p.positionNumber)===String(d.positionNumber));if(!pos)throw Error('Select an active position.');
+    result.positionName=String(pos.positionName||'');result.reportsTo=Array.isArray(pos.reportsTo)?pos.reportsTo.map(String).join(', '):String(pos.reportsTo||'');
+   }
+   if(rosterNeeded){
+    const employee=(s?.employees||[]).find(e=>e.id===raisedFor),employmentType=type==='Commencement'?d.employmentType:E.activeEmploymentType(s,employee,d.effectiveDate);
+    if(!employmentType)throw Error('Select an existing employee with employment details.');
+    const zero={0:0,1:0,2:0,3:0,4:0,5:0,6:0},casual=employmentType==='Casual';
+    if(!casual&&!['1-week','2-week'].includes(d.rosterPattern))throw Error('Select a roster pattern.');
+    const pattern=casual?'1-week':d.rosterPattern;
+    function week(values,name){if(!values||typeof values!=='object'||Array.isArray(values))throw Error('Enter the '+name+' roster hours.');const out={};for(let day=0;day<7;day++){const value=values[day];if(value===''||value==null||!['string','number'].includes(typeof value)||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>24)throw Error('Enter '+name+' daily hours between 0 and 24.');out[day]=Number(value);}return out;}
+    const first=casual?{...zero}:week(d.hoursByDayWeek1,'week 1'),second=casual?{...zero}:pattern==='2-week'?week(d.hoursByDayWeek2,'week 2'):{...first};
+    if(!casual&&[...Object.values(first),...Object.values(second)].reduce((n,x)=>n+x,0)<=0)throw Error('Enter the employee’s roster hours.');
+    Object.assign(result,{rosterPattern:pattern,hoursByDay:{...first},hoursByDayWeek1:first,hoursByDayWeek2:second});
+   }
+   return result;
   }
   return {migrateCashOuts,validateCashDraft,syncCashOuts,statement,validateTemplate};
  }
