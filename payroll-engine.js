@@ -1176,7 +1176,7 @@
   function mergeRows(rows){
     const out = [];
     rows.forEach(row=>{
-      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||'',row.payslipPosition||'',row.payslipPositionNumber||'',row.payslipDepartment||'',row.casualEarnings?row.positionNumber||'':''].join('|');
+      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||'',row.payslipPosition||'',row.payslipPositionNumber||'',row.payslipDepartment||'',row.casualEarnings?row.positionNumber||'':'',['leave','leaveLoading'].includes(row.kind)?row.leaveBookingId||'':''].join('|');
       const canCombineAnywhere = row.description === 'Regular Pay' && row.kind === 'regular';
       let target = canCombineAnywhere ? out.find(x=>x._key===key) : out[out.length-1];
       if(target && target._key === key && (canCombineAnywhere || addDays(target.endDate,1) === row.startDate)){

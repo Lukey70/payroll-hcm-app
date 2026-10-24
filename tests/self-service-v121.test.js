@@ -133,7 +133,7 @@ function uiFixture(){
   const s=fixture(),nodes=new Map();let id='worker';const errors=[],timers=[],timeouts=[];
   function node(tag,attrs){
     const attributes={};for(const m of attrs.matchAll(/([\w-]+)="([^"]*)"/g))attributes[m[1]]=m[2];
-    const classes=new Set((attributes.class||'').split(' ').filter(Boolean));const events={};const dataset={};for(const [k,value]of Object.entries(attributes))if(k.startsWith('data-'))dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=value;const n={tag,attributes,dataset,style:{},readOnly:/\breadonly\b/.test(attrs),querySelectorAll(selector){const attr=selector.match(/^\[([^\]]+)\]$/)?.[1];return attr?(this.children||[]).filter(x=>Object.hasOwn(x.attributes,attr)):[];},setAttribute(k,v){attributes[k]=v;},focus(){},remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);},appendChild(child){this.children=this.children||[];child.parentNode=this;this.children.push(child);},showModal(){this.open=true;},close(){this.open=false;},value:attributes.value||'',checked:/\bchecked\b/.test(attrs),disabled:/\bdisabled\b/.test(attrs),hidden:/\bhidden\b/.test(attrs),innerText:'',textContent:'',classList:{remove(...xs){xs.forEach(x=>classes.delete(x));},add(...xs){xs.forEach(x=>classes.add(x));},toggle(x){if(classes.has(x))classes.delete(x);else classes.add(x);},contains(x){return classes.has(x);}},getAttribute:k=>attributes[k],addEventListener:(k,f)=>(events[k]||(events[k]=[])).push(f),fire(k='click'){if(this.disabled)return;return Promise.all([...events[k]||[]].map(f=>f({target:n,stopPropagation(){}})));},click(){n.fire();}};
+    const classes=new Set((attributes.class||'').split(' ').filter(Boolean));const events={};const dataset={};for(const [k,value]of Object.entries(attributes))if(k.startsWith('data-'))dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=value;const n={tag,attributes,dataset,style:{},readOnly:/\breadonly\b/.test(attrs),querySelectorAll(selector){const attr=selector.match(/^\[([^\]]+)\]$/)?.[1];return attr?(this.children||[]).filter(x=>Object.hasOwn(x.attributes,attr)):[];},setAttribute(k,v){attributes[k]=v;},focus(){},remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(x=>x!==this);},appendChild(child){this.children=this.children||[];child.parentNode=this;this.children.push(child);},prepend(child){this.children=this.children||[];child.parentNode=this;this.children.unshift(child);},showModal(){this.open=true;},close(){this.open=false;},value:attributes.value||'',checked:/\bchecked\b/.test(attrs),disabled:/\bdisabled\b/.test(attrs),hidden:/\bhidden\b/.test(attrs),innerText:'',textContent:'',classList:{remove(...xs){xs.forEach(x=>classes.delete(x));},add(...xs){xs.forEach(x=>classes.add(x));},toggle(x){if(classes.has(x))classes.delete(x);else classes.add(x);},contains(x){return classes.has(x);}},getAttribute:k=>attributes[k],addEventListener:(k,f)=>(events[k]||(events[k]=[])).push(f),fire(k='click'){if(this.disabled)return;return Promise.all([...events[k]||[]].map(f=>f({target:n,stopPropagation(){}})));},click(){n.fire();}};
     let html='';Object.defineProperty(n,'innerHTML',{get:()=>html,set:x=>{html=x;parse(x,n);}});if(attributes.id)nodes.set(attributes.id,n);return n;
   }
   let all=[];
@@ -308,6 +308,27 @@ test('MSS saving and removing ordinary earnings preserves Payroll Overpayment Ad
   f.edit('data-add-field','0|earningType','Bonus');f.edit('data-add-field','0|amount','125');f.click('saveAdditional');f.flush();
   assert.strictEqual(JSON.stringify(f.s.additionalEarnings.find(a=>a.id===row.id)),before);const bonus=f.s.additionalEarnings.find(a=>a.earningType==='Bonus');assert.strictEqual(bonus.amount,125);
   f.choose('data-del-add',bonus.id);f.click('confirmYes');f.click('saveAdditional');f.flush();assert.strictEqual(f.s.additionalEarnings.length,1);assert.strictEqual(JSON.stringify(f.s.additionalEarnings[0]),before);assert.deepStrictEqual(f.errors,[]);
+});
+test('separate adjacent leave bookings retain their own payslip dates and hours without changing pay totals',()=>{
+  for(const type of ['Personal Leave','Annual Leave','Long Service Leave']){
+    const s=fixture(),c=E.cycleForDate('2026-10-28');s.currentCycleId=c.id;
+    const bookings=['2026-10-28','2026-10-29'].map((date,i)=>({id:'separate-'+i,empId:'worker',type,startDate:date,endDate:date,hours:7.5,requestedHours:7.5,status:'Approved'}));s.leaveBookings.push(...bookings);
+    const pays=E.calculateEmployee(s,'worker',c.id,false),rows=pays.flatMap(p=>p.rows).filter(r=>r.description===type),f=uiFixture();
+    assert.equal(rows.length,2);assert.deepStrictEqual(rows.map(r=>[r.leaveBookingId,r.startDate,r.endDate,r.units]),bookings.map(b=>[b.id,b.startDate,b.endDate,7.5]));
+    const displayed=f.app.consolidatePayslipDisplayRows(pays.flatMap(p=>p.rows)).filter(r=>r.description===type);
+    assert.equal(displayed.length,2);assert.deepStrictEqual(Array.from(displayed,r=>[r.startDate,r.endDate,r.units]),bookings.map(b=>[b.startDate,b.endDate,7.5]));
+    const single=JSON.parse(JSON.stringify(s));single.leaveBookings=[{...bookings[0],endDate:'2026-10-29',hours:15,requestedHours:undefined}];const reference=E.calculateEmployee(single,'worker',c.id,false);
+    for(const field of ['gross','tax','net','personalAccrual','annualAccrual'])assert.equal(pays.reduce((n,p)=>n+p[field],0),reference.reduce((n,p)=>n+p[field],0),field);
+  }
+});
+test('one multi-day leave booking remains consolidated with its full dates and hours',()=>{
+  const s=fixture(),c=E.cycleForDate('2026-10-28');s.currentCycleId=c.id;s.leaveBookings.push({id:'multi-day',empId:'worker',type:'Personal Leave',startDate:'2026-10-28',endDate:'2026-10-29',hours:15,status:'Approved'});
+  const p=E.calculateEmployee(s,'worker',c.id,false)[0],f=uiFixture(),rows=f.app.consolidatePayslipDisplayRows(p.rows).filter(r=>r.description==='Personal Leave');
+  assert.equal(rows.length,1);assert.equal(rows[0].units,15);assert.equal(rows[0].startDate,'2026-10-28');assert.equal(rows[0].endDate,'2026-10-29');
+});
+test('older merged leave rows show their actual range without rewriting saved finalised history',()=>{
+  const f=uiFixture(),rows=[{description:'Personal Leave',kind:'leave',leaveBookingId:'old-first-booking',bookingStartDate:'2026-10-28',bookingEndDate:'2026-10-28',startDate:'2026-10-28',endDate:'2026-10-29',units:15,rate:40,amount:600,position:'Officer'}],before=JSON.stringify(rows);
+  const displayed=f.app.consolidatePayslipDisplayRows(rows);assert.equal(displayed[0].startDate,'2026-10-28');assert.equal(displayed[0].endDate,'2026-10-29');assert.equal(displayed[0].units,15);assert.equal(JSON.stringify(rows),before);
 });
 if(require.main===module)console.log(`PASS: ${count} v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.`);
 

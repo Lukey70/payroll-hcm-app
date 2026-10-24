@@ -155,8 +155,8 @@
         return Object.assign({},l,{approverName:name||'Unassigned'});
       });
     }
-    function errors(s,date=today()){
-      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[`${E.employeeName(e)}: ${m.message}`];});
+    function errors(s,date=today(),structured=false){
+      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[structured?{empId:e.id,employeeName:E.employeeName(e),message:m.message}:`${E.employeeName(e)}: ${m.message}`];});
     }
     function syncNotifications(s,date=today()){
       const payroll=s.employees.filter(e=>profile(s,e.id,date).payroll).map(e=>e.id);
@@ -214,6 +214,11 @@
       s.additionalEarnings=s.additionalEarnings.filter(x=>x.id!==recordId);
       (s.auditLog||(s.auditLog=[])).unshift(`MSS earnings ${recordId} deleted by ${id} for ${a.empId}.`);
     }
+    function absenceBalanceCardsHtml(b,pending={}){
+      const cards=[['annual','Annual Leave','calendar'],['personal','Personal Leave','health'],['lslProRata','LSL Pro Rata','clock'],['lslAccrued','LSL Accrued','clock']];
+      const icon=name=>global.PayrollUI?.icon(name)||'';
+      return `<div class="absence-balance-cards">${cards.map(([key,label,glyph])=>`<article class="absence-balance-card leave-balance-${key}${Number(b[key])<0?' leave-balance-negative':''}" data-balance-card="${key}"><h3>${icon(glyph)}${label}</h3><p class="absence-balance-value"><strong>${Number(b[key]||0).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong><span>hours</span></p>${pending[key]!==undefined?`<p class="absence-pending">Pending requests: ${Number(pending[key]||0).toFixed(2)} hours</p>`:''}${Number(b[key])<0?'<p class="absence-pending">Below zero</p>':''}</article>`).join('')}<article class="absence-balance-card absence-entitlement-card" data-balance-card="lslEntitlementDate"><h3>${icon('calendar')}LSL Entitlement Date</h3><p class="absence-balance-value"><strong>${b.lslEntitlementDate?E.fmtPay(b.lslEntitlementDate):'—'}</strong></p></article></div>`;
+    }
     function additionalAmount(s,a){
       if(['Travel Allowance','Bonus','Reimbursement','Overpayment Adjustment'].includes(a.earningType))return Number(a.amount||0);
       if(a.earningType==='Casual Earnings')return E.round2(Number(a.hours||0)*Number(a.casualLoadedRate||0));
@@ -224,7 +229,7 @@
       if(a.earningType==='Motor Vehicle Allowance - Return Trip')return 50;
       return E.round2(Number(a.hours||0)*Number(E.activePayRate(s,a.empId,a.startDate).hourlyRate||0)*(a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1));
     }
-    return {isActiveEmployee,EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,canManageAdditional,saveAdditional,deleteAdditional,additionalAmount};
+    return {isActiveEmployee,EMPLOYEE_LEAVE,MANAGER_LEAVE,EARNINGS,profile,assignments,isOperationsManager,managerFor,directReports,assertScope,validateRequest,submitLeave,decide,deleteRequest,notifyDecision,requests,errors,syncNotifications,alertsFor,readAlert,payslips,canManageAdditional,absenceBalanceCardsHtml,saveAdditional,deleteAdditional,additionalAmount};
   }
   function createUI(o){
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
@@ -339,7 +344,7 @@
       if(section==='balances'){
         const b=E.projectedBalances(state(),e,E.currentCycle(state()),false),pending=state().leaveBookings.filter(l=>l.empId===e.id&&l.status==='Awaiting Manager Approval');
         const reserved=type=>E.round4(pending.filter(l=>l.type===type).reduce((a,l)=>a+Number(l.hours||0),0));
-        put('ssMain',`${picker}<h2>Absence Balances</h2>${table(['Leave','Balance (Hours)','Pending Requests (Hours)'],[['Annual Leave',Number(b.annual).toFixed(4),reserved('Annual Leave')],['Personal Leave',Number(b.personal).toFixed(4),reserved('Personal Leave')],['Long Service Leave',Number(b.lslAccrued).toFixed(4),reserved('Long Service Leave')]])}<p class="small-note">Pending requests reserve availability for validation; they do not deduct actual balances or enter payroll until approved and processed.</p>`);bindSelector();return;
+        const casual=E.isCasualOnly(state(),e,E.currentCycle(state()).end);put('ssMain',`${picker}<h2>Absence Balances</h2>${casual?'<p class="small-note"><strong>Casual-only employee.</strong> Annual Leave, Personal Leave and Long Service Leave balances/entitlement dates do not apply while the employee remains casual-only.</p>':S.absenceBalanceCardsHtml(b,{annual:reserved('Annual Leave'),personal:reserved('Personal Leave'),lslAccrued:reserved('Long Service Leave')})+'<p class="small-note">Pending requests reserve availability for validation; they do not deduct actual balances or enter payroll until approved and processed.</p>'}`);bindSelector();return;
       }
       const types=area==='ess'?S.EMPLOYEE_LEAVE:S.MANAGER_LEAVE;
       const manager=S.managerFor(state(),e.id);

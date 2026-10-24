@@ -38,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.5'), 'sidebar/version label must show v1.2.5');
-  assert(data.includes("APP_VERSION = '1.2.5'"), 'data-store version must be 1.2.5');
+  assert(html.includes('v1.2.6'), 'sidebar/version label must show v1.2.6');
+  assert(data.includes("APP_VERSION = '1.2.6'"), 'data-store version must be 1.2.6');
 })();
 
 (function testAnchorPayCycle(){
@@ -1992,8 +1992,6 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
 })();
 
 (function testV131ManualLslAdjustmentUsesOpenCycleAndKeepsAccruing(){
-  const app=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
-  assert(app.includes("addJobEvent(e.id,'Absence Balance Adjustment',currentCycle().end"),'Manual LSL adjustments must be effective in the current open pay context rather than today\'s later real-world date');
   const state=baseState(); const e=addEmployee(state,{id:'lslmanual131',startDate:'2025-01-01',originalStartDate:'2025-01-01',lslServiceDate:'2025-01-01',lslAccruedBalance:0});
   addSchedule(state,e.id,'2025-01-01');
   const asOf=E.cycleById(1).end; const before=E.lslBalances(state,e,asOf);

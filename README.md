@@ -1,4 +1,4 @@
-# Payroll/HCM App v1.2.5
+# Payroll/HCM App v1.2.6
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
@@ -6,7 +6,18 @@ The app stores payroll data in the browser's localStorage. Export data before re
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
 
-## v1.2.5
+## v1.2.6
+
+- Dashboard includes Unassigned, Assigned to Me and Awaiting Information support counts, linking to matching case lists. Upcoming Employee Changes lists saved commencements, terminations, contract expiries and temporary-assignment returns for the next 30 days, with links to Job Data.
+- Payroll Management payslips match ESS/MSS: date-filtered list rows, a dedicated document view and Back preserving employee/date selection. The default remains the latest ten. Open payslips are visible; print/download requires finalisation and current Payroll access.
+- Absence Balance uses shared cards across Payroll, ESS and MSS: Annual/Personal Leave, then LSL Pro Rata/LSL Accrued, then the entitlement date across the full width. ESS/MSS remain read-only with existing scope and pending reservations.
+- Payroll Adjust Balance supports adding or taking credits and changing the LSL entitlement date, requires a comment and records an audit event. Adjustments retain precision, normal LSL accrual and finalised history. Failed storage saves roll back. Recalculate Balances was removed from the screen.
+- Pay Errors uses Employee Name, Employee ID and Error Message columns. PDF download includes current-pay context, generation time, repeated table headers and pagination. Print / Save PDF supports names outside the bundled native font encoding.
+- Separate adjacent leave bookings retain their own dates/hours on calculated payslips. Older merged rows display their full actual range without changing saved pay amounts.
+- Requester messages or attachments return Awaiting Info cases to Open, retaining assignment and notifying the existing assignee. Payroll follow-ups retain Awaiting Info.
+- Termination requests require a configured termination reason and Last Working Day; subject/description automation is retained. Home tiles show only icons and names.
+
+## Previous release: v1.2.5
 
 - Additional Earnings opens on the current pay period, includes a Current Pay Period button, and retains the employee and period after saving.
 - Leave balances use separate cards; date filtering defaults to the previous two years with no To Date cutoff.
@@ -34,7 +45,7 @@ Default test password: `1234`. Existing stored credentials remain in use. New in
 
 ## Validation
 
-Run all seven calculation/service/DOM regression suites with Node.js:
+Run all ten calculation/service/DOM regression suites with Node.js:
 
 ```sh
 npm test
@@ -48,6 +59,6 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.5.md` records the release checks and their limits.
+An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.6.md` records the release checks and their limits.
 
 Two historical payroll engine fixtures under `tests/` support regression checks for already-paid casual earnings and settlement compatibility. They are test references and are not loaded by the app.

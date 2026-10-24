@@ -41,6 +41,24 @@ await test('unassigned employee reply has no notification; empty/malformed/overs
  for(const files of [[{...textFile,size:4}],[{...textFile,data:'javascript:alert(1)'}],[{...textFile,size:1048577}],Array(6).fill(textFile)])assert.throws(()=>T.message(s,'worker',c.id,'Attachment',files,'own',DATE),/Attachment|attachment|five|Invalid/);
  assert.equal(c.messages.length,n);
 });
+await test('requester responses return Awaiting Info to Open, retain assignment and notify only the assignee',()=>{
+ for(const [actor,area,files,text] of [['worker','ess',[],'Here is the information'],['manager','mss',[textFile],'']]){
+  const s=fixture(),c=T.submit(s,actor,input,area,DATE);T.assign(s,'payroll',c.id,'payroll',DATE);T.status(s,'payroll',c.id,'Awaiting Info','',DATE);
+  const count=s.alerts.length,m=T.message(s,actor,c.id,text,files,'own',DATE);
+  assert.equal(c.status,'Open');assert.equal(c.assignedTo,'payroll');assert.equal(c.updatedAt,m.createdAt);
+  assert(c.history.some(h=>h.status==='Open'&&h.action==='Response received'&&h.actorId===actor&&h.at===m.createdAt));
+  assert.equal(s.alerts.length,count+1);assert.deepStrictEqual(s.alerts[0].recipientIds,['payroll']);assert.equal(s.alerts[0].key,'support-message:'+m.id);
+ }
+});
+await test('Payroll follow-ups and rejected replies do not clear Awaiting Info; ordinary case statuses stay unchanged',()=>{
+ const s=fixture(),c=T.submit(s,'worker',input,'ess',DATE);T.assign(s,'payroll',c.id,'payroll',DATE);T.status(s,'payroll',c.id,'Awaiting Info','',DATE);
+ T.message(s,'payroll',c.id,'Please provide more information',[],'payroll',DATE);assert.equal(c.status,'Awaiting Info');
+ for(const [actor,text,files]of [['worker','',[]],['worker','Bad attachment',[{...textFile,size:4}]],['outsider','Unauthorized',[]]]){
+  const before=JSON.stringify(c);assert.throws(()=>T.message(s,actor,c.id,text,files,'own',DATE));assert.equal(JSON.stringify(c),before);
+ }
+ const fresh=T.submit(s,'worker',input,'ess',DATE);T.message(s,'worker',fresh.id,'Extra detail',[],'own',DATE);assert.equal(fresh.status,'New');
+ T.assign(s,'payroll',fresh.id,'payroll',DATE);T.message(s,'worker',fresh.id,'Another detail',[],'own',DATE);assert.equal(fresh.status,'Open');
+});
 await test('Awaiting Info, required resolution notes, exact resolution notification and 14-day auto closure',()=>{
  const s=fixture(),c=T.submit(s,'worker',input,'ess',DATE);assert.throws(()=>T.status(s,'payroll',c.id,'Awaiting Info','',DATE),/Assign/);
  T.assign(s,'payroll',c.id,'payroll',DATE);T.status(s,'payroll',c.id,'Awaiting Info','',DATE);assert.equal(c.status,'Awaiting Info');
@@ -67,6 +85,8 @@ await test('actual support UI submits ESS case, scopes list, shows conversation 
  f.set('supportMessage','Employee reply');f.nodes.get('supportFiles').files=[];await f.click('supportSend');assert.equal(f.s.supportRequests[0].messages[0].side,'right');
  actor='payroll';ui.mount('ssMain',{mode:'payroll'});assert(f.html('ssMain').includes('<th>Raised by</th>'));await f.choose('data-support-case',f.s.supportRequests[0].id);assert(f.nodes.has('supportAssigned'));assert(!f.html('ssMain').includes('value="manager"'));
  await f.click('supportAssignMe');assert.equal(f.s.supportRequests[0].assignedTo,'payroll');await f.click('supportAwait');assert.equal(f.s.supportRequests[0].status,'Awaiting Info');
+ actor='worker';ui.mount('ssMain',{mode:'own',area:'ess',caseId:f.s.supportRequests[0].id});f.set('supportMessage','Here is the requested information');f.nodes.get('supportFiles').files=[];await f.click('supportSend');assert.equal(f.s.supportRequests[0].status,'Open');assert(f.html('ssMain').includes('support-status-open'));
+ actor='payroll';ui.mount('ssMain',{mode:'payroll',caseId:f.s.supportRequests[0].id});
  await f.click('supportResolve');assert(f.nodes.get('supportResolveDialog').open);f.set('supportNotes','Resolved in test');await f.click('supportConfirmResolve');assert.equal(f.s.supportRequests[0].status,'Resolved');assert(f.html('ssMain').includes('Resolved in test'));
 });
 await test('support UI storage failure rolls back case, messages, sequence and notification together',async()=>{

@@ -43,7 +43,7 @@
    if(!Object.hasOwn(REASONS,type))throw Error('Select a valid request type.');
    const validDate=(key,value)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value||'')||E.iso(E.parseDate(value))!==value)throw Error('Enter a valid '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');};
    if(type!=='Commencement'&&raisedFor==='new-employee')throw Error('Select an existing employee for this request.');
-   if(type==='Termination'){if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {lastWorkingDay:d.lastWorkingDay};}
+   if(type==='Termination'){if(!REASONS.Termination.includes(d.reason))throw Error('Select a valid termination reason.');if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {reason:d.reason,lastWorkingDay:d.lastWorkingDay};}
    if(!REASONS[type].includes(d.reason))throw Error('Select a valid '+type+' reason.');
    const rosterNeeded=type==='Commencement'||type==='Movement'||type==='Variation'&&d.reason==='Work Schedule Adjustment';
    const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber','firstName','lastName']:type==='Variation'?['effectiveDate',...(rosterNeeded?[]:['changes'])]:['effectiveDate','positionNumber','temporary'];
@@ -75,7 +75,59 @@
    }
    return result;
   }
-  return {migrateCashOuts,validateCashDraft,syncCashOuts,statement,validateTemplate};
+  function adjustAbsenceBalances(s,actorId,empId,input,today=E.iso(new Date())){
+   if(!E.selfService.profile(s,actorId,today).payroll)throw Error('Payroll Management access is required.');
+   const e=s.employees.find(e=>e.id===empId);if(!e)throw Error('Select an employee.');
+   const c=E.currentCycle(s);if(E.isCasualOnly(s,e,c.end))throw Error('Casual-only employees do not have leave credits to adjust.');
+   const before=E.projectedBalances(s,e,c,false),deltas={};
+   for(const key of ['annual','personal','lslProRata','lslAccrued']){const raw=input[key]??0;if(typeof raw==='boolean'||!Number.isFinite(Number(raw)))throw Error('Enter valid adjustment hours.');deltas[key]=E.round4(Number(raw));}
+   const date=input.lslEntitlementDate===undefined?before.lslEntitlementDate:String(input.lslEntitlementDate||'');
+   if((date||before.lslEntitlementDate)&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||E.iso(E.parseDate(date))!==date))throw Error('Enter a valid LSL entitlement date.');
+   const comment=String(input.comment||'').trim();if(!comment)throw Error('A comment is required.');if(comment.length>20000)throw Error('Comment must be at most 20,000 characters.');
+   const after=Object.fromEntries(Object.keys(deltas).map(k=>[k,E.round4(before[k]+deltas[k])]));after.lslEntitlementDate=date;
+   if(after.lslProRata<0||after.lslAccrued<0)throw Error('LSL adjustments cannot take more credits than the available balance.');
+   if(!Object.values(deltas).some(n=>n!==0)&&date===before.lslEntitlementDate)throw Error('Enter an adjustment or change the LSL entitlement date.');
+   const base=E.lslBalances(s,e,c.end,{ignoreManual:true,ignoreDateAdjustment:true}),profile=E.lslServiceProfile(s,e,c.end,{ignoreDateAdjustment:true});
+   if(date!==before.lslEntitlementDate&&!base.entitlementDate)throw Error('An LSL service history is required to change the entitlement date.');
+   e.annualLeaveBalance=after.annual;e.personalLeaveBalance=after.personal;
+   e.lslAccruedAdjustment=0;e.lslProRataAdjustment=0;e.lslAccruedBalance=after.lslAccrued;e.lslProRataOverride=profile.continuityStart?'':after.lslProRata;e.lslEntitlementDateOverride=profile.continuityStart?'':date;e.lslEntitlementConvertedAt='';
+   if(date!==before.lslEntitlementDate){e.lslEntitlementDateAdjustmentDays=E.dateDiffDays(base.entitlementDate,date);e.lslEntitlementDateAdjustmentCycleStart=profile.cycleStart||'';}
+   const description=`Balances adjusted. Annual ${before.annual.toFixed(4)} → ${after.annual.toFixed(4)}, Personal ${before.personal.toFixed(4)} → ${after.personal.toFixed(4)}, LSL Accrued ${before.lslAccrued.toFixed(4)} → ${after.lslAccrued.toFixed(4)}, LSL Pro-rata ${before.lslProRata.toFixed(4)} → ${after.lslProRata.toFixed(4)}, LSL Date ${E.fmtPay(before.lslEntitlementDate)} → ${E.fmtPay(date)}. Comment: ${comment}`;
+   (s.jobEvents||(s.jobEvents=[])).push({id:'balance_'+Date.now()+'_'+Math.random().toString(16).slice(2),empId,type:'Absence Balance Adjustment',effectiveDate:c.end,description,refKind:'employee',refId:empId,actorId,adjustments:deltas});
+   (s.auditLog||(s.auditLog=[])).unshift(`${new Date().toISOString()} — ${actorId}: Absence balances adjusted for ${empId}. ${comment}`);
+   return {before,after};
+  }
+  function upcomingEmployeeChanges(s,today){
+   const until=E.addDays(today,30),changes=[],seen=new Set();
+   const valid=date=>/^\d{4}-\d{2}-\d{2}$/.test(date||'')&&E.iso(E.parseDate(date))===date;
+   function add(e,date,type,detail,rowId=''){
+    if(!valid(date)||date<today||date>until)return;
+    const key=[e.id,date,type].join('|');if(seen.has(key))return;seen.add(key);
+    changes.push({empId:e.id,name:E.employeeName(e),date,type,detail,rowId});
+   }
+   for(const e of s.employees||[]){
+    const rows=(s.jobDataRows||[]).filter(j=>j.empId===e.id&&j.saved!==false&&valid(j.effectiveDate)).slice().sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
+    const latest=new Map();for(const row of rows)latest.set(row.action+'|'+row.effectiveDate,row);
+    for(const row of latest.values()){
+     if(row.action==='Commencement')add(e,row.effectiveDate,row.reason==='New Fixed Term Contract'?'Contract commencement':'Commencement',row.reason||'',row.id);
+     if(row.action==='Movement'&&row.reason==='Return from Temp Assignment')add(e,row.effectiveDate,'Return from temporary assignment',row.positionName||'',row.id);
+     if(row.action==='Termination'){
+      const expiry=row.reason==='Expiry of Fixed Term',last=E.addDays(row.effectiveDate,-1);
+      // A permanent appointment supersedes an obsolete fixed-term expiry row.
+      const job=rows.filter(j=>j.action!=='Termination'&&j.effectiveDate<=last).at(-1);
+      if(expiry&&job?.positionClass==='Permanent')continue;
+      add(e,expiry?last:row.effectiveDate,expiry?'Contract expiry':'Termination',expiry?'Last contract day':`${row.reason||'Termination'} · Last working day: ${E.fmtPay(last)}`,row.id);
+     }
+    }
+    if(!rows.some(j=>j.action==='Commencement'))add(e,e.startDate,'Commencement','Employment start');
+    if(!rows.some(j=>j.action==='Termination')){
+     if(e.type==='Fixed Term'&&e.contractEndDate&&(!e.terminationDate||e.terminationReason==='Expiry of Fixed Term'))add(e,e.contractEndDate,'Contract expiry','Last contract day');
+     else if(e.terminationDate){const last=e.terminationReason==='Expiry of Fixed Term'?e.terminationDate:E.addDays(e.terminationDate,-1);add(e,e.terminationReason==='Expiry of Fixed Term'?last:e.terminationDate,e.terminationReason==='Expiry of Fixed Term'?'Contract expiry':'Termination',`${e.terminationReason||'Termination'} · Last working day: ${E.fmtPay(last)}`);}
+    }
+   }
+   return changes.sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name)||a.type.localeCompare(b.type));
+  }
+  return {migrateCashOuts,validateCashDraft,syncCashOuts,statement,validateTemplate,upcomingEmployeeChanges,adjustAbsenceBalances};
  }
  // Standalone PDF letter using the same company heading and footer as Statement of Service.
  function earningsPdf(d){
@@ -91,6 +143,9 @@
    {text:d.role.toUpperCase(),bold:true},{text:d.issued}];
   return pdf(lines);
  }
+ function payErrorsPdf(report){
+  return pdf([{text:"McDonald's California Franchise",bold:true,size:18},{text:'PAY ERRORS',bold:true,size:15,gap:16},{text:report.cycle,size:10,gap:8},{text:`Generated: ${report.generatedAt} (Perth)`,size:9},{text:`${report.rows.length} errors / warnings`,size:9},{text:'Warnings are for review and do not prevent pay finalisation.',size:9,gap:6},...(report.rows.length?[{table:{headers:['Employee Name','Employee ID','Error Message'],rows:report.rows.map(r=>[r.employeeName,r.empId,r.message])}}]:[{text:'No errors found',bold:true,gap:15}])]);
+ }
  function pdf(lines){
   const fonts=typeof module!=='undefined'?require('./pdf-fonts'):g.PayrollPdfFonts;
   const cp={'€':128,'‘':145,'’':146,'“':147,'”':148,'–':150,'—':151,'…':133};
@@ -98,6 +153,18 @@
   const width=(text,size,bold=false)=>Array.from(String(text),c=>fonts[bold?'bold':'regular'].widths[(cp[c]||c.charCodeAt(0))-32]||600).reduce((n,w)=>n+w,0)*size/1000;
   const pages=[[]];let y=780,previousY=y;
   for(const line of lines){const o=typeof line==='object'&&!Array.isArray(line)?line:Array.isArray(line)?{text:line[0],bold:line[1],size:line[2]}:{text:line};const size=o.size||11,maxWidth=o.width||487;
+   if(o.table){
+    const widths=[125,80,282],xs=[54,179,259],size=9,leading=13;
+    function wrapCell(text,max){const result=[];for(const paragraph of String(text??'').split('\n')){let part='';for(const word of paragraph.split(/\s+/)){if(width(word,size)>max){if(part){result.push(part);part='';}for(const char of word){if(part&&width(part+char,size)>max){result.push(part);part='';}part+=char;}}else if(part&&width(part+' '+word,size)>max){result.push(part);part=word;}else part+=(part?' ':'')+word;}result.push(part);}return result;}
+    function row(cells,height,bold=false){const commands=pages.at(-1);if(bold)commands.push(`0.94 0.96 0.98 rg 54 ${y-height} 487 ${height} re f 0 g`);commands.push(`0.82 0.86 0.9 RG 0.5 w 54 ${y-height} 487 ${height} re S`);for(const x of [179,259])commands.push(`${x} ${y} m ${x} ${y-height} l S`);cells.forEach((lines,i)=>lines.forEach((text,n)=>commands.push(`BT /${bold?'F2':'F1'} ${size} Tf ${xs[i]+7} ${y-16-n*leading} Td (${escape(text)}) Tj ET`)));y-=height;}
+    const header=()=>row(o.table.headers.map(h=>[h]),28,true);
+    function nextPage(){pages.push([]);y=780;pages.at(-1).push(`BT /F2 13 Tf 54 780 Td (Pay Errors - continued) Tj ET`);y-=30;header();}
+    if(y<130)nextPage();else header();
+    for(const record of o.table.rows){const cells=record.map((text,i)=>wrapCell(text,widths[i]-14)),total=Math.max(...cells.map(c=>c.length)),height=total*leading+14;if(height>y-86&&height<=620)nextPage();let offset=0;
+     while(offset<total){if(y<113)nextPage();const count=Math.min(total-offset,Math.floor((y-86-14)/leading));if(count<1){nextPage();continue;}row(cells.map((lines,i)=>offset>0&&i<2&&offset>=lines.length?lines.slice(0,count):lines.slice(offset,offset+count)),count*leading+14);offset+=count;}
+    }
+    y-=18;continue;
+   }
    if(o.y!==undefined)y=o.y;else if(o.sameLine)y=previousY;else y-=o.gap||0;
    const chunks=[];for(const paragraph of String(o.text||'').split('\n')){let chunk='';for(const word of paragraph.split(/\s+/)){if(width(word,size,o.bold)>maxWidth){if(chunk){chunks.push(chunk);chunk='';}for(const char of word){if(width(chunk+char,size,o.bold)>maxWidth&&chunk){chunks.push(chunk);chunk='';}chunk+=char;}}else if(width(chunk+' '+word,size,o.bold)>maxWidth&&chunk){chunks.push(chunk);chunk=word;}else chunk+=(chunk?' ':'')+word;}chunks.push(chunk);}
    for(const chunk of chunks){if(y<86){pages.push([]);y=780;}const x=o.right?Math.max(54,541-width(chunk,size,o.bold)):54;pages.at(-1).push(`BT /${o.bold?'F2':'F1'} ${size} Tf ${x.toFixed(2)} ${y} Td (${escape(chunk)}) Tj ET`);previousY=y;y-=size+6;}
@@ -112,5 +179,5 @@
   pages.forEach(commands=>{const page=objects.length+1,stream=page+1;kids.push(page+' 0 R');objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${stream} 0 R >>`);const data=commands.join('\n');objects.push(`<< /Length ${data.length} >>\nstream\n${data}\nendstream`);});objects[1]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${pages.length} >>`;
   let out='%PDF-1.4\n',offsets=[0];objects.forEach((o,i)=>{offsets.push(out.length);out+=`${i+1} 0 obj\n${o}\nendobj\n`;});const start=out.length;out+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`+offsets.slice(1).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;return Uint8Array.from(out,c=>c.charCodeAt(0));
  }
- const api={create,CASH_TYPES,REASONS,pdf,earningsPdf};g.PayrollFeatures=api;if(typeof module!=='undefined')module.exports=api;
+ const api={create,CASH_TYPES,REASONS,pdf,earningsPdf,payErrorsPdf};g.PayrollFeatures=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);

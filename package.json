@@ -1,11 +1,11 @@
 {
   "name": "payroll-hcm-app",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "private": true,
   "description": "Browser-local payroll and HCM prototype",
   "scripts": {
     "test": "node tests/run-all.cjs",
-    "test:browser": "node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js"
+    "test:browser": "node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"

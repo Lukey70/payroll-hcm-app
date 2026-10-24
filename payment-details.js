@@ -49,13 +49,13 @@
       const f=list(s,'superFunds').find(f=>f.id===r.fundId);
       return {fundId:r.fundId,fundName:f?.fundName||'',usi:f?.usi||r.usi||'',abn:f?.abn||'',memberNumber:r.memberNumber||'',effectiveDate:r.effectiveDate,effectiveSequence:r.effectiveSequence,valid:!!f&&!f.deleted&&f.active!==false&&!!text(r.memberNumber),fundStatus:!f?'Missing':f.deleted?'Deleted':f.active===false?'Inactive':'Active'};
     }
-    function paymentDetailErrors(s,c,results=[]){
+    function paymentDetailErrors(s,c,results=[],structured=false){
       const errors=[];
       list(s,'employees').filter(e=>isEmployedInCycle(e,c)||results.some(p=>p.empId===e.id)).forEach(e=>{
-        const name=employeeName(e),a=superAccountForCycle(s,e.id,c),b=activePaymentRecord(s,'bankDetails',e.id,c.start);
-        if(!a) errors.push(`${name} has no super fund listed for this pay period.`);
-        else if(!a.valid) errors.push(`${name} has an invalid super account (${a.fundStatus} fund or missing Member Number).`);
-        if(!bankRecordValid(b)) errors.push(`${name} has missing or incomplete Bank Details for this pay period.`);
+        const add=message=>errors.push(structured?{empId:e.id,employeeName:employeeName(e),message:message[0].toUpperCase()+message.slice(1)}:`${employeeName(e)} ${message}`),a=superAccountForCycle(s,e.id,c),b=activePaymentRecord(s,'bankDetails',e.id,c.start);
+        if(!a) add('has no super fund listed for this pay period.');
+        else if(!a.valid) add(`has an invalid super account (${a.fundStatus} fund or missing Member Number).`);
+        if(!bankRecordValid(b)) add('has missing or incomplete Bank Details for this pay period.');
       }); return errors;
     }
     function paymentPayslipFields(s,e,c,net,superAmt,pre,post,finalised){

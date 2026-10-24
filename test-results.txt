@@ -1,9 +1,9 @@
-Payroll/HCM App v1.2.5 - 24 October 2026
+Payroll/HCM App v1.2.6 - 24 October 2026
 
 NODE REGRESSION
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.5 test
+> payroll-hcm-app@1.2.6 test
 > node tests/run-all.cjs
 
 PASS: Login button/password strings and app version are present
@@ -156,12 +156,17 @@ PASS: MSS whole-period save rolls back a valid first row if a later row fails va
 PASS: MSS switching employees or pay periods during a delayed save cancels that save
 PASS: MSS cannot create, amend, convert or delete Overpayment Adjustments
 PASS: MSS saving and removing ordinary earnings preserves Payroll Overpayment Adjustments
-PASS: 39 v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: separate adjacent leave bookings retain their own payslip dates and hours without changing pay totals
+PASS: one multi-day leave booking remains consolidated with its full dates and hours
+PASS: older merged leave rows show their actual range without rewriting saved finalised history
+PASS: 42 v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
 PASS: unique immutable case numbering and own-only ESS raised-for with submission receipt
 PASS: MSS raised-for includes non-direct reports and New Employee; rejects invalid IDs and missing access
 PASS: assignment list enforces current payroll access; assign/unassign correctly drives New and Open
 PASS: two-way messages, attachment bytes and independent employee/payroll notifications
 PASS: unassigned employee reply has no notification; empty/malformed/oversize attachments rejected without messages
+PASS: requester responses return Awaiting Info to Open, retain assignment and notify only the assignee
+PASS: Payroll follow-ups and rejected replies do not clear Awaiting Info; ordinary case statuses stay unchanged
 PASS: Awaiting Info, required resolution notes, exact resolution notification and 14-day auto closure
 PASS: work timer accumulates and stops on resolution; export/import preserves cases, attachments and sequence
 PASS: actual support UI submits ESS case, scopes list, shows conversation and payroll-only assignment controls
@@ -172,7 +177,7 @@ PASS: manager certification becomes stale after pay changes and storage failure 
 PASS: MSS direct report payslips use ESS controls and reject printing after manager reassignment
 PASS: statement omits Position Refresh; Audit moved to Settings; consistent tile rows and larger Home icon
 PASS: app wiring opens ESS support tile, submission bell links, MSS certification and direct-report payslips
-PASS: 15 v1.2.4 support/certification/UI test groups.
+PASS: 17 v1.2.4 support/certification/UI test groups.
 PASS: Payroll on-behalf submission requires both selections and records real creator separately
 PASS: submission documents validated before sequence/case/receipt mutation and included in backup
 PASS: reopen requires owner/reason, retains assignment/history, logs message and clears closure countdown
@@ -217,20 +222,48 @@ PASS: Reports To is derived from active Position Data, including multiple report
 PASS: one-week and two-week rosters retain numeric daily hours and allow an alternating week off
 PASS: empty, free-text, malformed and invalid daily rosters are rejected; two weeks require both grids
 PASS: casual requests follow Job Data with a zero fixed roster, without requiring hours
-PASS: termination accepts only Last Working Day, ignores extra reason/effective-date input and validates dates
+PASS: termination requires an allowed reason and valid Last Working Day, without an effective date or other fields
 PASS: roster variations use daily grids; other variations retain change details and no roster requirement
 PASS: manager-only restrictions and backup/import preserve structured roster records
 PASS: 9 simplified request template rule groups.
-PASS: all seven Node.js payroll regression suites.
+PASS: upcoming changes include today and day 30, exclude past/out-of-range, drafts and orphan records, and sort by date
+PASS: Job Data effective sequences produce one event and unprocessed support templates do not become employee changes
+PASS: contract expiry uses the last contract day, avoids duplication and ignores obsolete expiry following permanency
+PASS: legacy future starts, terminations and inclusive fixed-term expiries appear without Job Data rows
+PASS: dashboard counts and links select exact unassigned, assigned-to-me and Awaiting Info lists
+PASS: upcoming employee links open the correct Job Data row and dashboard updates when returning
+PASS: 6 dashboard feature groups.
+PASS: signed adjustments add and take all leave credits precisely, use the open period and preserve finalised history
+PASS: LSL entitlement date can change alone and future service still accrues
+PASS: unauthorised, invalid, empty and excess-LSL adjustments leave the records unchanged
+PASS: shared cards contain requested order, pending reservations and full-width entitlement date
+PASS: Payroll Add/Take form saves deltas, retains employee and rejects storage failures atomically
+PASS: ESS and MSS balances show cards with no adjustment controls and MSS remains direct-report scoped
+PASS: 6 absence balance card and adjustment groups.
+PASS: structured payment and manager warnings retain IDs even for employees with identical names
+PASS: Pay Errors table has employee name, ID and message, escapes content and includes unknown-ID warnings safely
+PASS: PDF export supports empty results and paginated tables with long messages and repeated headers
+PASS: 3 Pay Errors report groups.
+PASS: all ten Node.js payroll regression suites.
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice
 
 BROWSER REGRESSION - Chromium 153 / Playwright 1.62.1
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.5 test:browser
-> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js
+> payroll-hcm-app@1.2.6 test:browser
+> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js
 
 PASS: Chromium Dashboard, five reports, PDF download, selected employee leave, compensation roster hours, packaging inline validation/save, cash-out credit validation/save/delete, MSS templates, case history and casual-only ESS login; no JavaScript page errors.
 PASS: real support popup, shared data with unsaved parent work, single-window reuse, popup blocking, failed-save rollback, draft preservation, parent closure, direct-link rejection and logout access; notification pane, per-user dismissal and navigation; ESS/MSS payslip rows, dedicated views, date-preserving Back and finalisation controls.
-PASS: automatic subjects, no structured description requirement, daily/two-week roster entry and totals, readonly position reporting, last-day-only termination, casual roster rules, saved schedule display, general field restoration and mobile layout; no Job Data changes or browser errors.
+PASS: automatic subjects, no structured description requirement, daily/two-week roster entry and totals, readonly position reporting, required termination reason and last working day, casual roster rules, saved schedule display, general field restoration and mobile layout; no Job Data changes or browser errors.
+PASS: dashboard queue counts and filtered navigation, exact upcoming Job Data row, live support response refresh, empty queue, desktop and mobile layout; no browser errors.
+PASS: Payroll payslip table, recent ten and date filters, row/keyboard opening, dedicated document view, Back retaining employee/range, finalised print/download, open-pay and role guards, employee switching, empty range and mobile layout; no browser errors.
+PASS: matching Payroll/ESS/MSS card rows and mobile layout, Payroll Add/Take credits and entitlement date, comment validation and cancellation, persisted shared balances and read-only self-service with direct-report scope; no browser errors.
+PASS: actual Pay Errors three-column table and duplicate-name IDs, direct PDF download, print view, Unicode print fallback, refreshed no-errors report and export permission guard; no browser errors.
 
-PASS: JavaScript syntax checks for 23 files.
+PASS: JavaScript syntax checks for 30 files; version/cache metadata verified.
+PASS: Pay Errors PDF content, ten-page stress report, repeated headers, margins and rendered layout verified.

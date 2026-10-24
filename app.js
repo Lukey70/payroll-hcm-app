@@ -32,6 +32,7 @@
   let deductionDraftLoadedFor = '';
   let taxDirty = false;
   let selectedTaxRecordId = '';
+  let selectedAbsenceEmp='';
   let absenceEditing = false;
   let absenceDraft = null;
   let selectedJobDataEmp = '';
@@ -54,14 +55,14 @@
   const uid = prefix => DataStore.uid(prefix);
   const E = PayrollEngine;
   const S = E.selfService;
-  const Features=typeof PayrollFeatures!=='undefined'?PayrollFeatures:null;const F=Features?.create(E);let reportMode='';
+  const Features=typeof PayrollFeatures!=='undefined'?PayrollFeatures:null;const F=Features?.create(E);let reportMode='',payErrorReport=null;
   const nativeAlert=globalThis.alert;function alert(message){if(typeof PayrollUI!=='undefined')PayrollUI.error(message);else nativeAlert(message);}
   let ssUI=null;const supportUIs=new Map();
   const T=SupportRequests.create(E,S);
   let supportWindowRef=null;const supportWindowName=uid('PayrollSupportRequests');
   function supportWindowAccess(actorId=currentUserId){return !!actorId&&actorId===currentUserId&&sessionStorage.getItem('payrollAuthed')==='true'&&S.profile(state,actorId).payroll;}
   function supportViewsChanged(source){
-    renderAlerts();ssUI?.refreshNotifications();
+    renderAlerts();renderDashboard();ssUI?.refreshNotifications();
     for(const [id,ui] of supportUIs)if(id!==source&&$(id)&&!$(id).hidden&&(id!=='support'||$(id).classList.contains('active')))ui.refresh?.();
   }
   function commitSupportWindowChanges(actorId){
@@ -341,9 +342,9 @@
     const profile=accessProfileForEmployee(e.id,todayIso());
     const areas=landingAreasForEmployee(e.id,todayIso());
     h('landingWelcome',`Welcome ${esc(e.firstName||E.employeeName(e).split(' ')[0]||'')}`);
-    const payrollTile=areas.includes('payroll')?`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" data-ui-icon="payroll" aria-hidden="true">💼</span><span>Payroll Management</span><span class="landing-tile-subtitle">Payroll processing and administration</span></button>`:'';
-    const essTile=`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" data-ui-icon="employee" aria-hidden="true">👤</span><span>Employee Self-Service</span><span class="landing-tile-subtitle">Your employment information and services</span></button>`;
-    const mssTile=areas.includes('mss')?`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" data-ui-icon="manager" aria-hidden="true">👥</span><span>Manager Self Service</span><span class="landing-tile-subtitle">Team management and approvals</span></button>`:'';
+    const payrollTile=areas.includes('payroll')?`<button type="button" class="landing-tile" data-landing-area="payroll"><span class="landing-tile-icon" data-ui-icon="payroll" aria-hidden="true">💼</span><span>Payroll Management</span></button>`:'';
+    const essTile=`<button type="button" class="landing-tile" data-landing-area="ess"><span class="landing-tile-icon" data-ui-icon="employee" aria-hidden="true">👤</span><span>Employee Self-Service</span></button>`;
+    const mssTile=areas.includes('mss')?`<button type="button" class="landing-tile" data-landing-area="mss"><span class="landing-tile-icon" data-ui-icon="manager" aria-hidden="true">👥</span><span>Manager Self Service</span></button>`:'';
     h('landingTiles',`<div class="landing-slot landing-slot-payroll">${payrollTile}</div><div class="landing-slot landing-slot-ess">${essTile}</div><div class="landing-slot landing-slot-mss">${mssTile}</div>`);
     document.querySelectorAll('[data-landing-area]').forEach(button=>button.addEventListener('click',()=>{
       if(button.dataset.landingArea==='payroll') openPayrollManagement();
@@ -643,6 +644,7 @@
       if(toggle){ toggle.classList.add('open'); toggle.setAttribute('aria-expanded','true'); }
     }
     resetTabScroll();
+    if(tab==='dashboard')renderMetrics();
     if(tab==='additionalEarnings'){ additionalPeriodOffset=0; loadAdditionalDraft(); }
     if(tab==='jobData') renderJobData();
     if(tab==='deductions') renderDeductions();
@@ -653,6 +655,7 @@
     if(tab==='support')mountSupport('support',{mode:'payroll'});
     if(tab==='reports'){reportMode='';renderReports();}
     if(tab==='payslip') renderPayslip();
+    if(tab==='absenceBalance')renderAbsenceBalance();
     resetTabScroll();
     requestAnimationFrame(resetTabScroll);
     setTimeout(resetTabScroll, 0);
@@ -682,6 +685,26 @@
     h('metricGross', E.money(results.reduce((s,p)=>s+p.gross,0)));
     h('metricRetro', E.money(results.reduce((s,p)=>s+p.retro,0)));
     h('metricPayStatus', `${E.ppeLabel(c)}<small>Period: ${E.fmtPay(c.start)} - ${E.fmtPay(c.end)}<br>Payment Date: ${E.fmtPay(c.paymentDate)}<br>Pay close: ${E.fmtPay(c.closeDate)}</small>`);
+    renderDashboard();
+  }
+
+  function renderDashboard(){
+    if(!currentUserId||!S.profile(state,currentUserId).payroll){h('dashboardSupport','');h('dashboardChanges','');return;}
+    const glyph=name=>typeof PayrollUI!=='undefined'?PayrollUI.icon(name):'';
+    const cases=(state.supportRequests||[]).filter(c=>['New','Open','Awaiting Info'].includes(c.status));
+    const counts=[['unassigned','Unassigned',cases.filter(c=>!c.assignedTo).length,'support'],['mine','Assigned to me',cases.filter(c=>c.assignedTo===currentUserId).length,'person'],['awaiting','Awaiting information',cases.filter(c=>c.status==='Awaiting Info').length,'clock']];
+    h('dashboardSupport',`<header class="dashboard-panel-heading"><div><h3>${glyph('support')}Support Requests</h3><p>Active cases requiring attention</p></div></header><div class="dashboard-support-counts">${counts.map(([key,label,total,icon])=>`<button class="dashboard-count" data-dashboard-support="${key}">${glyph(icon)}<strong>${total}</strong><span>${label}</span><small>View requests →</small></button>`).join('')}</div>`);
+    $('dashboardSupport')?.querySelectorAll('[data-dashboard-support]').forEach(b=>b.addEventListener('click',()=>{
+      if(!S.profile(state,currentUserId).payroll)return;const key=b.dataset.dashboardSupport;
+      showTab('support',document.querySelector('.nav-btn[data-tab="support"]'));mountSupport('support',{mode:'payroll',filter:key==='mine'?'open':key,mine:key==='mine'});
+    }));
+    const today=todayIso(),changes=F?.upcomingEmployeeChanges(state,today)||[];
+    h('dashboardChanges',`<header class="dashboard-panel-heading"><div><h3>${glyph('calendar')}Upcoming employee changes</h3><p>Next 30 days · ${E.fmtPay(today)} – ${E.fmtPay(E.addDays(today,30))}</p></div><span class="dashboard-total">${changes.length}</span></header><p class="small-note">Saved employee and Job Data records. Support requests awaiting processing are not included.</p>${changes.length?`<div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Date</th><th>Employee</th><th>Change</th><th>Details</th></tr></thead><tbody>${changes.map((c,i)=>`<tr><td>${E.fmtPay(c.date)}</td><td><button class="dashboard-employee" data-dashboard-change="${i}">${esc(c.name)}<small>${esc(c.empId)}</small></button></td><td><span class="dashboard-change-type">${esc(c.type)}</span></td><td>${esc(c.detail)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="dashboard-empty">No employee changes scheduled in the next 30 days.</p>'}`);
+    $('dashboardChanges')?.querySelectorAll('[data-dashboard-change]').forEach(b=>b.addEventListener('click',()=>{
+      if(!S.profile(state,currentUserId).payroll)return;const change=changes[Number(b.dataset.dashboardChange)];if(!change||!emp(change.empId))return;
+      selectedJobDataEmp=change.empId;selectedJobDataDraft=null;selectedJobDataRowIndex=Math.max(0,jobDataDisplayRows(change.empId).findIndex(j=>j.id===change.rowId));
+      showTab('jobData',document.querySelector('.nav-btn[data-tab="jobData"]'));
+    }));
   }
 
   function renderEmployees(){
@@ -1548,59 +1571,39 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
   }
 
   function renderAbsenceBalance(){
-    h('absenceBalance', `<h2>Absence Balance</h2><div class="controls">${showTerminatedControl('absenceShowTerminated','absenceBalance')}</div><div class="grid form-grid"><div><label>Employee</label><select id="absenceEmp">${employeeOptions(employeeList(showTerminatedByTab.absenceBalance))}</select></div></div><div id="absenceOutput"></div>`);
-    bindShowTerminated('absenceShowTerminated','absenceBalance',renderAbsenceBalance); $('absenceEmp').addEventListener('change',()=>{ absenceEditing=false; absenceDraft=null; renderAbsenceOutput(); }); renderAbsenceOutput();
+    const people=employeeList(showTerminatedByTab.absenceBalance);if(!people.some(e=>e.id===selectedAbsenceEmp)){selectedAbsenceEmp='';absenceEditing=false;absenceDraft=null;}
+    h('absenceBalance', `<h2>Absence Balance</h2><div class="controls">${showTerminatedControl('absenceShowTerminated','absenceBalance')}</div><div class="grid form-grid"><div><label>Employee</label><select id="absenceEmp">${employeeOptions(people)}</select></div></div><div id="absenceOutput"></div>`);
+    setv('absenceEmp',selectedAbsenceEmp);bindShowTerminated('absenceShowTerminated','absenceBalance',renderAbsenceBalance);$('absenceEmp').addEventListener('change',()=>{absenceEditing=false;absenceDraft=null;renderAbsenceOutput();});renderAbsenceOutput();
+  }
+  const absenceAdjustmentFields=[['annual','Annual Leave','adjAnnual'],['personal','Personal Leave','adjPersonal'],['lslProRata','LSL Pro Rata','adjLslProRata'],['lslAccrued','LSL Accrued','adjLslAccrued']];
+  function readAbsenceAdjustment(){
+    const d={};for(const [key,,id]of absenceAdjustmentFields){const hours=Number(v(id)||0);if($(id).validity?.badInput||!Number.isFinite(hours)||hours<0)throw Error('Enter zero or positive adjustment hours.');d[key]=(v(id+'Action')==='Take'?-1:1)*hours;}d.lslEntitlementDate=v('adjLslDate');return d;
   }
   function renderAbsenceOutput(){
-    const e=emp(v('absenceEmp')); if(!e){ h('absenceOutput','<p class="small-note">Select an employee.</p>'); return; }
-    if(employmentTypeFor(e,currentCycle().end)==='Casual'){ absenceEditing=false; absenceDraft=null; h('absenceOutput','<p class="small-note"><strong>Casual-only employee.</strong> Annual Leave, Personal Leave and Long Service Leave balances/entitlement dates do not apply while the employee remains casual-only.</p>'); return; }
-    const b=E.projectedBalances(state,e,currentCycle(),false);
+    selectedAbsenceEmp=v('absenceEmp');const e=emp(selectedAbsenceEmp);if(!e){h('absenceOutput','<p class="small-note">Select an employee.</p>');return;}
+    if(employmentTypeFor(e,currentCycle().end)==='Casual'){absenceEditing=false;absenceDraft=null;h('absenceOutput','<p class="small-note"><strong>Casual-only employee.</strong> Annual Leave, Personal Leave and Long Service Leave balances/entitlement dates do not apply while the employee remains casual-only.</p>');return;}
+    const b=E.projectedBalances(state,e,currentCycle(),false),cards=S.absenceBalanceCardsHtml(b);
     if(absenceEditing){
-      const d=absenceDraft || {annual:b.annual, personal:b.personal, lslAccrued:b.lslAccrued, lslProRata:b.lslProRata, lslEntitlementDate:b.lslEntitlementDate}; absenceDraft=d;
-      h('absenceOutput', `<div class="grid form-grid"><div><label>Annual Leave Balance (Hours)</label><input id="adjAnnual" type="number" step="0.01" value="${Number(d.annual||0).toFixed(2)}"></div><div><label>Personal Leave Balance (Hours)</label><input id="adjPersonal" type="number" step="0.01" value="${Number(d.personal||0).toFixed(2)}"></div><div><label>LSL Accrued Balance (Hours)</label><input id="adjLslAccrued" type="number" step="0.01" value="${Number(d.lslAccrued||0).toFixed(2)}"></div><div><label>LSL Pro-rata (Hours)</label><input id="adjLslProRata" type="number" step="0.01" value="${Number(d.lslProRata||0).toFixed(2)}"></div><div><label>LSL Entitlement Date</label><input id="adjLslDate" type="date" value="${esc(d.lslEntitlementDate||'')}"></div></div><div class="save-row"><button id="cancelAbsenceAdjust" class="secondary">Cancel</button><button id="saveAbsenceAdjust">Save</button></div>`);
-      ['adjAnnual','adjPersonal','adjLslAccrued','adjLslProRata','adjLslDate'].forEach(id=>$(id).addEventListener('input',()=>{ absenceDraft={ annual:Number(v('adjAnnual')||0), personal:Number(v('adjPersonal')||0), lslAccrued:Number(v('adjLslAccrued')||0), lslProRata:Number(v('adjLslProRata')||0), lslEntitlementDate:v('adjLslDate') }; }));
-      $('cancelAbsenceAdjust').addEventListener('click',()=>{ absenceEditing=false; absenceDraft=null; renderAbsenceOutput(); });
-      $('saveAbsenceAdjust').addEventListener('click',saveAbsenceAdjustment); return;
+      if(!absenceDraft||absenceDraft.empId!==e.id)absenceDraft={empId:e.id,cycleId:currentCycle().id,values:{annual:0,personal:0,lslProRata:0,lslAccrued:0,lslEntitlementDate:b.lslEntitlementDate}};
+      const d=absenceDraft.values;
+      h('absenceOutput',`${cards}<section class="absence-adjustment"><h3>Adjust Balance</h3><p class="small-note">Choose Add or Take and enter hours. Leave zero for balances that do not need changing.</p><div class="absence-adjustment-grid">${absenceAdjustmentFields.map(([key,label,id])=>`<div class="absence-adjust-field"><h4>${label}</h4><div class="absence-adjust-inputs"><label>Action<select id="${id}Action"><option ${Number(d[key])>=0?'selected':''}>Add</option><option ${Number(d[key])<0?'selected':''}>Take</option></select></label><label>Hours<input id="${id}" type="number" min="0" step="0.0001" value="${Math.abs(Number(d[key]||0))}"></label></div></div>`).join('')}<label class="absence-adjust-date">LSL Entitlement Date<input id="adjLslDate" type="date" value="${esc(d.lslEntitlementDate||'')}"></label></div><div class="save-row"><button id="cancelAbsenceAdjust" class="secondary">Cancel</button><button id="saveAbsenceAdjust">Save</button></div></section>`);
+      for(const [, ,id]of absenceAdjustmentFields)for(const field of [id,id+'Action'])$(field).addEventListener('change',()=>{try{absenceDraft.values=readAbsenceAdjustment();}catch{}});$('adjLslDate').addEventListener('change',()=>{absenceDraft.values.lslEntitlementDate=v('adjLslDate');});
+      $('cancelAbsenceAdjust').addEventListener('click',()=>{absenceEditing=false;absenceDraft=null;renderAbsenceOutput();});$('saveAbsenceAdjust').addEventListener('click',saveAbsenceAdjustment);return;
     }
-    h('absenceOutput', table(['Balance','Hours / Date'], [['Annual Leave Balance (Hours)',b.annual.toFixed(2)],['Personal Leave Balance (Hours)',b.personal.toFixed(2)],['LSL Accrued Balance (Hours)',b.lslAccrued.toFixed(2)],['LSL Pro-rata (Hours)',b.lslProRata.toFixed(2)],['LSL Entitlement Date',E.fmtPay(b.lslEntitlementDate)]]) + `<div class="controls"><button id="adjustBalances" class="secondary">Adjust Balances</button><button id="recalculateBalances" class="secondary">Recalculate Balances</button></div>`);
-    $('adjustBalances').addEventListener('click',()=>{ absenceEditing=true; absenceDraft=null; renderAbsenceOutput(); });
-    $('recalculateBalances').addEventListener('click',openRecalculateBalances);
+    h('absenceOutput',`${cards}<div class="absence-balance-actions"><button id="adjustBalances" class="secondary">Adjust Balance</button></div>`);
+    $('adjustBalances').addEventListener('click',()=>{if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');absenceEditing=true;absenceDraft=null;renderAbsenceOutput();});
   }
-
-  function openRecalculateBalances(){
-    const e=emp(v('absenceEmp')); if(!e) return alert('Select an employee first.');
-    confirmModal(`Recalculate balances for ${E.employeeName(e)} from saved employment history, schedules, leave bookings and cash-outs?`, 'Yes', ()=>{
-      const before=E.projectedBalances(state,e,currentCycle());
-      const recalculated=E.recalculateBalances(state,e,currentCycle().end);
-      e.annualLeaveBalance=E.round4(recalculated.annual);
-      e.personalLeaveBalance=E.round4(recalculated.personal);
-      e.lslAccruedAdjustment=0; e.lslProRataAdjustment=0; e.lslEntitlementDateAdjustmentDays=0; e.lslEntitlementDateAdjustmentCycleStart='';
-      e.lslAccruedBalance=E.round4(recalculated.lslAccrued); e.lslProRataOverride=''; e.lslEntitlementDateOverride=''; e.lslEntitlementConvertedAt='';
-      addJobEvent(e.id,'Absence Balance Recalculation',todayIso(),`Balances recalculated. Annual ${before.annual.toFixed(2)} → ${recalculated.annual.toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${recalculated.personal.toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${recalculated.lslAccrued.toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${recalculated.lslProRata.toFixed(2)}.`, 'employee', e.id);
-      save(); calculateAllForCurrent(); toast('Balances recalculated'); renderAll();
-    });
-  }
-
   function saveAbsenceAdjustment(){
-    const e=emp(v('absenceEmp')); if(!e || !absenceDraft) return;
-    const before=E.projectedBalances(state,e,currentCycle());
-    const draft=Object.assign({},absenceDraft);
-    modal('Adjustment Comment', '<p>Please enter a comment/explanation for this adjustment.</p><textarea id="absenceComment" rows="4" style="width:100%"></textarea>', '<button id="saveAbsenceComment">Save</button><button data-close-modal class="secondary">Cancel</button>', true);
+    if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');
+    const draft=absenceDraft;if(!draft)return;
+    let input;try{input=readAbsenceAdjustment();}catch(err){return alert(err.message);}draft.values=input;
+    modal('Adjustment Comment','<p class="small-note">Enter a reason for this balance adjustment.</p><textarea id="absenceComment" rows="4" maxlength="20000" style="width:100%"></textarea>','<button id="saveAbsenceComment">Save</button><button data-close-modal class="secondary">Cancel</button>',true);
     $('saveAbsenceComment').addEventListener('click',()=>{
-      const comment=v('absenceComment').trim(); if(!comment) return alert('A comment is required.');
-      e.annualLeaveBalance=E.round4(Number(draft.annual||0)); e.personalLeaveBalance=E.round4(Number(draft.personal||0));
-      const baseLsl=E.lslBalances(state,e,currentCycle().end,{ignoreManual:true,ignoreDateAdjustment:true});
-      const baseLslProfile=E.lslServiceProfile(state,e,currentCycle().end,{ignoreDateAdjustment:true});
-      // The dated Absence Balance Adjustment Job Summary event below is the canonical
-      // LSL manual adjustment. This lets a pro-rata correction transfer into accrued LSL
-      // at entitlement instead of becoming a frozen absolute override.
-      e.lslAccruedAdjustment=0;
-      e.lslProRataAdjustment=0;
-      e.lslEntitlementDateAdjustmentDays=(draft.lslEntitlementDate&&baseLsl.entitlementDate)?E.dateDiffDays(baseLsl.entitlementDate,draft.lslEntitlementDate):0;
-      e.lslEntitlementDateAdjustmentCycleStart=Number(e.lslEntitlementDateAdjustmentDays||0)?(baseLslProfile.cycleStart||''):'';
-      e.lslAccruedBalance=E.round4(Number(draft.lslAccrued||0)); e.lslProRataOverride=''; e.lslEntitlementDateOverride=''; e.lslEntitlementConvertedAt='';
-      const desc=`Balances adjusted. Annual ${before.annual.toFixed(2)} → ${Number(draft.annual||0).toFixed(2)}, Personal ${before.personal.toFixed(2)} → ${Number(draft.personal||0).toFixed(2)}, LSL Accrued ${before.lslAccrued.toFixed(2)} → ${Number(draft.lslAccrued||0).toFixed(2)}, LSL Pro-rata ${before.lslProRata.toFixed(2)} → ${Number(draft.lslProRata||0).toFixed(2)}, LSL Date ${E.fmtPay(before.lslEntitlementDate)} → ${E.fmtPay(draft.lslEntitlementDate)}. Comment: ${comment}`;
-      addJobEvent(e.id,'Absence Balance Adjustment',currentCycle().end,desc,'employee',e.id); absenceEditing=false; absenceDraft=null; save(); calculateAllForCurrent(); closeModal(); log('Absence balances adjusted.'); renderAll();
+      if(v('absenceEmp')!==draft.empId||currentCycle().id!==draft.cycleId)return alert('The employee or pay period changed. Open Adjust Balance again.');
+      const backup=DataStore.clone(state);
+      try{F.adjustAbsenceBalances(state,currentUserId,draft.empId,{...input,comment:v('absenceComment')});calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save the adjustment. Your balances have not changed.');}
+      catch(err){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,backup);return alert(err.message);}
+      absenceEditing=false;absenceDraft=null;closeModal();renderAll();toast('Absence balances adjusted.');
     });
   }
 
@@ -1621,21 +1624,46 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
   }
   function renderPayslip(){
     const available=employeeList(showTerminatedByTab.payslip);
-    if(selectedPayslipEmp && !available.some(e=>e.id===selectedPayslipEmp)){ selectedPayslipEmp=''; selectedPayslipKey=''; payslipDateFrom=''; payslipDateTo=''; payslipDefaultRecent=true; }
-    if(selectedPayslipEmp && payslipDefaultRecent){ const range=defaultPayslipDateRange(allPayslipsForEmployee(selectedPayslipEmp),10); payslipDateFrom=range.from; payslipDateTo=range.to; }
-    h('payslip', `<h2>Payment Advice</h2><p class="small-note">Select an employee, then choose a payslip date. The date range defaults to the 10 most recent payslips and can be widened to show older payslips.</p><div class="controls no-print">${showTerminatedControl('payslipShowTerminated','payslip')}</div><div class="grid form-grid no-print"><div><label>Employee</label><select id="payslipEmp">${employeeOptions(available)}</select></div><div style="align-self:end"><button id="printPayslip">Print Payslip</button></div><div><label>From Date</label><input id="payslipDateFrom" type="date" value="${esc(payslipDateFrom)}" ${selectedPayslipEmp?'':'disabled'}></div><div><label>To Date</label><input id="payslipDateTo" type="date" value="${esc(payslipDateTo)}" ${selectedPayslipEmp?'':'disabled'}></div></div><div class="controls no-print" style="margin-top:10px"><button id="applyPayslipDateFilter" class="secondary" ${selectedPayslipEmp?'':'disabled'}>Apply Date Range</button><button id="resetPayslipDateFilter" class="secondary" ${selectedPayslipEmp?'':'disabled'}>Most Recent 10</button></div><div id="payslipList" class="payslip-list"></div><div id="payslipContent"></div>`);
-    bindShowTerminated('payslipShowTerminated','payslip',renderPayslip);
-    if(selectedPayslipEmp) setv('payslipEmp',selectedPayslipEmp);
-    $('payslipEmp').addEventListener('change',()=>{ selectedPayslipEmp=v('payslipEmp'); selectedPayslipKey=''; resetPayslipDateRange(selectedPayslipEmp); renderPayslip(); });
-    $('printPayslip').addEventListener('click',printPayslip);
-    $('applyPayslipDateFilter').addEventListener('click',()=>{ const from=v('payslipDateFrom'),to=v('payslipDateTo'); if(from&&to&&E.compare(from,to)>0) return alert('From Date cannot be after To Date.'); payslipDateFrom=from; payslipDateTo=to; payslipDefaultRecent=false; selectedPayslipKey=''; renderPayslipList(); });
-    $('resetPayslipDateFilter').addEventListener('click',()=>{ resetPayslipDateRange(v('payslipEmp')); selectedPayslipKey=''; setv('payslipDateFrom',payslipDateFrom); setv('payslipDateTo',payslipDateTo); renderPayslipList(); });
-    renderPayslipList();
+    if(selectedPayslipEmp&&!available.some(e=>e.id===selectedPayslipEmp)){clearOpenPayslip();selectedPayslipEmp='';payslipDateFrom='';payslipDateTo='';payslipDefaultRecent=true;}
+    const selected=selectedPayslipKey?allPayslipsForEmployee(selectedPayslipEmp).find(p=>p.key===selectedPayslipKey):null;
+    if(selected){
+      h('payslip',`<div class="ss-slip-toolbar no-print"><button id="payrollPayBack" class="secondary">← Back to Payslips</button><div><button id="printPayslip" ${selected.finalised?'':'disabled'}>Print / Save as PDF</button><button id="downloadPayrollPayslip" class="secondary" ${selected.finalised?'':'disabled'}>Download Payslip</button></div></div>${selected.finalised?'':'<p class="small-note no-print">This pay is not finalised. Printing and downloading will be available after finalisation.</p>'}<div id="payslipContent" class="ss-slip-document">${payslipHtml(selected)}</div>`);
+      $('payrollPayBack').addEventListener('click',()=>{clearOpenPayslip();renderPayslip();resetTabScroll();});
+      $('printPayslip').addEventListener('click',printPayslip);$('downloadPayrollPayslip').addEventListener('click',downloadPayrollPayslip);return;
+    }
+    selectedPayslipKey='';
+    if(selectedPayslipEmp&&payslipDefaultRecent){const range=defaultPayslipDateRange(allPayslipsForEmployee(selectedPayslipEmp),10);payslipDateFrom=range.from;payslipDateTo=range.to;}
+    h('payslip',`<header class="ss-payslip-header"><div><h2>Payslips</h2><p>Select an employee to view their payslips.</p></div></header><div class="controls no-print">${showTerminatedControl('payslipShowTerminated','payslip')}</div><label class="payroll-payslip-employee">Employee<select id="payslipEmp">${employeeOptions(available)}</select></label><div class="ss-pay-filters no-print"><label>From Date<input id="payslipDateFrom" type="date" value="${esc(payslipDateFrom)}" ${selectedPayslipEmp?'':'disabled'}></label><label>To Date<input id="payslipDateTo" type="date" value="${esc(payslipDateTo)}" ${selectedPayslipEmp?'':'disabled'}></label><div><button id="applyPayslipDateFilter" ${selectedPayslipEmp?'':'disabled'}>Apply Date Range</button><button id="resetPayslipDateFilter" class="secondary" ${selectedPayslipEmp?'':'disabled'}>Most Recent 10</button></div></div><div id="payslipList"></div>`);
+    bindShowTerminated('payslipShowTerminated','payslip',renderPayslip);if(selectedPayslipEmp)setv('payslipEmp',selectedPayslipEmp);
+    $('payslipEmp').addEventListener('change',()=>{clearOpenPayslip();selectedPayslipEmp=v('payslipEmp');resetPayslipDateRange(selectedPayslipEmp);renderPayslip();});
+    $('applyPayslipDateFilter').addEventListener('click',()=>{const from=v('payslipDateFrom'),to=v('payslipDateTo');if(from&&to&&E.compare(from,to)>0)return alert('From Date cannot be after To Date.');payslipDateFrom=from;payslipDateTo=to;payslipDefaultRecent=false;clearOpenPayslip();renderPayslipList();});
+    $('resetPayslipDateFilter').addEventListener('click',()=>{resetPayslipDateRange(selectedPayslipEmp);clearOpenPayslip();renderPayslip();});renderPayslipList();
   }
-  function clearOpenPayslip(){ selectedPayslipKey=''; const node=document.getElementById('payslipContent'); if(node) node.innerHTML=''; const print=document.getElementById('printArea'); if(print) print.innerHTML=''; }
-  function renderPayslipList(){ const id=v('payslipEmp')||selectedPayslipEmp; if(!id){ h('payslipList',''); h('payslipContent',''); return; } const list=filterPayslipsByDateRange(allPayslipsForEmployee(id),payslipDateFrom,payslipDateTo,payslipDefaultRecent,10); if(!list.length){ h('payslipList','<p class="small-note">No payslips are available in the selected date range.</p>'); h('payslipContent',''); return; } if(selectedPayslipKey&&!list.some(p=>p.key===selectedPayslipKey)){ selectedPayslipKey=''; h('payslipContent',''); } h('payslipList', list.map(p=>`<button type="button" style="color:#000" class="${selectedPayslipKey===p.key?'active':''}" data-open-payslip="${esc(p.key)}">${E.ppeLabel(p.cycle)} — ${E.fmtPay(p.cycle.end)} — ${esc(p.position||'')} — ${p.finalised?'Finalised':'Open'} — Net ${E.money(p.net)}</button>`).join('')); document.querySelectorAll('[data-open-payslip]').forEach(b=>b.addEventListener('click',()=>togglePayslip(b.dataset.openPayslip))); }
-  function togglePayslip(key){ if(selectedPayslipKey===key){ selectedPayslipKey=''; h('payslipContent',''); renderPayslipList(); return; } selectedPayslipKey=key; const p=allPayslipsForEmployee(v('payslipEmp')).find(x=>x.key===key); h('payslipContent',p?payslipHtml(p):''); renderPayslipList(); }
-  function printPayslip(){ if(!selectedPayslipKey) return alert('Select a payslip first.'); const p=allPayslipsForEmployee(v('payslipEmp')).find(x=>x.key===selectedPayslipKey); if(!p) return; if(!p.finalised) return alert('This payslip cannot be printed until the pay has been finalised.'); h('printArea', payslipHtml(p)); setTimeout(()=>window.print(), 0); }
+  function clearOpenPayslip(){ selectedPayslipKey=''; h('payslipContent','');h('printArea',''); }
+  function renderPayslipList(){
+    if(!selectedPayslipEmp){h('payslipList','<p class="ss-payslip-empty">Select an employee to view payslips.</p>');return;}
+    const list=filterPayslipsByDateRange(allPayslipsForEmployee(selectedPayslipEmp),payslipDateFrom,payslipDateTo,payslipDefaultRecent,10);
+    const rows=list.map(p=>`<tr data-payroll-slip-row="${esc(p.key)}"><td><button class="ss-slip-link" data-open-payslip="${esc(p.key)}" aria-label="Open payslip for ${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}, ${esc(p.position||'')}">${E.fmtPay(p.cycle.paymentDate||p.cycle.end)}</button></td><td>${esc(p.position||'Casual Earnings')}</td><td>${Number(p.segmentIndex||1)}</td><td class="ss-money">${E.money(p.gross||0)}</td><td class="ss-money">${E.money(p.tax||0)}</td><td class="ss-money">${E.money(p.net||0)}</td><td><span class="ss-slip-state ${p.finalised?'':'is-open'}">${p.finalised?'Finalised':'Open'}</span></td><td aria-hidden="true">›</td></tr>`).join('');
+    h('payslipList',`<div class="ss-payslip-list"><table><thead><tr><th>Pay Date</th><th>Position</th><th>Segment</th><th class="ss-money">Gross</th><th class="ss-money">Tax</th><th class="ss-money">Net</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ss-payslip-empty">No payslips found. Choose a wider date range to see earlier payslips.</div></td></tr>'}</tbody></table></div><p class="ss-payslip-count">${payslipDefaultRecent?'Most recent 10 payslips':'Selected date range'} · ${list.length} payslip${list.length===1?'':'s'}</p>`);
+    $('payslipList')?.querySelectorAll('[data-open-payslip]').forEach(b=>b.addEventListener('click',()=>togglePayslip(b.dataset.openPayslip)));
+    $('payslipList')?.querySelectorAll('[data-payroll-slip-row]').forEach(row=>row.addEventListener('click',event=>{if(!event.target.closest('button'))togglePayslip(row.dataset.payrollSlipRow);}));
+  }
+  function togglePayslip(key){
+    if(!currentUserId||!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');
+    if(!filterPayslipsByDateRange(allPayslipsForEmployee(selectedPayslipEmp),payslipDateFrom,payslipDateTo,payslipDefaultRecent,10).some(p=>p.key===key))return alert('Payslip unavailable.');
+    selectedPayslipKey=key;renderPayslip();resetTabScroll();
+  }
+  function selectedPayrollPayslip(){
+    if(!currentUserId||!S.profile(state,currentUserId).payroll){alert('Payroll Management access is required.');return null;}
+    const p=allPayslipsForEmployee(selectedPayslipEmp).find(x=>x.key===selectedPayslipKey);if(!p){alert('Select an available payslip first.');return null;}
+    if(!p.finalised){alert('This payslip cannot be printed or downloaded until the pay has been finalised.');return null;}return p;
+  }
+  function printPayslip(){const p=selectedPayrollPayslip();if(!p)return;h('printArea',payslipHtml(p));setTimeout(()=>window.print(),0);}
+  function downloadPayrollPayslip(){
+    const p=selectedPayrollPayslip();if(!p)return;
+    const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(p)}</html>`;
+    const url=URL.createObjectURL(new Blob([html],{type:'text/html'})),a=document.createElement('a');a.href=url;a.download=`Payslip-${p.empId}-${p.cycle.end}-${p.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function financialYearBounds(paymentDate){
     const d=E.parseDate(paymentDate); const y=d.getMonth()+1>=7?d.getFullYear():d.getFullYear()-1;
     return {start:`${y}-07-01`, end:`${y+1}-06-30`};
@@ -1692,7 +1720,13 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     output.forEach(row=>{
       if(row.leaveBookingId){
         const k=[row.leaveBookingId,row.description||'',row.kind||''].join('|');
-        if(bookingGroups.get(k)===1){ row.startDate=row.bookingStartDate||row._actualStart||row.startDate; row.endDate=row.bookingEndDate||row._actualEnd||row.endDate; }
+        if(bookingGroups.get(k)===1){
+          const actualStart=row._actualStart||row.startDate,actualEnd=row._actualEnd||row.endDate;
+          row.startDate=row.bookingStartDate||actualStart;row.endDate=row.bookingEndDate||actualEnd;
+          // Older saved rows may span separately booked leave; keep their actual date range.
+          if(actualStart&&(!row.startDate||E.compare(actualStart,row.startDate)<0))row.startDate=actualStart;
+          if(actualEnd&&(!row.endDate||E.compare(actualEnd,row.endDate)>0))row.endDate=actualEnd;
+        }
         else { row.startDate=row._actualStart||row.startDate; row.endDate=row._actualEnd||row.endDate; }
       }else if(row._actualStart){ row.startDate=row._actualStart; row.endDate=row._actualEnd; }
       delete row._actualStart; delete row._actualEnd;
@@ -1914,7 +1948,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function renderReports(){
     if(!reportMode){const reports=[['service','Statement of Service','report'],['earnings','Statement of Earnings','money'],['calendar','Monthly Absence Calendar','calendar'],['positions','Position Structure Report','team'],['errors','Pay Errors','warning']];h('reports',`<h2>Reports</h2><div class="report-tiles">${reports.map(([key,label,icon])=>`<button class="landing-tile" data-report-tile="${key}"><span class="landing-tile-icon">${typeof PayrollUI!=='undefined'?PayrollUI.icon(icon):'▤'}</span><span>${label}</span></button>`).join('')}</div>`);document.querySelectorAll('[data-report-tile]').forEach(b=>b.addEventListener('click',()=>{reportMode=b.dataset.reportTile;renderReports();}));return;}
     if(reportMode==='earnings')renderEarningsReport();
-    else if(reportMode==='errors'){h('reports','<h2>Pay Errors</h2><button id="refreshPayErrors">Run Checks</button><div id="payErrorsOutput"></div>');$('refreshPayErrors').addEventListener('click',()=>checkForErrors(true));checkForErrors(true);}
+    else if(reportMode==='errors'){h('reports','<h2>Pay Errors</h2><div class="controls no-print"><button id="refreshPayErrors">Run Checks</button><button id="downloadPayErrors" class="secondary">Download PDF</button><button id="printPayErrors" class="secondary">Print / Save PDF</button></div><div id="payErrorsOutput"></div>');$('refreshPayErrors').addEventListener('click',()=>checkForErrors(true));$('downloadPayErrors').addEventListener('click',downloadPayErrors);$('printPayErrors').addEventListener('click',printPayErrors);checkForErrors(true);}
     else {renderReportContents();const index={service:0,calendar:1,positions:2}[reportMode];document.querySelectorAll('#reports .report-controls').forEach((el,i)=>el.hidden=i!==index);['reportPreview','monthlyAbsencePreview','positionStructurePreview'].forEach((id,i)=>{if($(id))$(id).hidden=i!==index;});}
     const back=document.createElement('button');back.className='secondary report-back';back.textContent='Back to Reports';back.addEventListener('click',()=>{reportMode='';renderReports();});$('reports').prepend(back);
   }
@@ -2072,11 +2106,12 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function checkForErrors(inline=false){
     calculateAllForCurrent();
     const c=currentCycle();
-    const warnings=[];
+    const rows=[];
+    const add=(empId,message)=>rows.push({empId:empId||'—',employeeName:emp(empId)?E.employeeName(emp(empId)):'—',message});
     const results=currentResults();
-    warnings.push(...E.paymentDetailErrors(state,c,results));
-    warnings.push(...S.errors(state));
-    (state.deductions||[]).filter(d=>d.saved!==false&&!d.deleted&&d.deductionType==='Recovery Deduction').forEach(d=>{try{E.validateRecoveryDeduction(d);}catch(err){warnings.push(`${E.employeeName(emp(d.empId)||{})}: ${err.message}`);}});
+    rows.push(...E.paymentDetailErrors(state,c,results,true));
+    rows.push(...S.errors(state,todayIso(),true));
+    (state.deductions||[]).filter(d=>d.saved!==false&&!d.deleted&&d.deductionType==='Recovery Deduction').forEach(d=>{try{E.validateRecoveryDeduction(d);}catch(err){add(d.empId,err.message);}});
     state.employees.forEach(e=>{
       const active=employeeDisplayStatus(e)!=='Terminated';
       if(!active) return;
@@ -2084,18 +2119,18 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
       const activeJob=jobRows.find(r=>r.action!=='Termination') || null;
       const schedule=E.activeSchedule(state,e.id,c.end);
       const hasPay=results.some(p=>p.empId===e.id && (Math.abs(Number(p.gross||0))>0.004 || Math.abs(Number(p.net||0))>0.004 || (p.rows||[]).length));
-      if(hasPay && employmentTypeFor(e,c.end)!=='Casual' && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) warnings.push(`${E.employeeName(e)} has a missing or invalid work schedule.`);
-      if(hasPay && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) warnings.push(`${E.employeeName(e)} has no Tax Details/TFN entered.`);
+      if(hasPay && employmentTypeFor(e,c.end)!=='Casual' && (!schedule || !Object.values(schedule.hoursByDay||{}).some(x=>Number(x)>0))) add(e.id,'Missing or invalid work schedule.');
+      if(hasPay && !(state.taxDetails||[]).some(t=>t.empId===e.id && String(t.taxFileNumber||'').trim())) add(e.id,'No Tax Details/TFN entered.');
       const bal=E.projectedBalances(state,e,c,false);
       const leaveNegativeLimit=E.leaveNegativeLimitHours(state,e,c.end);
       const forecastAnnualUsed=E.forecastApprovedAnnualLeaveHoursUsed(state,e,c.end);
-      if((bal.annual < -leaveNegativeLimit-0.0001 && forecastAnnualUsed<=0.0001) || bal.personal < -leaveNegativeLimit-0.0001 || bal.lslAccrued<0) warnings.push(`${E.employeeName(e)} has a leave balance beyond the permitted limit.`);
+      if((bal.annual < -leaveNegativeLimit-0.0001 && forecastAnnualUsed<=0.0001) || bal.personal < -leaveNegativeLimit-0.0001 || bal.lslAccrued<0) add(e.id,'Leave balance beyond the permitted limit.');
       const isFixed=employmentTypeFor(e,c.end)==='Fixed Term';
       const hasTermRow=(state.jobDataRows||[]).some(r=>r.empId===e.id && r.action==='Termination');
-      if(isFixed && !hasTermRow) warnings.push(`${E.employeeName(e)} is fixed-term but does not have a Termination row in Job Data.`);
+      if(isFixed && !hasTermRow) add(e.id,'Fixed-term employee does not have a Termination row in Job Data.');
     });
-    (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>warnings.push(`${E.employeeName(emp(a.empId)||{})} has unsaved Additional Earnings.`));
-    results.forEach(p=>{ if(Number(p.net||0)<0) warnings.push(`${p.employeeName} has negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
+    (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>add(a.empId,'Unsaved Additional Earnings.'));
+    results.forEach(p=>{ if(Number(p.net||0)<0) add(p.empId,`Negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
     (state.leaveBookings||[]).forEach(l=>{
       const window=leaveErrorValidationWindow(l); if(!window) return;
       const e=emp(l.empId); if(!e) return;
@@ -2105,15 +2140,29 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
       const validationStart=window.startDate;
       const requestedHours=(validationStart===l.startDate && l.startDate===l.endDate) ? (l.requestedHours!==undefined?l.requestedHours:l.hours) : undefined;
       const validation=E.validateLeaveBooking(Object.assign({},state,{leaveBookings:(state.leaveBookings||[]).filter(x=>x.id!==l.id)}),l.empId,l.type,validationStart,l.endDate,requestedHours,l.id,{evidenceProvided:!!l.evidenceProvided,payOption:l.payOption||'Full Pay',forecastApproved:l.forecastApproved===true});
-      if(!validation.ok) warnings.push(`${E.employeeName(e)} leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
+      if(!validation.ok) add(e.id,`Leave booking ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}: ${validation.message}`);
     });
-    const body=warnings.length?`<p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`:'<p class="success-text"><strong>No errors found</strong></p>';
-    if(inline)h('payErrorsOutput',body);else modal('Pay Error / Warning Check', body, `<button data-close-modal>Close</button>`);
-    return warnings;
+    rows.sort((a,b)=>a.employeeName.localeCompare(b.employeeName)||String(a.empId).localeCompare(String(b.empId))||a.message.localeCompare(b.message));
+    payErrorReport={rows,cycle:E.cycleDisplay(c),cycleId:c.id,generatedAt:new Date().toLocaleString('en-AU',{timeZone:'Australia/Perth',hour12:false})};
+    const body=payErrorsHtml(payErrorReport);
+    if(inline)h('payErrorsOutput',body);else modal('Pay Error / Warning Check',body,'<button data-close-modal>Close</button>');
+    return rows.map(r=>`${r.employeeName} (${r.empId}): ${r.message}`);
+  }
+  function payErrorsHtml(report){
+    return `<article class="pay-errors-report"><p class="pay-errors-context"><strong>${esc(report.cycle)}</strong><br>Generated: ${esc(report.generatedAt)} (Perth)<br>${report.rows.length} error${report.rows.length===1?'':'s'} / warning${report.rows.length===1?'':'s'}</p><p class="small-note">These warnings do not prevent you from finalising pay. They are for review only.</p>${report.rows.length?table(['Employee Name','Employee ID','Error Message'],report.rows.map(r=>[esc(r.employeeName),esc(r.empId),esc(r.message)])):'<p class="success-text"><strong>No errors found</strong></p>'}</article>`;
+  }
+  function downloadPayErrors(){
+    if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');
+    try{checkForErrors(true);const bytes=Features.payErrorsPdf(payErrorReport),url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=`Pay-Errors-${currentCycle().end}.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(err){alert(err.message);}
+  }
+  function printPayErrors(){
+    if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');
+    checkForErrors(true);h('printArea',`<style>@page{size:A4 portrait;margin:15mm}.pay-errors-report .table-wrap{overflow:visible;max-height:none}.pay-errors-report tr{break-inside:avoid}.pay-errors-report th{position:static}</style><h1>Pay Errors</h1>${payErrorsHtml(payErrorReport)}`);setTimeout(()=>window.print(),0);
   }
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.2.6',notes:['Added Dashboard support queues and upcoming employee changes with links to cases and Job Data.','Matched Payroll payslip navigation to ESS/MSS with date-filtered rows, dedicated documents, Back and finalised-only exports.','Added shared absence balance cards, Payroll Add/Take credit adjustments and LSL date editing; removed Recalculate Balances.','Pay Errors now lists employee names, IDs and messages with PDF download and print export.','Fixed adjacent leave booking dates, returned Awaiting Info cases to Open after a requester response, required termination request reasons and removed home tile subtitles.']},
     {version:'v1.2.5',notes:['Redesigned support requests and added a separate Payroll support window sharing the main window state.','Added a right-side notification pane with per-user dismissal and targeted navigation. ESS/MSS payslips now open from dated list rows with Back navigation.','Simplified manager requests with automatic subjects, daily roster grids, position-derived reporting and last-working-day-only termination.','Added current-pay navigation, persistent Additional Earnings saves, leave balance cards and two-year date defaults. Updated home icons and restricted overpayment adjustments to Payroll.']},
     {version:'v1.2.4',notes:['Added Dashboard, report tiles, Pay Errors and Statement of Earnings PDF.','Added Payroll-only Workers Compensation Leave, salary packaging, new termination reasons and cash-outs in Additional Earnings.','Added manager Job Data request templates, activity history, casual login reconciliation and interface improvements.']},
     {version:'v1.2.3',notes:['Centred fixed home tile slots; added documents on support submission and Payroll on-behalf cases.','Fixed Payroll case access/navigation and active casual ESS eligibility.','Added reopening with mandatory reason, newest-first conversations, precise message recipient routing and ten-second notification popups.','Certification signatories auto-populate; Manager Certified shows a read-only checkbox in Payroll.']},
@@ -2411,6 +2460,6 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }
 
-  window.PayrollApp = {toggleNotifications:toggleAlertsDropdown,renderNotificationPane,closeNotificationPane,supportWindowAccess,commitSupportWindowChanges,openSupportWindow,features:F,renderReports,renderLeave, getState:()=>state,openSupportCase,presentNotificationPopups,resetNotificationPopups,navigateFromAlert,showTab,mountSupport,mountSelfServiceCertification,unmountSelfServiceCertification,certManagerToggle,renderCertification,renderCertOutput,paySignature,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
+  window.PayrollApp = {toggleNotifications:toggleAlertsDropdown,renderNotificationPane,closeNotificationPane,supportWindowAccess,commitSupportWindowChanges,openSupportWindow,features:F,renderDashboard,renderReports,renderLeave, getState:()=>state,openSupportCase,presentNotificationPopups,resetNotificationPopups,navigateFromAlert,showTab,mountSupport,mountSelfServiceCertification,unmountSelfServiceCertification,certManagerToggle,renderCertification,renderCertOutput,paySignature,jobSummaryHtml,yearlyCalendarHtml,monthlyAbsenceCalendarHtml,mountSelfServicePayments,unmountSelfServicePayments,renderAdditionalEarnings,openSelfService,selfServiceUI, renderAll, renderBankDetails,renderSuperDetails,renderSettings,renderSuperSettings,openDeductionModal,stageDeduction,renderDeductionsTable,checkForErrors,calculateAllForCurrent, login, statementOfServiceHtml, positionStructureReportHtml, consolidatePayslipDisplayRows, payslipHtml, defaultPayslipDateRange, filterPayslipsByDateRange, deductionDateNeedsValidation, employeeVisibleInMonthlyAbsence, isAmountOnlyPayslipRow, payslipDisplayDescription, leaveStatusButton, setLeaveStatus, flagLeaveAfterTermination, positionForm, accessProfileForEmployee, loginEligibleEmployees, landingAreasForEmployee, showLanding, openPayrollManagement, leaveErrorValidationWindow, applyJobDataToEmployee };
 })();
 

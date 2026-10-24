@@ -1,6 +1,6 @@
 {
-  "version": "1.2.5",
+  "version": "1.2.6",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Support request redesign and separate window, notification pane, ESS/MSS payslip lists, simplified manager templates, Additional Earnings navigation, leave balance cards and payroll-only overpayment adjustments",
-  "releaseNotes": "RELEASE-NOTES-v1.2.5.md"
+  "notes": "Dashboard work queues, Payroll payslip list, shared absence balance cards and signed credit adjustments, Pay Errors table/PDF, leave booking date fix, support response status and termination request reasons",
+  "releaseNotes": "RELEASE-NOTES-v1.2.6.md"
 }
