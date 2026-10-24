@@ -1,6 +1,3 @@
-Payroll/HCM App v1.2.3 verification
-185 existing test blocks + 93 feature test groups (23 payment/account/reimbursement + 37 self-service + 15 support/certification/UI + 18 v1.2.3 updates); 1528 assertion call sites across five suites.
-
 PASS: Login button/password strings and app version are present
 PASS: Current pay is PPE4/6/26
 PASS: Period is 22/5/26 - 4/6/26
@@ -149,7 +146,7 @@ PASS: navigation uses bell, Back text and accessible home icon
 PASS: roster calculation follows effective changes and two-week pattern; public holidays count zero
 PASS: MSS whole-period save rolls back a valid first row if a later row fails validation
 PASS: MSS switching employees or pay periods during a delayed save cancels that save
-PASS: 37 v1.2.3 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
+PASS: 37 v1.2.4 self-service test groups. UI harness is not live-browser QA; browser-local storage is not server-side authorization.
 PASS: unique immutable case numbering and own-only ESS raised-for with submission receipt
 PASS: MSS raised-for includes non-direct reports and New Employee; rejects invalid IDs and missing access
 PASS: assignment list enforces current payroll access; assign/unassign correctly drives New and Open
@@ -165,7 +162,7 @@ PASS: manager certification becomes stale after pay changes and storage failure 
 PASS: MSS direct report payslips use ESS controls and reject printing after manager reassignment
 PASS: statement omits Position Refresh; Audit moved to Settings; consistent tile rows and larger Home icon
 PASS: app wiring opens ESS support tile, submission bell links, MSS certification and direct-report payslips
-PASS: 15 v1.2.3 support/certification/UI test groups.
+PASS: 15 v1.2.4 support/certification/UI test groups.
 PASS: Payroll on-behalf submission requires both selections and records real creator separately
 PASS: submission documents validated before sequence/case/receipt mutation and included in backup
 PASS: reopen requires owner/reason, retains assignment/history, logs message and clears closure countdown
@@ -184,10 +181,29 @@ PASS: active casual with no position/roster or start-date segment can log in and
 PASS: casual eligibility blocks terminated/future starters, respects historical employment and does not change payroll
 PASS: notification popup appears only once for new recipient alert, lasts 10 seconds then fades/removes
 PASS: notification popup clears on logout/user change and ESS refresh does not reset form input
-PASS: 18 v1.2.3 update test groups.
+PASS: 18 v1.2.4 update test groups.
+PASS: effective saved casual commencement restores ESS despite stale master employment; later termination blocks it
+PASS: Workers Compensation is paid, unlimited, labelled correctly and consumes no AL/PL/LSL credits
+PASS: partial compensation leaves regular remainder; employees and managers cannot request it
+PASS: salary packaging pre-tax reduces taxable gross and post-tax reduces net; neither goes to super
+PASS: new termination reasons pay only accrued AL and LSL, without pro-rata LSL or personal leave
+PASS: cash-out migration is idempotent and does not change earnings or credits
+PASS: new cash-outs validate credits, share the ledger and pay one line each
+PASS: paid legacy cash-outs remain frozen and do not reappear in subsequent pay after migration
+PASS: regular fortnightly earnings follow both roster weeks, rates and as-at date; one-offs excluded
+PASS: casual earnings statement cannot misstate a guaranteed regular income
+PASS: all four manager-only templates retain comments and cannot modify Job Data by submission
+PASS: template validation rejects missing fields, invalid reasons and inconsistent employment dates
+PASS: activity history records creator, assignee, status, messages, reopen reason, resolutions and automatic closure
+PASS: Dashboard owns the four metrics; report menu has five tiles; Pay Errors removed from Settings
+PASS: backup/import retains cash-out links, packaging, request templates and activity history
+PASS: acting regular earnings use the effective acting rate and future rate changes start on their effective date
+PASS: MSS edits preserve Payroll cash-outs and cannot convert or delete their protected source rows
+PASS: native PDF embeds its fonts with correct byte offsets and offers printing for unsupported characters
+PASS: 18 v1.2.4 feature test groups.
+PASS: all six Node.js payroll regression suites.
 
-All JavaScript syntax PASS.
-Actual UI rendering/event handlers exercised in a DOM harness.
-Live-browser QA unavailable: Chromium not installed.
-Real employee payroll export not supplied; regression fixtures verified.
-Exact ZIP freshly extracted; full suites/syntax rerun; SHA-256 manifest and HTTP asset byte equality verified.
+PASS: Chromium Dashboard, five reports, PDF download, selected employee leave, compensation roster hours, packaging inline validation/save, cash-out credit validation/save/delete, MSS templates, case history and casual-only ESS login; no JavaScript page errors.
+
+PASS: all root JavaScript files parse.
+PASS: both earnings PDFs render as one portrait A4 page; native fonts embedded; visual review completed.

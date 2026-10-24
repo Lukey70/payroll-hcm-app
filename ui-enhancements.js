@@ -1,0 +1,28 @@
+(function(g){
+ 'use strict';
+ const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const paths={bell:'M5 17h14l-2-3V9a5 5 0 0 0-10 0v5z M10 20a2 2 0 0 0 4 0',report:'M5 3h10l4 4v14H5z M8 11h8 M8 15h8',person:'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-3a8 6 0 0 1 16 0v3',calendar:'M3 5h18v16H3z M7 2v6 M17 2v6 M3 10h18',money:'M3 6h18v12H3z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',team:'M8 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6 M16 5a3 3 0 1 0 0 6 M2 21v-4a6 5 0 0 1 12 0v4 M16 14a6 5 0 0 1 6 5v2',tick:'M4 12l5 5L20 5',support:'M3 4h18v13H9l-6 4z M7 8h10 M7 12h6',warning:'M12 3 2 21h20z M12 9v5 M12 17v1',search:'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6',edit:'m4 15 12-12 5 5L9 20l-6 1z',home:'M3 11 12 3l9 8v10h-6v-7H9v7H3z'};
+ function icon(name){return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name]||paths.report}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;}
+ function error(message){const root=document.querySelector('dialog[open]')||document.querySelector('.modal-root.open .modal')||document.querySelector('#selfServiceScreen:not([hidden]) main')||document.querySelector('.tab-section.active')||document.body;
+  let summary=root.querySelector('.validation-summary');if(!summary){summary=document.createElement('div');summary.className='validation-summary';summary.setAttribute('role','alert');root.prepend(summary);}summary.textContent=String(message);
+  const words=String(message).toLowerCase();const fields=[...root.querySelectorAll('input,select,textarea')].filter(e=>!e.disabled&&!e.readOnly);let match=fields.find(e=>e.validity&&!e.validity.valid);
+  if(!match)match=fields.find(e=>{const label=e.labels?.[0]?.textContent?.trim().toLowerCase();return label&&label.length>2&&words.includes(label);});
+  if(match){match.setAttribute('aria-invalid','true');match.classList.add('invalid-field');match.focus();}summary.scrollIntoView?.({block:'nearest'});
+ }
+ function enhance(o){
+  const ids={jobData:'jobDataEmp',jobSummary:'jobSummaryEmp',additionalEarnings:'addEmp',taxDetails:'taxEmp',deductions:'dedEmp',leave:'leaveSelectedEmp',absenceBalance:'absenceEmp',payslip:'payslipEmp',bankDetails:'bankEmp',superDetails:'superEmp'};
+  function refresh(){
+   document.querySelectorAll('.landing-tile-icon').forEach(span=>{if(span.querySelector('svg'))return;const text=span.parentElement.textContent;span.innerHTML=icon(/Payslip|Statement|Report/.test(text)?'report':/Leave|Timesheet/.test(text)?'calendar':/Payment/.test(text)?'money':/Support/.test(text)?'support':/Approval/.test(text)?'tick':/Manager|Reports/.test(text)?'team':'person');});
+   document.querySelectorAll('.alert-bell,.ss-notifications summary').forEach(el=>{if(el.querySelector('svg'))return;for(const n of [...el.childNodes])if(n.nodeType===3&&n.textContent.includes('🔔'))n.textContent=n.textContent.replace('🔔','');el.insertAdjacentHTML('afterbegin',icon('bell'));});
+   const assign=document.getElementById('supportAssignMe');if(assign&&!assign.querySelector('svg'))assign.innerHTML=icon('person');
+   document.querySelectorAll('button.icon-btn').forEach(b=>{if(b.querySelector('svg'))return;const name=/Search|View|breakdown/i.test(b.title)?'search':/edit/i.test(b.title)?'edit':null;if(name)b.innerHTML=icon(name);});
+   document.querySelectorAll('.form-grid:not([data-sectioned])').forEach(grid=>{grid.dataset.sectioned='true';grid.classList.add('form-section');const label=grid.querySelector('label')?.textContent||'';const title=/date|sequence/i.test(label)?'Effective Dates':/position/i.test(label)?'Position Details':/employee/i.test(label)?'Employee Selection':/name|birth/i.test(label)?'Personal Details':'Details';const heading=document.createElement('h3');heading.className='form-section-heading';heading.textContent=title;grid.before(heading);});
+   const root=document.querySelector('.tab-section.active');if(!root)return;let selected=document.getElementById(ids[root.id]);if(!selected)selected=[...root.querySelectorAll('select')].find(e=>/emp/i.test(e.id)&&!e.id.toLowerCase().includes('employmenttype'));
+   const e=o.getState().employees.find(e=>e.id===selected?.value);let banner=root.querySelector('.selected-employee-banner');if(!e){banner?.remove();return;}const date=o.E.iso(new Date()),job=o.E.activeJobDataRow(o.getState(),e,date),text=`${o.E.employeeName(e)} (${e.id}) · ${job?.positionName||e.position||'No current position'} · ${o.E.selfService.isActiveEmployee(o.getState(),e,date)?'Active':'Inactive'}`;
+   if(!banner){banner=document.createElement('div');banner.className='selected-employee-banner';root.prepend(banner);}if(banner.textContent!==text)banner.textContent=text;
+  }
+  document.addEventListener('change',refresh);document.addEventListener('click',event=>{if(/save|submit|book|process/i.test(event.target.closest('button')?.textContent||'')){document.querySelectorAll('.validation-summary').forEach(e=>e.remove());document.querySelectorAll('[aria-invalid="true"]').forEach(e=>{e.removeAttribute('aria-invalid');e.classList.remove('invalid-field');});}},true);
+  if(typeof MutationObserver!=='undefined'){const observer=new MutationObserver(refresh);observer.observe(document.body,{childList:true,subtree:true});}refresh();
+ }
+ g.PayrollUI={icon,error,enhance,esc};
+})(typeof window!=='undefined'?window:globalThis);

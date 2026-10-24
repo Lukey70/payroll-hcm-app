@@ -870,7 +870,7 @@
     if(text === 'no' || text === 'false') return false;
     return !!defaultValue;
   }
-  function normaliseLeaveDescription(type){ if(type===FDV_LEAVE_TYPE) return 'Regular Pay'; return type === 'LWOP' ? 'Leave Without Pay' : (type || 'Leave'); }
+  function normaliseLeaveDescription(type){ if(type==='Workers Compensation Leave')return 'Income Compensation Payment'; if(type===FDV_LEAVE_TYPE) return 'Regular Pay'; return type === 'LWOP' ? 'Leave Without Pay' : (type || 'Leave'); }
   function isLeaveWithoutPay(desc){ return ['LWOP','Leave Without Pay','Absent Without Leave',PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(desc); }
   function residentAnnualTax(annualIncome, claimTaxFreeThreshold=true){
     const x = Math.max(0, Number(annualIncome||0));
@@ -1008,10 +1008,10 @@
   }
   function calculateDeductions(state,e,c,gross,netAfterPreTax,availableRecoveryNet){
     const active=activeDeductions(state,e,c);
-    const preTaxDeductions = active.filter(d=>d.deductionType==='Pre-tax Super Deduction').map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
+    const preTaxDeductions = active.filter(d=>['Pre-tax Super Deduction','Salary Packaging - Pre-Tax'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
     const preTaxTotal = round2(preTaxDeductions.reduce((s,d)=>s+d.amount,0));
     const postBase = netAfterPreTax === undefined || netAfterPreTax === null ? Math.max(0, Number(gross||0)-preTaxTotal) : netAfterPreTax;
-    const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
+    const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees','Salary Packaging - Post-Tax'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
     const otherPostTaxTotal=round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
     postTaxDeductions.push(...Payment.recoveryDeductionLines(state,active,c,Number(availableRecoveryNet??postBase)-otherPostTaxTotal));
     const postTaxTotal = round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
@@ -1097,7 +1097,7 @@
     const existingOverlap = (state.leaveBookings||[]).find(l=>l.empId===empId && l.id!==excludeLeaveId && l.status!=='Denied' && compare(l.startDate,endDate)<=0 && compare(startDate,l.endDate)<=0);
     if(existingOverlap) return { ok:false, hours:0, detail:[], partialAllowed:false, message:`Leave overlaps an existing ${existingOverlap.type || 'leave'} booking from ${fmtPay(existingOverlap.startDate)} to ${fmtPay(existingOverlap.endDate)}.` };
     const singleDay = startDate === endDate;
-    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE].includes(leaveType);
+    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave'].includes(leaveType);
     let hours = 0;
     const detail = [];
     daysBetween(startDate,endDate).forEach(d=>{
@@ -1144,7 +1144,7 @@
       if(requestedDays>availableDays+0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays, message:'Insufficient Family and Domestic Violence Leave balance.' };
       return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays:round4(availableDays-requestedDays), message:'OK' };
     }
-    if(leaveType && !['LWOP','Absent Without Leave'].includes(leaveType) && !isParentalLeaveType(leaveType)){
+    if(leaveType && !['LWOP','Absent Without Leave','Workers Compensation Leave'].includes(leaveType) && !isParentalLeaveType(leaveType)){
       const cycle = currentCycle(state);
       const balances = projectedBalances(state, e, cycle);
       const available = leaveType === 'Annual Leave' ? balances.annual : leaveType === 'Personal Leave' ? balances.personal : leaveType === 'Long Service Leave' ? balances.lslAccrued : 999999;
@@ -1256,7 +1256,7 @@
       if(parentalLeave && isPublicHoliday(d)) return;
       if(leave){
         const paid = !isUnpaidLeaveType(leave.type);
-        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE].includes(leave.type);
+        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave'].includes(leave.type);
         const leaveUnits = Math.min(hours, partialSingleDay ? Number(leave.hours || hours) : hours);
         const regularRemainder = round4(Math.max(0, hours - leaveUnits));
         const parentalPayFactor = leave.type===PARENTAL_PAID_LEAVE_TYPE && String(leave.payOption||'Full Pay')==='Half Pay' ? 0.5 : 1;
@@ -1280,7 +1280,7 @@
     });
     if(includeAdditional){
       (state.additionalEarnings||[]).filter(a=>{
-        if(!a || a.empId!==e.id || a.saved===false) return false;
+        if(!a || a.empId!==e.id || a.saved===false || a.legacyCashOutId || ['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType)) return false;
         // Source dates are authoritative for Additional Earnings. This is especially
         // important for a late Casual Earnings entry: older saved data can carry the
         // current/open cycleId even though the work date belongs to a finalised cycle.
@@ -2069,3 +2069,4 @@
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
+

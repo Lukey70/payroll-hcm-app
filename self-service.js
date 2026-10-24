@@ -5,7 +5,14 @@
     const today=()=>E.iso(new Date());
     const employee=(s,id)=>s.employees.find(e=>e.id===id);
     function isActiveEmployee(s,e,date=today()){
-      if(!e||e.status==='Terminated'||E.isTerminatedOn(e,date))return false;
+      if(!e)return false;
+      const events=(s.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&['Commencement','Termination'].includes(r.action)&&r.effectiveDate<=date).sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+      if(events[0]?.action==='Termination')return false;
+      if(events[0]?.action==='Commencement'&&/Casual/i.test((events[0].reason||'')+' '+(events[0].positionClass||''))){
+        if(e.terminationDate&&e.terminationDate>=events[0].effectiveDate&&e.terminationDate<=date)return false;
+        return true;
+      }
+      if(e.status==='Terminated'||E.isTerminatedOn(e,date))return false;
       if(E.isEmployedOn(e,date))return true;
       // Active legacy casual records may have no ongoing Job Data/roster/start date.
       // Portal access does not invent employment dates or change payroll service.
@@ -180,6 +187,7 @@
       assertScope(s,id,input.empId,'mss',date);
       const old=input.id&&s.additionalEarnings.find(a=>a.id===input.id);
       if(input.id&&(!old||old.empId!==input.empId))throw Error('Earnings record is not available for this employee.');
+      if(old&&(old.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(old.earningType)))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       if(!EARNINGS.includes(input.earningType))throw Error('Select a valid earning type.');
       const cycle=E.PAY_CYCLES.find(c=>c.id===Number(input.cycleId));
       if(input.earningType==='Overpayment Adjustment'&&cycle?.id!==E.currentCycle(s).id)throw Error('Overpayment Adjustment can only be entered in the current open pay period.');
@@ -200,6 +208,7 @@
     }
     function deleteAdditional(s,id,recordId,date=today()){
       const a=s.additionalEarnings.find(a=>a.id===recordId);if(!a)throw Error('Earnings record no longer exists.');assertScope(s,id,a.empId,'mss',date);
+      if(a.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       s.additionalEarnings=s.additionalEarnings.filter(x=>x.id!==recordId);
       (s.auditLog||(s.auditLog=[])).unshift(`MSS earnings ${recordId} deleted by ${id} for ${a.empId}.`);
     }
@@ -219,9 +228,10 @@
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
     const $=id=>document.getElementById(id),v=id=>$ (id)?.value||'',put=(id,html)=>{if($(id))$(id).innerHTML=html;};
     const table=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-    const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{fn();}catch(e){alert(e.message);}});
-    const change=(id,fn)=>$(id)?.addEventListener('change',()=>{try{fn();}catch(e){alert(e.message);}});
-    const buttons=(attribute,fn)=>document.querySelectorAll(`[${attribute}]`).forEach(b=>b.addEventListener('click',()=>{try{fn(b.getAttribute(attribute));}catch(e){alert(e.message);}}));
+    const reportError=o.reportError||alert;
+    const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{fn();}catch(e){reportError(e.message);}});
+    const change=(id,fn)=>$(id)?.addEventListener('change',()=>{try{fn();}catch(e){reportError(e.message);}});
+    const buttons=(attribute,fn)=>document.querySelectorAll(`[${attribute}]`).forEach(b=>b.addEventListener('click',()=>{try{fn(b.getAttribute(attribute));}catch(e){reportError(e.message);}}));
     let area='ess',page='',section='',target='',requestId='',slipId='',from='',to='',recent=true,earnId='';
     const state=()=>getState(),user=()=>getUser();
     function mutate(fn){const s=state(),before=JSON.parse(JSON.stringify(s));try{fn(s);onChange();}catch(e){Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,before);throw e;}}
@@ -366,3 +376,4 @@
   }
   const api={create,createUI};global.SelfService=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof window!=='undefined'?window:globalThis);
+

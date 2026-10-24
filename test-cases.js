@@ -38,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.3'), 'sidebar/version label must show v1.2.3');
-  assert(data.includes("APP_VERSION = '1.2.3'"), 'data-store version must be 1.2.1');
+  assert(html.includes('v1.2.4'), 'sidebar/version label must show v1.2.4');
+  assert(data.includes("APP_VERSION = '1.2.4'"), 'data-store version must be 1.2.1');
 })();
 
 (function testAnchorPayCycle(){
@@ -2960,3 +2960,4 @@ console.log('PASS: v1.1.39 fractional casual rates/hours, same-name positions an
   assert.strictEqual(pays.reduce((n,p)=>n+p.gross,0),320,'Legacy casual end date spanning periods must not pay full hours once as retro and again as current');
   assert(pays.flatMap(p=>p.rows).every(r=>r.kind==='retro'&&r.startDate==='2026-10-01'&&r.endDate==='2026-10-01'));
 })();
+

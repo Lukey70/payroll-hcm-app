@@ -1,5 +1,6 @@
 {
-  "version": "1.2.3",
-  "file": "payroll-hcm-app-v1.2.3.zip",
-  "notes": "Centred home slots, submission attachments, Payroll case access and on-behalf creation, reopening with reason, newest-first messages, recipient routing, certification defaults/read-only manager checks, notification popups and casual ESS eligibility"
+  "version": "1.2.4",
+  "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
+  "notes": "Dashboard, report tiles and earnings PDF, leave screen, compensation leave, salary packaging, manager request templates, activity history, cash-out migration and casual login fix",
+  "releaseNotes": "RELEASE-NOTES-v1.2.4.md"
 }

@@ -1,0 +1,13 @@
+{
+  "name": "payroll-hcm-app",
+  "version": "1.2.4",
+  "private": true,
+  "description": "Browser-local payroll and HCM prototype",
+  "scripts": {
+    "test": "node tests/run-all.cjs",
+    "test:browser": "node tests/browser-v124.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

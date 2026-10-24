@@ -119,3 +119,4 @@
   }
   global.PaymentDetails={create};if(typeof module!=='undefined')module.exports={create};
 })(typeof window!=='undefined'?window:globalThis);
+

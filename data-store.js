@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.3';
+  const APP_VERSION = '1.2.4';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -269,3 +269,4 @@
   global.DataStore = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
+
