@@ -411,3 +411,7 @@ body.notification-pane-open{padding-right:360px}.notification-pane-open .top-act
 .absence-adjustment .save-row{gap:10px}
 
 .pay-errors-report{margin-top:22px}.pay-errors-context{font-size:13px;color:#475569;line-height:1.8}.pay-errors-report td{vertical-align:top;overflow-wrap:anywhere}.pay-errors-report th:first-child{width:25%}.pay-errors-report th:nth-child(2){width:16%}.pay-errors-report .table-wrap{border:1px solid #dce5ef;border-radius:10px}.pay-errors-report table{margin:0}
+
+.support-onboarding-section{margin:22px 0;padding:18px;border:1px solid #dce5ef;border-radius:10px;background:#fff;min-width:0}.support-onboarding-section h4{margin:0 0 16px;color:#173e66}.support-onboarding-section .grid{margin-bottom:0}.support-onboarding-section input[readonly]{background:#f1f5f9}.support-onboarding-section [data-request-tfn]{margin-top:8px;font-size:12px}.support-onboarding-section dd{overflow-wrap:anywhere}
+
+.support-page .support-onboarding-section .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.support-onboarding-section .inline-check{flex-direction:row;align-items:center;align-self:center;gap:8px}.support-onboarding-section .inline-check input{width:auto}@media(max-width:600px){.support-page .support-onboarding-section .form-grid{grid-template-columns:1fr}.support-onboarding-section{padding:14px}}

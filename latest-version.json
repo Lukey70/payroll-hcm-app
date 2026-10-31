@@ -1,6 +1,6 @@
 {
-  "version": "1.2.6",
+  "version": "1.2.7",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Dashboard work queues, Payroll payslip list, shared absence balance cards and signed credit adjustments, Pay Errors table/PDF, leave booking date fix, support response status and termination request reasons",
-  "releaseNotes": "RELEASE-NOTES-v1.2.6.md"
+  "notes": "Structured commencement onboarding details, existing employee identity autofill and validation",
+  "releaseNotes": "RELEASE-NOTES-v1.2.7.md"
 }

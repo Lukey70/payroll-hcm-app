@@ -1,6 +1,6 @@
 {
   "name": "payroll-hcm-app",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": true,
   "description": "Browser-local payroll and HCM prototype",
   "scripts": {

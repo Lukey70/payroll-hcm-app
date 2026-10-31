@@ -46,16 +46,37 @@
    if(type==='Termination'){if(!REASONS.Termination.includes(d.reason))throw Error('Select a valid termination reason.');if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {reason:d.reason,lastWorkingDay:d.lastWorkingDay};}
    if(!REASONS[type].includes(d.reason))throw Error('Select a valid '+type+' reason.');
    const rosterNeeded=type==='Commencement'||type==='Movement'||type==='Variation'&&d.reason==='Work Schedule Adjustment';
-   const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber','firstName','lastName']:type==='Variation'?['effectiveDate',...(rosterNeeded?[]:['changes'])]:['effectiveDate','positionNumber','temporary'];
+   const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber']:type==='Variation'?['effectiveDate',...(rosterNeeded?[]:['changes'])]:['effectiveDate','positionNumber','temporary'];
    for(const key of required)if(!String(d[key]||'').trim())throw Error('Enter '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');
    validDate('effectiveDate',d.effectiveDate);
-   for(const key of ['returnDate','contractEndDate','dateOfBirth'])if(d[key])validDate(key,d[key]);
+   for(const key of ['returnDate','contractEndDate'])if(d[key])validDate(key,d[key]);
    if(type==='Movement'&&!['Permanent','Temporary'].includes(d.temporary))throw Error('Select a valid assignment.');
    if(type==='Movement'&&d.temporary==='Temporary'&&(!d.returnDate||d.returnDate<=d.effectiveDate))throw Error('Enter a return date after the movement date.');
    if(type==='Commencement'&&!['Permanent','Fixed Term','Casual'].includes(d.employmentType))throw Error('Select a valid employment type.');
    if(type==='Commencement'&&d.employmentType==='Fixed Term'&&(!d.contractEndDate||d.contractEndDate<d.effectiveDate))throw Error('Enter a valid contract end date.');
    const fields=['reason','effectiveDate','firstName','lastName','dateOfBirth','email','address','employmentType','contractEndDate','positionNumber','changes','temporary','returnDate'];
    const result=Object.fromEntries(fields.filter(k=>d[k]!==undefined&&String(d[k]).trim()!=='').map(k=>[k,String(d[k]).trim()]));
+   if(type==='Commencement'){
+    for(const key of ['firstName','lastName','dateOfBirth','email','address'])delete result[key];
+    if(raisedFor!=='new-employee'){
+     const e=(s?.employees||[]).find(e=>e.id===raisedFor);if(!e)throw Error('Select an existing employee.');
+     result.employeeName=E.employeeName(e);result.employeeId=e.id;
+    }else{
+     const section=(key,label)=>{const value=d[key];if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Enter '+label+'.');return value;};
+     const text=(value,label,max=255)=>{if(!['string','number'].includes(typeof value)||!String(value).trim())throw Error('Enter '+label+'.');const out=String(value).trim();if(out.length>max)throw Error(label+' is too long.');return out;};
+     const p=section('personalDetails','personal details'),personal={};
+     for(const [key,label]of [['firstName','first name'],['lastName','last name'],['dateOfBirth','date of birth'],['email','email'],['phone','phone number'],['addressLine','address'],['townSuburb','town/suburb'],['state','state'],['postcode','postcode'],['country','country']])personal[key]=text(p[key],label);
+     validDate('dateOfBirth',personal.dateOfBirth);if(personal.dateOfBirth>d.effectiveDate)throw Error('Date of birth cannot be after commencement.');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personal.email))throw Error('Enter a valid email address.');
+     const t=section('taxDetails','tax details');for(const key of ['claimTaxFreeThreshold','stsl'])if(typeof t[key]!=='boolean')throw Error('Select '+(key==='stsl'?'STSL':'whether to claim the tax-free threshold')+'.');
+     const tfnNotProvided=t.tfnNotProvided===true,taxFileNumber=tfnNotProvided?'':String(t.taxFileNumber||'').replace(/\s/g,'');if(!tfnNotProvided&&!/^\d{8,9}$/.test(taxFileNumber))throw Error('Enter an eight or nine digit TFN, or select TFN not provided.');
+     const u=section('superDetails','super details'),usi=text(u.usi,'super USI',100),funds=(s?.superFunds||[]).filter(f=>String(f.usi).trim()===usi),fund=funds.find(f=>!f.deleted&&f.active!==false);
+     if(funds.length&&!fund)throw Error('Select an active super fund.');
+     const superDetails={usi,memberNumber:text(u.memberNumber,'super member number',100),fundName:fund?fund.fundName:text(u.fundName,'super fund name'),abn:String(fund?fund.abn:u.abn||'').replace(/\s/g,'')};if(!/^\d{11}$/.test(superDetails.abn))throw Error('Enter an eleven digit super fund ABN.');if(fund)superDetails.fundId=fund.id;
+     const b=section('bankDetails','bank details'),bankDetails={bsb:String(b.bsb||'').replace(/[\s-]/g,''),accountNumber:String(b.accountNumber||'').trim(),accountName:text(b.accountName,'bank account name')};
+     if(!/^\d{6}$/.test(bankDetails.bsb))throw Error('Enter a six digit BSB.');if(!/^\d{1,34}$/.test(bankDetails.accountNumber))throw Error('Enter a digits-only bank account number.');
+     Object.assign(result,{personalDetails:personal,taxDetails:{taxFileNumber,tfnNotProvided,claimTaxFreeThreshold:t.claimTaxFreeThreshold,stsl:t.stsl},superDetails,bankDetails});
+    }
+   }
    if(type==='Commencement'&&d.employmentType!=='Fixed Term')delete result.contractEndDate;
    if(type==='Movement'&&d.temporary!=='Temporary')delete result.returnDate;
    if(type==='Commencement'||type==='Movement'){

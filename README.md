@@ -1,10 +1,14 @@
-# Payroll/HCM App v1.2.6
+# Payroll/HCM App v1.2.7
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.7
+
+New-employee commencement requests include Personal, Tax, Super and Bank sections. Existing employees use their automatically populated name and employee ID; common job details and roster remain required. Requests do not create employee master records.
 
 ## v1.2.6
 
@@ -59,6 +63,6 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.6.md` records the release checks and their limits.
+An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.7.md` records the release checks and their limits.
 
 Two historical payroll engine fixtures under `tests/` support regression checks for already-paid casual earnings and settlement compatibility. They are test references and are not loaded by the app.
