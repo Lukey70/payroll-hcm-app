@@ -1,10 +1,22 @@
-# Payroll/HCM App v1.2.9
+# Payroll/HCM App v1.2.10
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.10
+
+- Weekday timesheets default to the current pay period; future periods cannot be selected or saved. A single Flex Balance shows approved carry plus current earnings less explicit flex use, capped at 37.5 hours. Non-rostered days earn flex only above 7.5 net worked hours. Previously saved weekend records remain read-only.
+- Unsaved timesheet prompts; approved leave references and missing-day warnings. Timesheets never generate pay; managers enter any payment separately in Additional Earnings.
+- Extended Absences on the Payroll Dashboard and roster-based return reminders for current managers. Settings defaults: 14 calendar days for extended absence; reminders 7 calendar days before return. Checks run while the app is open and on reopening.
+- Optional preferred names for app display, retaining legal names on payslips, Statements of Service/Earnings and financial records.
+- On-call Allowance remains $22.50/hour with no Super Eligible option; new/open entries exclude super and finalised history is preserved.
+- Shared status colours, aligned Save/Cancel actions, compact employee context headers, searchable long employee/position selectors and retained certification scroll/focus.
+- Four-digit date years, report loading placeholders and data-table hover/selection outlines.
+
+See RELEASE-NOTES-v1.2.10.md and TEST-RESULTS-v1.2.10.md. Existing browser-local storage and bank CSV limitations still apply.
 
 ## v1.2.9
 

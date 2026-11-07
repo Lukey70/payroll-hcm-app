@@ -8,7 +8,7 @@ test('upcoming changes include today and day 30, exclude past/out-of-range, draf
 });
 test('Job Data effective sequences produce one event and unprocessed support templates do not become employee changes',()=>{
  const s=fixture();s.jobDataRows.push(job('first','2026-10-28','Termination','Dismissal',{effectiveSequence:0}),job('latest','2026-10-28','Termination','Redundant',{effectiveSequence:1}));s.supportRequests.push({requestType:'Commencement',template:{effectiveDate:'2026-10-30'},status:'New'});
- const before=JSON.stringify(s),rows=F.upcomingEmployeeChanges(s,TODAY);assert.equal(rows.length,1);assert.equal(rows[0].rowId,'latest');assert(rows[0].detail.includes('Redundant'));assert(rows[0].detail.includes('27/10/26'));assert.equal(JSON.stringify(s),before);
+ const before=JSON.stringify(s),rows=F.upcomingEmployeeChanges(s,TODAY);assert.equal(rows.length,1);assert.equal(rows[0].rowId,'latest');assert(rows[0].detail.includes('Redundant'));assert(rows[0].detail.includes('27/10/2026'));assert.equal(JSON.stringify(s),before);
 });
 test('contract expiry uses the last contract day, avoids duplication and ignores obsolete expiry following permanency',()=>{
  const s=fixture(),e=s.employees.find(e=>e.id==='worker');e.type='Fixed Term';e.contractEndDate='2026-10-30';s.jobDataRows.find(j=>j.empId==='worker').positionClass='Fixed-Term';s.jobDataRows.push(job('expiry','2026-10-31','Termination','Expiry of Fixed Term'));

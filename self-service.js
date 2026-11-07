@@ -58,7 +58,7 @@
       if(!positions.length)return {managerId:'',managerIds:[],managerName:'',message:isOperationsManager(s,id,date)?'Automatically Approved':'No Reports To position is assigned.',automatic:isOperationsManager(s,id,date)};
       const matches=s.employees.filter(m=>m.id!==id&&active(s,m,date)&&profile(s,m.id,date).mss&&positions.some(n=>String(job(s,m.id,date)?.positionNumber||'')===n));
       const unresolved=positions.filter(n=>!matches.some(m=>String(job(s,m.id,date)?.positionNumber||'')===n));
-      return {managerId:matches[0]?.id||'',managerIds:matches.map(m=>m.id),managerName:matches.map(E.employeeName).join(', '),reportsTo:positions.join(', '),automatic:isOperationsManager(s,id,date),message:unresolved.length?'Reports To has no active manager with MSS access: '+unresolved.join(', '):''};
+      return {managerId:matches[0]?.id||'',managerIds:matches.map(m=>m.id),managerName:matches.map(E.employeeDisplayName).join(', '),reportsTo:positions.join(', '),automatic:isOperationsManager(s,id,date),message:unresolved.length?'Reports To has no active manager with MSS access: '+unresolved.join(', '):''};
     }
     function directReports(s,id,date=today()){
       actor(s,id,date);if(!profile(s,id,date).mss)throw Error('Manager Self Service access is required.');
@@ -114,10 +114,10 @@
       if(!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error(manager.message+' Payroll must correct Reports To before submission.');
       const result=validateRequest(s,Object.assign({},input,{empId:target,type}));
       const stamp=new Date().toISOString(),status=area==='mss'||manager.automatic?'Approved':'Awaiting Manager Approval';
-      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,attachments:E.operations.attachments(input.attachments||[]),requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.automatic?'automatic':area==='mss'?id:manager.managerId,approverIds:manager.managerIds,approverName:manager.automatic?'Automatically Approved':area==='mss'?E.employeeName(employee(s,id)):manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
+      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,attachments:E.operations.attachments(input.attachments||[]),requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.automatic?'automatic':area==='mss'?id:manager.managerId,approverIds:manager.managerIds,approverName:manager.automatic?'Automatically Approved':area==='mss'?E.employeeDisplayName(employee(s,id)):manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
       s.leaveBookings.push(l);
-      if(area==='ess'&&status==='Awaiting Manager Approval')notify(s,manager.managerIds,`${E.employeeName(e)} submitted ${type==='LWOP'?'Leave without Pay':type}: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-submit:${l.id}`,{area:'mss',page:'approvals',requestId:l.id});
-      else if(area==='mss')notify(s,[target],`${E.employeeName(employee(s,id))} booked approved ${type==='LWOP'?'Leave without Pay':type} for you: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-manager-book:${l.id}`,{area:'ess',page:'requests'});
+      if(area==='ess'&&status==='Awaiting Manager Approval')notify(s,manager.managerIds,`${E.employeeDisplayName(e)} submitted ${type==='LWOP'?'Leave without Pay':type}: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-submit:${l.id}`,{area:'mss',page:'approvals',requestId:l.id});
+      else if(area==='mss')notify(s,[target],`${E.employeeDisplayName(employee(s,id))} booked approved ${type==='LWOP'?'Leave without Pay':type} for you: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-manager-book:${l.id}`,{area:'ess',page:'requests'});
       return l;
     }
     function notifyDecision(s,l,status,actorId,comment=''){
@@ -131,7 +131,7 @@
       if(!['Approved','Denied'].includes(status))throw Error('Choose Approve or Deny.');
       if(status==='Denied'&&!String(comment).trim())throw Error('A denial comment is required.');
       if(status==='Approved')validateRequest(s,l,l.id);
-      l.approverId=id;l.approverName=E.employeeName(employee(s,id));l.status=status;l.decisionComment=String(comment).trim();l.decidedBy=id;l.decidedAt=new Date().toISOString();l.pendingApprovalSince='';l.pendingApprovalNotifiedSince='';
+      l.approverId=id;l.approverName=E.employeeDisplayName(employee(s,id));l.status=status;l.decisionComment=String(comment).trim();l.decidedBy=id;l.decidedAt=new Date().toISOString();l.pendingApprovalSince='';l.pendingApprovalNotifiedSince='';
       (l.statusHistory||(l.statusHistory=[])).push({status,changedAt:l.decidedAt,source:'Manager Self Service',actorId:id,comment:l.decisionComment});
       notifyDecision(s,l,status,id,l.decisionComment);return l;
     }
@@ -143,7 +143,7 @@
       (s.leaveRequestArchive||(s.leaveRequestArchive=[])).push(Object.assign({},JSON.parse(JSON.stringify(l)),{deletedBy:id,deletedAt:new Date().toISOString(),deletedFrom:area}));
       s.leaveBookings=s.leaveBookings.filter(x=>x.id!==requestId);
       if(area==='mss')notify(s,[l.empId],`Your approved ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)} was deleted by your manager.`,`leave-delete:${l.id}`,{area:'ess',page:'requests'});
-      else notify(s,managerFor(s,id,date).managerIds,`${E.employeeName(employee(s,id))} withdrew ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-withdraw:${l.id}`,{area:'mss',page:'requests'});
+      else notify(s,managerFor(s,id,date).managerIds,`${E.employeeDisplayName(employee(s,id))} withdrew ${l.type} ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-withdraw:${l.id}`,{area:'mss',page:'requests'});
       return l;
     }
     function requests(s,id,area='ess',date=today()){
@@ -151,12 +151,12 @@
       return s.leaveBookings.filter(l=>ids.includes(l.empId)).slice().sort((a,b)=>String(b.submittedAt||b.startDate).localeCompare(String(a.submittedAt||a.startDate))).map(l=>{
         const m=managerFor(s,l.empId,date);
         const payroll=l.source==='Payroll Management'||(!l.source&&!l.submittedBy);
-        const name=payroll?'Payroll':l.approverId==='automatic'?'Automatically Approved':l.decidedBy?E.employeeName(employee(s,l.decidedBy)||{id:l.decidedBy}):l.source==='Manager Self Service'?l.approverName:l.status==='Awaiting Manager Approval'?m.managerName:l.approverName||m.managerName;
+        const name=payroll?'Payroll':l.approverId==='automatic'?'Automatically Approved':l.decidedBy?E.employeeDisplayName(employee(s,l.decidedBy)||{id:l.decidedBy}):l.source==='Manager Self Service'?l.approverName:l.status==='Awaiting Manager Approval'?m.managerName:l.approverName||m.managerName;
         return Object.assign({},l,{approverName:name||'Unassigned'});
       });
     }
     function errors(s,date=today(),structured=false){
-      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[structured?{empId:e.id,employeeName:E.employeeName(e),message:m.message}:`${E.employeeName(e)}: ${m.message}`];});
+      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[structured?{empId:e.id,employeeName:E.employeeDisplayName(e),message:m.message}:`${E.employeeDisplayName(e)}: ${m.message}`];});
     }
     function syncNotifications(s,date=today()){
       const payroll=s.employees.filter(e=>profile(s,e.id,date).payroll).map(e=>e.id);
@@ -199,7 +199,7 @@
       const dateBased=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(input.earningType);
       if(!dateBased&&(!Number.isFinite(Number(amountOnly?input.amount:input.hours))||(amountOnly?Number(input.amount)<0:Number(input.hours)<=0)))throw Error('Enter a valid amount or positive hours/units.');
       const a={id:old?.id||uid('add'),empId:input.empId,cycleId:cycle.id,earningType:input.earningType,startDate:input.startDate,endDate:input.endDate,hours:amountOnly||dateBased?0:Number(input.hours),amount:amountOnly?Number(input.amount):'',saved:true,source:'Manager Self Service',enteredBy:id};
-      if(a.earningType==='On-call Allowance'){E.operations.validateOnCallAdditional(s,input);a.unitRate=old?E.onCallAllowanceRate(s,old):E.ON_CALL_ALLOWANCE_RATE;a.ote=input.ote===true;a.accruesLeave=false;a.amount=E.round2(a.hours*a.unitRate);}
+      if(a.earningType==='On-call Allowance'){E.operations.validateOnCallAdditional(s,input);a.unitRate=old?E.onCallAllowanceRate(s,old):E.ON_CALL_ALLOWANCE_RATE;a.ote=old&&E.isFinalised(s,cycle)?old.ote===true:false;a.accruesLeave=false;a.amount=E.round2(a.hours*a.unitRate);}
       if(['Casual Earnings','Higher Duties Allowance'].includes(a.earningType)){
         const p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(input.positionNumber));if(!p)throw Error('Choose an active position.');
         a.positionNumber=p.positionNumber;a.positionName=p.positionName;a.positionDepartment=p.department;
@@ -238,6 +238,8 @@
   function createUI(o){
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
     const $=id=>document.getElementById(id),v=id=>$ (id)?.value||'',put=(id,html)=>{if($(id))$(id).innerHTML=html;};
+    const statusHtml=value=>global.PayrollUI?.statusHtml(value)||esc(value);
+    const employeeHeader=id=>global.PayrollUI?.employeeHeader(E,getState(),id)||'';
     const table=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     const reportError=o.reportError||alert;
     const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{const result=fn();if(result?.catch)result.catch(e=>reportError(e.message));}catch(e){reportError(e.message);}});
@@ -255,10 +257,10 @@
     function render(){
       o.unmountPayments?.();o.unmountCertification?.();
       S.assertScope(state(),user(),user(),'ess');if(area==='mss'&&!S.profile(state(),user()).mss){hide();home();return;}
-      E.ensurePendingLeaveNotifications(state());S.syncNotifications(state());
+      E.ensurePendingLeaveNotifications(state());E.operations.ensureReturnLeaveNotifications(state());S.syncNotifications(state());
       const title=area==='ess'?'Employee Self Service':'Manager Self Service';
       const alerts=S.alertsFor(state(),user());
-      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v10h-6v-7H9v7H3z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button id="ssNotifications" class="ss-notifications" type="button" aria-controls="alertsDropdown" aria-expanded="false"></button><button id="ssLogout" class="danger">Sign out</button></div></header><div id="ssBody"></div>`);
+      put('selfServiceScreen',`<header class="ss-header"><h1>${title}</h1><span>${esc(E.employeeDisplayName(state().employees.find(e=>e.id===user())))}</span><div class="controls"><button id="ssBack" class="secondary">Back</button><button id="ssHome" class="secondary icon-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v10h-6v-7H9v7H3z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button><button id="ssNotifications" class="ss-notifications" type="button" aria-controls="alertsDropdown" aria-expanded="false"></button><button id="ssLogout" class="danger">Sign out</button></div></header><div id="ssBody"></div>`);
       click('ssBack',()=>{if(slipId&&(page==='payslips'||page==='reports'&&section==='payslips')){slipId='';render();}else show(area);});click('ssHome',()=>{hide();home();});click('ssLogout',()=>{hide();logout();});
       refreshNotifications();
       if(!page){
@@ -279,7 +281,7 @@
     function selector(){
       const people=area==='ess'?[state().employees.find(e=>e.id===user())]:S.directReports(state(),user());
       if(!people.some(e=>e.id===target))target=people[0]?.id||'';
-      return area==='ess'?'':`<label>Employee<select id="ssEmployee">${people.map(e=>`<option value="${esc(e.id)}" ${e.id===target?'selected':''}>${esc(E.employeeName(e))} (${esc(e.id)})</option>`).join('')}</select></label>${people.length?'':'<p>No direct reports.</p>'}`;
+      return area==='ess'?employeeHeader(user()):`<label>Employee<select id="ssEmployee">${people.map(e=>`<option value="${esc(e.id)}" ${e.id===target?'selected':''}>${esc(E.employeeDisplayName(e))} (${esc(e.id)})</option>`).join('')}</select></label>${people.length?'':'<p>No direct reports.</p>'}${employeeHeader(target)}`;
     }
     function bindSelector(){change('ssEmployee',()=>{target=v('ssEmployee');earnId='';render();});}
     function selected(){if(!target&&area==='ess')target=user();if(!target)return null;return S.assertScope(state(),user(),target,area);}
@@ -290,7 +292,7 @@
       const selectedPay=slipId?all.find(p=>p.id===slipId):null;if(slipId&&!selectedPay)slipId='';
       if(!selectedPay){
         const rows=list.map(p=>`<tr data-slip-row="${esc(p.id)}"><td><button class="ss-slip-link" data-ss-slip="${esc(p.id)}" aria-label="Open payslip for ${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}, ${esc(p.position)}">${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}</button></td><td>${esc(p.position||'Casual Earnings')}</td><td>${Number(p.segmentIndex||1)}</td><td class="ss-money">${E.money(p.gross||0)}</td><td class="ss-money">${E.money(p.tax||0)}</td><td class="ss-money">${E.money(p.net||0)}</td><td><span class="ss-slip-state ${p.finalised?'':'is-open'}">${p.finalised?'Finalised':'Open'}</span></td><td aria-hidden="true">›</td></tr>`).join('');
-        put('ssMain',`<header class="ss-payslip-header"><div><h2>Payslips</h2><p>${esc(E.employeeName(employee))}</p></div></header><div class="ss-pay-filters"><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><div><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button></div></div><div class="ss-payslip-list"><table><thead><tr><th>Pay Date</th><th>Position</th><th>Segment</th><th class="ss-money">Gross</th><th class="ss-money">Tax</th><th class="ss-money">Net</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ss-payslip-empty">No payslips found. Choose a wider date range to see earlier payslips.</div></td></tr>'}</tbody></table></div><p class="ss-payslip-count">${recent?'Most recent 10 payslips':'Selected date range'} · ${list.length} payslip${list.length===1?'':'s'}</p>`);
+        put('ssMain',`<header class="ss-payslip-header"><div><h2>Payslips</h2>${employeeHeader(employeeId)}</div></header><div class="ss-pay-filters"><label>From Date<input id="ssPayFrom" type="date" value="${esc(from)}"></label><label>To Date<input id="ssPayTo" type="date" value="${esc(to)}"></label><div><button id="ssPayApply">Apply Date Range</button><button id="ssPayRecent" class="secondary">Most Recent 10</button></div></div><div class="ss-payslip-list"><table><thead><tr><th>Pay Date</th><th>Position</th><th>Segment</th><th class="ss-money">Gross</th><th class="ss-money">Tax</th><th class="ss-money">Net</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ss-payslip-empty">No payslips found. Choose a wider date range to see earlier payslips.</div></td></tr>'}</tbody></table></div><p class="ss-payslip-count">${recent?'Most recent 10 payslips':'Selected date range'} · ${list.length} payslip${list.length===1?'':'s'}</p>`);
         click('ssPayApply',()=>{const f=v('ssPayFrom'),t=v('ssPayTo');S.payslips(state(),employeeId,f,t,false);from=f;to=t;recent=false;slipId='';render();});click('ssPayRecent',()=>{from='';to='';recent=true;slipId='';render();});
         const open=id=>{if(!ownPays().some(p=>p.id===id))throw Error('Payslip unavailable.');slipId=id;render();};
         buttons('data-ss-slip',open);document.querySelectorAll('[data-slip-row]').forEach(row=>row.addEventListener('click',event=>{if(event.target.closest('button'))return;try{open(row.getAttribute('data-slip-row'));}catch(e){reportError(e.message);}}));return;
@@ -305,11 +307,11 @@
     function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState,getUser,reportError,onChange});return operationsView;}
     function filesHtml(l){return (l.attachments||[]).map((f,i)=>'<button data-ss-file="'+esc(l.id)+'|'+i+'">'+esc(f.name)+'</button>').join('');}
     function bindLeaveFiles(){buttons('data-ss-file',key=>{const [id,index]=key.split('|'),files=E.operations.leaveFiles(state(),user(),id,area);E.operationFiles.download(files[Number(index)],document);});}
-    function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',esc(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')],['Documents',filesHtml(l)]]);}
+    function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeDisplayName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',statusHtml(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')],['Documents',filesHtml(l)]]);}
     function renderApprovals(){
       if(section==='timesheets'){put('ssSidebar','<button id="ssLeaveApprovals">Leave Approvals</button>');click('ssLeaveApprovals',()=>{section='';render();});operationsUI().mount('ssMain','approvals','mss');return;}
       const requests=S.requests(state(),user(),'mss').filter(l=>l.status==='Awaiting Manager Approval');
-      put('ssSidebar',`<h2>Pending Requests</h2>${requests.map(l=>`<button data-ss-request="${esc(l.id)}">${esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))} — ${esc(l.type)} — ${E.fmtPay(l.startDate)}</button>`).join('')||'<p>No pending requests.</p>'}`);
+      put('ssSidebar',`<h2>Pending Requests</h2>${requests.map(l=>`<button data-ss-request="${esc(l.id)}">${esc(E.employeeDisplayName(state().employees.find(e=>e.id===l.empId)))} — ${esc(l.type)} — ${E.fmtPay(l.startDate)}</button>`).join('')||'<p>No pending requests.</p>'}`);
       put('ssSidebar',$('ssSidebar').innerHTML+'<button id="ssTimesheetApprovals">Timesheet Approvals ('+E.operations.timesheets(state(),user(),'mss').filter(t=>t.status==='Awaiting Manager Approval').length+')</button>');
       click('ssTimesheetApprovals',()=>{section='timesheets';render();});
       if(!requests.some(l=>l.id===requestId))requestId=requests[0]?.id||'';
@@ -317,7 +319,7 @@
       bindLeaveFiles();buttons('data-ss-request',id=>{requestId=id;render();});for(const [id,status]of [['ssApprove','Approved'],['ssDeny','Denied']])click(id,()=>{mutate(s=>S.decide(s,user(),requestId,status,v('ssDecisionComment')));requestId='';render();});
     }
     function renderReports(){
-      const people=S.directReports(state(),user());put('ssSidebar',`<h2>Direct Reports</h2>${people.map(e=>`<button data-ss-report="${esc(e.id)}">${esc(E.employeeName(e))}</button>`).join('')||'<p>No direct reports.</p>'}`);
+      const people=S.directReports(state(),user());put('ssSidebar',`<h2>Direct Reports</h2>${people.map(e=>`<button data-ss-report="${esc(e.id)}">${esc(E.employeeDisplayName(e))}</button>`).join('')||'<p>No direct reports.</p>'}`);
       if(!people.some(e=>e.id===target))target=people[0]?.id||'';
       const e=target?selected():null;
       if(e){put('ssSidebar',$('ssSidebar').innerHTML+'<div class="divider"></div><button id="ssReportJob">Job Summary</button><button id="ssReportSlips">Payslips</button><div id="ssReportPays"></div>');
@@ -326,7 +328,7 @@
       }else put('ssMain','<p>Select a direct report.</p>');
       buttons('data-ss-report',id=>{target=id;slipId='';from='';to='';recent=true;render();});
     }
-    function jobSummary(e){return `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p>${o.jobSummaryHtml?o.jobSummaryHtml(e.id):'<p>Job Summary unavailable.</p>'}`;}
+    function jobSummary(e){return `${employeeHeader(e.id)}<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p>${o.jobSummaryHtml?o.jobSummaryHtml(e.id):'<p>Job Summary unavailable.</p>'}`;}
     function renderDetails(){
       nav([['personal','Personal Details'],['bank','Bank Details'],['tax','Tax Details'],['super','Super'],...(area==='ess'?[['job','Job Summary']]:[])]);
       const picker=selector(),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
@@ -334,7 +336,7 @@
       if(section==='job')body=jobSummary(e);
       if(section==='personal'){
         const details=Object.assign({},e,E.activePersonalDetails(s,e.id,E.iso(new Date())));
-        body=table(['Field','Value'],[['Employee ID',esc(e.id)],['Name',esc(E.employeeName(details))],['Date of Birth',E.fmtPay(details.dateOfBirth)],['Email',esc(details.email)],['Phone',esc(details.phone)],['Address',esc([details.addressLine||details.address,details.townSuburb,details.state,details.postcode,details.country].filter(Boolean).join(', '))]]);
+        body=table(['Field','Value'],[['Employee ID',esc(e.id)],['Legal Name',esc(E.employeeName(e))],['Preferred Name',esc(e.preferredName||'—')],['Display Name',esc(E.employeeDisplayName(details))],['Date of Birth',E.fmtPay(details.dateOfBirth)],['Email',esc(details.email)],['Phone',esc(details.phone)],['Address',esc([details.addressLine||details.address,details.townSuburb,details.state,details.postcode,details.country].filter(Boolean).join(', '))]]);
       }
       if(section==='bank')body=table(['Effective Date','Sequence','BSB','Account Number','Account Name'],s.bankDetails.filter(r=>r.empId===e.id).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.effectiveSequence-a.effectiveSequence).map(r=>[E.fmtPay(r.effectiveDate),r.effectiveSequence,esc(r.bsb),esc(r.accountNumber),esc(r.accountName)]));
       if(section==='super')body=table(['Effective Date','Sequence','Fund Name','USI','ABN','Member Number','Fund Status'],s.superDetails.filter(r=>r.empId===e.id).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||b.effectiveSequence-a.effectiveSequence).map(r=>{const f=s.superFunds.find(f=>f.id===r.fundId);return [E.fmtPay(r.effectiveDate),r.effectiveSequence,esc(f?.fundName),esc(f?.usi||r.usi),esc(f?.abn),esc(r.memberNumber),f?.deleted?'Deleted':f?.active===false?'Inactive':f?'Active':'Missing'];}));
@@ -346,8 +348,8 @@
       nav(area==='ess'?[['request','Absence Request'],['requests','My Requests'],['balances','Absence Balances'],['calendar','Leave Calendar'],['timesheets','Timesheets']]:[['request','Request Absence'],['requests','View Request'],['balances','Absence Balance'],['timesheets','Timesheet Manager'],['calendar','Absence Monthly Calendar']]);
       if(section==='timesheets'){operationsUI().mount('ssMain','timesheets',area);return;}
       if(section==='requests'){
-        const requests=S.requests(state(),user(),area);
-        put('ssMain',`<h2>${area==='ess'?'My Requests':'View Request'}</h2>${table(['Employee','Leave','From','To','Hours','Status','Approver','Comment','Documents','Action'],requests.map(l=>[esc(E.employeeName(state().employees.find(e=>e.id===l.empId))),esc(l.type==='LWOP'?'Leave without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),esc(l.status),esc(l.approverName),esc(l.decisionComment||''),filesHtml(l),((area==='ess'&&l.status==='Awaiting Manager Approval')||(area==='mss'&&l.status==='Approved'))?`<button class="danger" data-ss-delete="${esc(l.id)}">Delete</button>`:'']))}`);
+        const requests=S.requests(state(),user(),area).filter(l=>!target||l.empId===target);
+        put('ssMain',`<h2>${area==='ess'?'My Requests':'View Request'}${target?' — '+esc(E.employeeDisplayName(state().employees.find(e=>e.id===target)||{})):''}</h2>${table(['Employee','Leave','From','To','Hours','Status','Approver','Comment','Documents','Action'],requests.map(l=>[esc(E.employeeDisplayName(state().employees.find(e=>e.id===l.empId))),esc(l.type==='LWOP'?'Leave without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),statusHtml(l.status),esc(l.approverName),esc(l.decisionComment||''),filesHtml(l),((area==='ess'&&l.status==='Awaiting Manager Approval')||(area==='mss'&&l.status==='Approved'))?`<button class="danger" data-ss-delete="${esc(l.id)}">Delete</button>`:'']))}`);
         bindLeaveFiles();buttons('data-ss-delete',id=>{if(!confirm('Delete this leave request?'))return;mutate(s=>S.deleteRequest(s,user(),id,area));render();});return;
       }
       if(section==='calendar')return calendar();
@@ -359,7 +361,7 @@
       }
       const types=area==='ess'?S.EMPLOYEE_LEAVE:S.MANAGER_LEAVE;
       const manager=S.managerFor(state(),e.id);
-      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><label>Supporting documents<input id="ssLeaveFiles" type="file" multiple></label><p class="small-note">Optional: up to five files, 1 MB each and 2 MB total.</p><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
+      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><label>Supporting documents<input id="ssLeaveFiles" type="file" multiple></label><p class="small-note">Optional: up to five files, 1 MB each and 2 MB total.</p><div class="ss-leave-actions form-actions"><button id="ssLeaveCancel" class="secondary">Cancel</button><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button></div><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
       const updateHours=(reset=true)=>{
         const type=v('ssLeaveType'),start=v('ssLeaveStart'),end=v('ssLeaveEnd');
         const basic=E.validateLeaveBooking(state(),e.id,type,start,end,undefined,undefined,{evidenceProvided:!!$('ssEvidence').checked});
@@ -372,6 +374,7 @@
       change('ssLeaveStart',()=>{$('ssLeaveEnd').value=v('ssLeaveStart');updateHours();});
       change('ssLeaveEnd',()=>updateHours());change('ssLeaveType',()=>updateHours());change('ssEvidence',()=>updateHours());
       $('ssLeaveHours').addEventListener('input',()=>updateHours(false));updateHours();
+      click('ssLeaveCancel',render);
       click('ssLeaveSubmit',()=>{const actor=user(),employeeId=target,type=v('ssLeaveType'),start=v('ssLeaveStart'),end=v('ssLeaveEnd'),submitButton=$('ssLeaveSubmit');
         const finish=attachments=>{if(actor!==user()||employeeId!==target||submitButton!==$('ssLeaveSubmit')||type!==v('ssLeaveType')||start!==v('ssLeaveStart')||end!==v('ssLeaveEnd'))throw Error('The booking changed. Please submit again.');const hours=$('ssLeaveHours').readOnly?'':v('ssLeaveHours');mutate(s=>S.submitLeave(s,user(),{empId:target,type:v('ssLeaveType'),startDate:v('ssLeaveStart'),endDate:v('ssLeaveEnd'),requestedHours:hours===''?undefined:Number(hours),evidenceProvided:!!$('ssEvidence').checked,attachments},area));section='requests';render();};
         return $('ssLeaveFiles')?.files?.length?E.operationFiles.readFiles($('ssLeaveFiles').files).then(finish):finish([]);
@@ -401,7 +404,7 @@
     function navigateNotification(action){
       const mode=action.area||'ess';if(mode==='mss'&&!S.profile(state(),user()).mss)throw Error('Manager Self Service access is required.');
       if(action.page==='approvals'&&action.requestId&&!S.requests(state(),user(),'mss').some(l=>l.id===action.requestId&&l.status==='Awaiting Manager Approval'))throw Error('This request is no longer awaiting your approval.');
-      show(mode,action.page==='requests'?'leave':action.page);if(action.page==='requests')section='requests';if(action.requestId)requestId=action.requestId;if(action.timesheetId)section='timesheets';render();
+      show(mode,action.page==='requests'?'leave':action.page);if(action.page==='requests')section='requests';if(action.requestId)requestId=action.requestId;if(action.timesheetId)section='timesheets';if(action.empId){S.assertScope(state(),user(),action.empId,mode);target=action.empId;}render();
     }
     return {show,hide,render,refreshNotifications,navigateNotification};
   }

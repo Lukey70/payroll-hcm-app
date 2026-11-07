@@ -1,3 +1,3 @@
 # Development status
 
-The on-call rate, roster confirmation and actual-time/flex timesheet changes are included in v1.2.9. See RELEASE-NOTES-v1.2.9.md and TEST-RESULTS-v1.2.9.md.
+All requested changes through the four-digit date, report-loading and row-selection update are included in v1.2.10. See RELEASE-NOTES-v1.2.10.md, IMPLEMENTATION-NOTES-v1.2.10.md and TEST-RESULTS-v1.2.10.md.

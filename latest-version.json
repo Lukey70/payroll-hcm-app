@@ -1,6 +1,6 @@
 {
-  "version": "1.2.9",
+  "version": "1.2.10",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Actual-time timesheets and flex tracking without pay changes, fixed $22.50 on-call rate and redesigned roster confirmation",
-  "releaseNotes": "RELEASE-NOTES-v1.2.9.md"
+  "notes": "Timesheet and flex corrections, extended absences and return reminders, preferred names, searchable lists, certification scroll fix and shared UI improvements",
+  "releaseNotes": "RELEASE-NOTES-v1.2.10.md"
 }

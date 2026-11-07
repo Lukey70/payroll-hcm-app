@@ -124,7 +124,7 @@
    function add(e,date,type,detail,rowId=''){
     if(!valid(date)||date<today||date>until)return;
     const key=[e.id,date,type].join('|');if(seen.has(key))return;seen.add(key);
-    changes.push({empId:e.id,name:E.employeeName(e),date,type,detail,rowId});
+    changes.push({empId:e.id,name:E.employeeDisplayName(e),date,type,detail,rowId});
    }
    for(const e of s.employees||[]){
     const rows=(s.jobDataRows||[]).filter(j=>j.empId===e.id&&j.saved!==false&&valid(j.effectiveDate)).slice().sort((a,b)=>a.effectiveDate.localeCompare(b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));

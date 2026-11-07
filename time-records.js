@@ -37,7 +37,7 @@ function create(E,S){
    const schedule=E.activeSchedule(s,empId,date),liveRoster=Number(schedule?.hoursByDay?.[E.parseDate(date).getDay()]||0);
    const roster=snapshots&&Number.isFinite(Number(input.rosteredHours))?Number(input.rosteredHours):liveRoster;
    const flexTaken=Number(input.flexTaken||0);if(!Number.isFinite(flexTaken)||flexTaken<0||flexTaken>24)throw Error('Flex Time Taken must be between 0 and 24 hours.');
-   const worked=E.round4(workedMinutes/60),earned=E.round4(Math.max(0,worked-roster));
+   const worked=E.round4(workedMinutes/60),earned=E.round4(Math.max(0,worked-(roster>0?roster:7.5)));
    if(flexTaken>Math.max(0,roster-worked)+0.0001)throw Error('Flex Time Taken cannot exceed the rostered hours not worked on '+E.fmtPay(date)+'.');
    const remarks=String(input.remarks||'');if(remarks.length>2000)throw Error('Daily remarks must be at most 2,000 characters.');
    if((worked>0||flexTaken>0||remarks)&&!(E.isEmployedOn(person,date)||S.isActiveEmployee(s,person,date)))throw Error('Time records must fall within the employee’s employment.');
@@ -64,8 +64,17 @@ function create(E,S){
   const records=list(s,'timesheets').filter(t=>t.empId===empId&&t.schemaVersion===2&&t.status==='Approved'&&Number(t.cycleId)<Number(cycleId)).sort((a,b)=>Number(a.cycleId)-Number(b.cycleId));
   for(const t of records){const days=normalise(s,empId,t.cycleId,t.days,false,true).days;balance=applyFlex(balance,days).closing;}return balance;
  }
- function summary(s,t){
-  const days=normalise(s,t.empId,t.cycleId,t.days||[],false,t.status!=='Draft'&&t.status!=='Denied').days,carried=carriedForward(s,t.empId,t.cycleId),result=applyFlex(carried,days);
+ function dayReferences(s,empId,day,asOf){
+  const approvedLeave=(s.leaveBookings||[]).filter(l=>l.empId===empId&&E.leaveBookingIsApproved(l)&&l.startDate<=day.date&&l.endDate>=day.date).map(l=>{
+   const explicit=l.startDate===l.endDate?(l.requestedHours??l.hours):undefined,hours=explicit!==undefined&&explicit!==null&&String(explicit)!==''?Math.min(day.rosteredHours,Math.max(0,Number(explicit)||0)):day.rosteredHours;
+   return {id:l.id,type:l.type===E.FDV_LEAVE_TYPE?'Approved Leave':l.type==='LWOP'?'Leave without Pay':l.type,hours:E.round4(hours)};
+  });
+  const person=employee(s,empId),employed=E.isEmployedOn(person,day.date)||S.isActiveEmployee(s,person,day.date);
+  const missingRecord=day.date<asOf&&![0,6].includes(E.parseDate(day.date).getDay())&&employed&&day.rosteredHours>0&&day.workedHours===0&&day.flexTaken===0&&!day.incomplete&&!approvedLeave.some(l=>l.hours>0)&&!E.isPublicHoliday(day.date);
+  return {...day,approvedLeave,missingRecord};
+ }
+ function summary(s,t,asOf=today()){
+  const days=normalise(s,t.empId,t.cycleId,t.days||[],false,t.status!=='Draft'&&t.status!=='Denied').days.map(day=>dayReferences(s,t.empId,day,asOf)),carried=carriedForward(s,t.empId,t.cycleId),result=applyFlex(carried,days);
   return {days,...totals(days),carried,...result,cap:CAP,provisional:t.status!=='Approved'};
  }
  function validateLedger(s,empId,candidate){
@@ -75,7 +84,7 @@ function create(E,S){
  }
  function saveTimesheet(s,id,input,submit=false,d=today()){
   S.assertScope(s,id,id,'ess',d);if(Object.hasOwn(input,'lines'))throw Error('Timesheets record On/Off times and flex only. Enter payments separately in Additional Earnings.');
-  const c=cycle(input.cycleId),old=list(s,'timesheets').find(t=>t.id===input.id);
+  const c=cycle(input.cycleId);if(c.id>E.currentCycle(s).id)throw Error('Future pay periods are not available for timesheets.');const old=list(s,'timesheets').find(t=>t.id===input.id);
   if(old&&(old.empId!==id||!['Draft','Denied'].includes(old.status)))throw Error('Only your draft or denied time records can be edited.');
   if(list(s,'timesheets').some(t=>t.id!==input.id&&t.empId===id&&Number(t.cycleId)===c.id))throw Error('A timesheet already exists for this fortnight.');
   const checked=normalise(s,id,c.id,input.days||[],submit),remarks=String(input.remarks||'');

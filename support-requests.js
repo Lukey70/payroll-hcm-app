@@ -5,7 +5,7 @@
     const now=()=>new Date().toISOString(),date=()=>E.iso(new Date());
     const uid=p=>`${p}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const person=(s,id)=>s.employees.find(e=>e.id===id);
-    const name=(s,id)=>id==='new-employee'?'New Employee':`${E.employeeName(person(s,id)||{id})} (${id})`;
+    const name=(s,id)=>id==='new-employee'?'New Employee':`${E.employeeDisplayName(person(s,id)||{id})} (${id})`;
     function signed(s,id,d=date()){S.assertScope(s,id,id,'ess',d);}
     function payroll(s,id,d=date()){signed(s,id,d);if(!S.profile(s,id,d).payroll)throw Error('Payroll Management access is required.');}
     function init(s){if(!Array.isArray(s.supportRequests))s.supportRequests=[];}
@@ -221,10 +221,10 @@
         ${card('People & request',`<div class="support-fields"><label>Number<input value="${esc(T.nextNumber(s()))}" readonly></label><label>Opened<input value="${esc(dt(new Date().toISOString()))}" readonly></label><label>Raised by${raisedBy}</label><label>Raised for${raisedFor}</label></div>`)}
         ${card('Request details',`${area==='mss'?'<label>Request Type<select id="supportRequestType"><option>General Enquiry</option><option>Commencement</option><option>Variation</option><option>Movement</option><option>Termination</option></select></label><div id="supportTemplate"></div>':''}<label>Subject <span id="supportSubjectRequired" class="support-required">Required</span><input id="supportSubject" maxlength="250" placeholder="A brief summary of your request" required></label><label id="supportDescriptionLabel">Description <span class="support-required">Required</span><textarea id="supportDescription" rows="7" maxlength="20000" placeholder="Include the details Payroll needs to understand and process your request." required></textarea></label>`)}
         ${card('Attachments',upload('supportNewFiles','supportNewFileList','Attach Documents'),'Include supporting documents if they are relevant to your request.')}
-        <footer class="support-submit-bar"><span>Your request will be sent to Payroll.</span><button id="supportSubmit" class="support-primary-action">${icon('send')}Submit</button></footer></section>`);
+        <footer class="support-submit-bar form-actions"><span>Your request will be sent to Payroll.</span><button id="supportCancel" class="secondary">Cancel</button><button id="supportSubmit" class="support-primary-action">${icon('send')}Submit</button></footer></section>`);
       bindUpload('supportNewFiles','supportNewFileList');
       $('supportRequestType')?.addEventListener('change',templateFields);$('supportRaisedFor')?.addEventListener('change',fillTemplatePerson);
-      click('supportBack',()=>{viewEpoch++;newCase=false;listing();});
+      click('supportBack',()=>{viewEpoch++;newCase=false;listing();});click('supportCancel',()=>{viewEpoch++;newCase=false;listing();});
       click('supportSubmit',async()=>{
         const epoch=viewEpoch,actor=u(),source=area,button=$('supportSubmit'),input={raisedBy:v('supportRaisedBy'),raisedFor:v('supportRaisedFor'),subject:v('supportSubject'),description:v('supportDescription'),requestType:v('supportRequestType')||'General Enquiry',template:templateValue(),additionalComments:v('req_comments')},files=Array.from($('supportNewFiles').files||[]);
         button.disabled=true;try{input.attachments=await readFiles(files);if(epoch!==viewEpoch||actor!==u()||!newCase||$('supportSubmit')!==button)throw Error('The page changed. Open a new request to submit it.');
@@ -255,14 +255,14 @@
       bindUpload('supportFiles','supportMessageFileList');click('supportPopout',()=>o.openWindow(caseId));
       click('supportBack',()=>{viewEpoch++;caseId='';listing();});
       click('supportReopen',()=>{
-        put('supportResolution','<dialog id="supportReopenDialog" aria-labelledby="reopenTitle"><h2 id="reopenTitle">Re-open Support Request</h2><label>Message explaining why<textarea id="supportReopenReason" rows="5" maxlength="20000" required></textarea></label><div class="controls"><button id="supportConfirmReopen">Re-open Support Request</button><button id="supportCancelReopen" class="secondary">Cancel</button></div></dialog>');
+        put('supportResolution','<dialog id="supportReopenDialog" aria-labelledby="reopenTitle"><h2 id="reopenTitle">Re-open Support Request</h2><label>Message explaining why<textarea id="supportReopenReason" rows="5" maxlength="20000" required></textarea></label><div class="controls form-actions"><button id="supportCancelReopen" class="secondary">Cancel</button><button id="supportConfirmReopen">Re-open Support Request</button></div></dialog>');
         $('supportReopenDialog').showModal();click('supportCancelReopen',()=>{$('supportReopenDialog').close();put('supportResolution','');});click('supportConfirmReopen',()=>{mutate(s=>T.reopen(s,u(),caseId,v('supportReopenReason')));$('supportReopenDialog').close();details();});
       });
       $(container)?.querySelectorAll('[data-request-tfn]').forEach(button=>button.addEventListener('click',()=>{try{T.get(s(),u(),caseId,mode);const input=button.previousElementSibling;input.type=input.type==='password'?'text':'password';button.textContent=input.type==='password'?'Show TFN':'Hide TFN';}catch(e){reportError(e.message);}}));
       $('supportAssigned')?.addEventListener('change',()=>{try{mutate(s=>T.assign(s,u(),caseId,v('supportAssigned')));details();}catch(e){reportError(e.message);details();}});
       click('supportAssignMe',()=>{mutate(s=>T.assign(s,u(),caseId,u()));details();});click('supportTimer',()=>{mutate(s=>T.timer(s,u(),caseId));details();});click('supportAwait',()=>{mutate(s=>T.status(s,u(),caseId,'Awaiting Info'));details();});
       click('supportResolve',()=>{
-        put('supportResolution','<dialog id="supportResolveDialog" aria-labelledby="resolutionTitle"><h2 id="resolutionTitle">Resolution Notes</h2><label>Resolution Notes<textarea id="supportNotes" rows="6" maxlength="20000"></textarea></label><div class="controls"><button id="supportConfirmResolve">Resolve</button><button id="supportCancelResolve" class="secondary">Cancel</button></div></dialog>');
+        put('supportResolution','<dialog id="supportResolveDialog" aria-labelledby="resolutionTitle"><h2 id="resolutionTitle">Resolution Notes</h2><label>Resolution Notes<textarea id="supportNotes" rows="6" maxlength="20000"></textarea></label><div class="controls form-actions"><button id="supportCancelResolve" class="secondary">Cancel</button><button id="supportConfirmResolve">Resolve</button></div></dialog>');
         $('supportResolveDialog').showModal();click('supportCancelResolve',()=>{$('supportResolveDialog').close();put('supportResolution','');});click('supportConfirmResolve',()=>{mutate(s=>T.status(s,u(),caseId,'Resolved',v('supportNotes')));$('supportResolveDialog').close();details();});
       });
       click('supportSend',async()=>{

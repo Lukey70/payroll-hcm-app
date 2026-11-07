@@ -38,18 +38,18 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.9'), 'sidebar/version label must show v1.2.9');
-  assert(data.includes("APP_VERSION = '1.2.9'"), 'data-store version must be 1.2.9');
+  assert(html.includes('v1.2.10'), 'sidebar/version label must show v1.2.10');
+  assert(data.includes("APP_VERSION = '1.2.10'"), 'data-store version must be 1.2.10');
 })();
 
 (function testAnchorPayCycle(){
   const c = E.ANCHOR_CYCLE;
-  assert.strictEqual(E.ppeLabel(c), 'PPE4/6/26');
+  assert.strictEqual(E.ppeLabel(c), 'PPE4/6/2026');
   assert.strictEqual(c.start, '2026-05-22');
   assert.strictEqual(c.end, '2026-06-04');
   assert.strictEqual(c.paymentDate, '2026-06-04');
   assert.strictEqual(c.closeDate, '2026-05-29');
-  assert.strictEqual(E.cycleDisplay(c), 'PPE4/6/26 | Period: 22/5/26 - 4/6/26 | Payment Date: 4/6/26 | Pay close: 29/5/26');
+  assert.strictEqual(E.cycleDisplay(c), 'PPE4/6/2026 | Period: 22/5/2026 - 4/6/2026 | Payment Date: 4/6/2026 | Pay close: 29/5/2026');
 })();
 
 (function testCommencementDateIncluded(){
@@ -489,7 +489,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(!html.includes('data-tab="changeCentre"'), 'Change Centre should be removed from the sidebar');
   assert(app.includes('Settings') && app.includes('Positions') && app.includes('Position Number'), 'Settings should include Positions management');
   assert(app.includes('JOB_REASON_OPTIONS') && app.includes('Position Refresh') && app.includes('Pay Rate Change'), 'Job Data variation reasons should include new reasons');
-  assert(app.includes("table(['ID','First Name','Last Name','Employment Type','Status','Actions']"), 'Employees table should remain simplified while showing employment type');
+  assert(app.includes("table(['ID','Legal First Name','Legal Last Name','Preferred Name','Employment Type','Status','Actions']"), 'Employees table should remain simplified while showing employment type');
   assert(app.includes('Job Summary is read-only') && app.includes("Effective Sequence','Action','Reason','Position Name','Weekly Hours"), 'Job Summary should be a read-only Job Data list');
   assert(data.includes('positions: []') && data.includes('jobDataRows: []'), 'State should include positions and jobDataRows');
 })();
@@ -1021,7 +1021,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(output.includes('STATEMENT OF SERVICE')&&output.includes('Service History:')&&output.includes('Leave Without Pay Taken:'),'Generated Statement of Service must contain the required sections');
   assert(output.includes('Courtney De Lange')&&output.includes('6 ROOKE WAY')&&output.includes('CLARKSON WA 6030'),'Generated report must use the employee name and structured effective-dated address');
   assert(output.includes('Teacher - PrePrimary')&&output.includes('Quinns North Primary School')&&output.includes('New Hire Fixed-Term'),'Generated report must include service-history details');
-  assert(output.includes('15/9/23')&&output.includes('LUKE MCGUINESS')&&output.includes('PAYROLL OFFICER'),'Generated report must include LWOP and signatory details');
+  assert(output.includes('15/9/2023')&&output.includes('LUKE MCGUINESS')&&output.includes('PAYROLL OFFICER'),'Generated report must include LWOP and signatory details');
   assert(output.includes("McDonald&#39;s California Franchise"),'Generated report must use McDonald\'s California Franchise branding');
   assert(output.includes("commenced service with McDonald&#39;s California Franchise"),'Commencement wording must use the requested company name');
   assert(output.includes('different roles within the company'),'Job-number explanation must refer to the company');
@@ -1273,10 +1273,10 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 
 
 console.log('PASS: Login button/password strings and app version are present');
-console.log('PASS: Current pay is PPE4/6/26');
-console.log('PASS: Period is 22/5/26 - 4/6/26');
-console.log('PASS: Payment date is 4/6/26');
-console.log('PASS: Pay close is 29/5/26');
+console.log('PASS: Current pay is PPE4/6/2026');
+console.log('PASS: Period is 22/5/2026 - 4/6/2026');
+console.log('PASS: Payment date is 4/6/2026');
+console.log('PASS: Pay close is 29/5/2026');
 console.log('PASS: Monday-Friday 7.5 hours pays 37.5 hours');
 console.log('PASS: Commencement date is included in pay');
 console.log('PASS: Leave over non-working days only deducts scheduled work days');
@@ -1744,7 +1744,7 @@ console.log('PASS: Payslip date-range filtering defaults to the 10 most recent p
   changed=E.ensureContractExpiryNotifications(state,'2026-05-30');
   assert.strictEqual(changed,true,'Contract expiry alert must appear the day after the previous pay period closes');
   assert.strictEqual(state.alerts.length,1);
-  assert(state.alerts[0].message.includes("Alex Example's contract is expiring on 18/6/26"));
+  assert(state.alerts[0].message.includes("Alex Example's contract is expiring on 18/6/2026"));
   assert(state.alerts[0].message.includes("extend Alex's contract in Job Data"));
   E.ensureContractExpiryNotifications(state,'2026-05-31');
   assert.strictEqual(state.alerts.filter(a=>String(a.key||'').startsWith('contract-expiry-fxnotice-')).length,1,'Contract expiry notification must not duplicate');
