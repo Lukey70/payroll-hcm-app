@@ -4,6 +4,7 @@
   const ANCHOR_CYCLE = { id: 1, start: '2026-05-22', end: '2026-06-04', paymentDate: '2026-06-04', closeDate: '2026-05-29' };
   const RETRO_PROCESSING_START = '2026-05-03';
   const SUPER_RATE = 0.12;
+  const ON_CALL_ALLOWANCE_RATE = 22.5;
   const ANNUAL_LEAVE_WEEKS_PER_YEAR = 4;
   const PERSONAL_LEAVE_WEEKS_PER_YEAR = 3;
   const FDV_LEAVE_DAYS_PER_YEAR = 10;
@@ -1241,6 +1242,16 @@
     return Object.assign({},e,{type:activeEmploymentType(state,e,priorLast),startDate:prior.startDate,terminationDate:prior.endDate,terminationReason:prior.terminationReason,contractEndDate:'',autoTerminate:false,
       employmentSegments:employmentSegments(e).filter(seg=>seg.startDate!==e.startDate&&compare(seg.startDate,prior.endDate)<0)});
   }
+  function onCallAllowanceRate(state,entry){
+    const cycle=cycleForDate(entry.startDate);
+    // Preserve saved historical rates so this configuration change does not create retro.
+    const saved=(state.additionalEarnings||[]).find(a=>a.id===entry.id&&a.empId===entry.empId&&a.saved!==false);
+    if(saved&&cycle&&isFinalised(state,cycle)){
+      if(Number.isFinite(Number(saved.unitRate))&&Number(saved.unitRate)>0)return Number(saved.unitRate);
+      if(Number(saved.hours)>0&&Number.isFinite(Number(saved.amount)))return round4(Number(saved.amount)/Number(saved.hours));
+    }
+    return ON_CALL_ALLOWANCE_RATE;
+  }
   function earningRowsForCycle(state, e, c, options={}){
     const includeAdditional = options.includeAdditional !== false;
     const includePayouts = options.includePayouts !== false;
@@ -1303,6 +1314,7 @@
     });
     if(includeAdditional){
       (state.additionalEarnings||[]).filter(a=>{
+        if(a?.sourceTimesheetId&&!isFinalised(state,c))return false;
         if(!a || a.empId!==e.id || a.saved===false || a.legacyCashOutId || ['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType)) return false;
         // Source dates are authoritative for Additional Earnings. This is especially
         // important for a late Casual Earnings entry: older saved data can carry the
@@ -1320,7 +1332,7 @@
           return;
         }
         if(earningType==='On-call Allowance'){
-          rows.push({description:'On-call Allowance',units:Number(a.hours||0),amount:round2(Number(a.amount||0)),startDate:a.startDate,endDate:a.endDate,rate:Number(a.unitRate||0),baseRate:Number(baseRate.hourlyRate||0),position:baseRate.position||e.position,kind:'additional',ote:a.ote===true,accruesLeave:false,serviceHours:0,onCallId:a.onCallId});return;
+          rows.push({description:'On-call Allowance',units:Number(a.hours||0),amount:round2(Number(a.hours||0)*onCallAllowanceRate(state,a)),startDate:a.startDate,endDate:a.endDate,rate:onCallAllowanceRate(state,a),baseRate:Number(baseRate.hourlyRate||0),position:baseRate.position||e.position,kind:'additional',ote:a.ote===true,accruesLeave:false,serviceHours:0,onCallId:a.onCallId});return;
         }
         if(['Reimbursement','Travel Allowance','Bonus'].includes(earningType)){
           rows.push({ description:earningType, units:0, amount:round2(Number(a.amount||0)), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:earningType==='Bonus', accruesLeave:false, serviceHours:0, amountOnly:true, nonTaxable:earningType==='Reimbursement' });
@@ -1960,6 +1972,11 @@
     const c = currentCycle(state);
     if(isFinalised(state,c)) throw new Error(`${ppeLabel(c)} has already been finalised.`);
     api.urgentPay.finalisationCheck(state,c);
+    // Freeze the configured rate on source entries when this period is finalised.
+    for(const a of state.additionalEarnings||[])if(a.earningType==='On-call Allowance'&&a.saved!==false&&a.startDate>=c.start&&a.startDate<=c.end){
+      a.unitRate=ON_CALL_ALLOWANCE_RATE;a.amount=round2(Number(a.hours||0)*a.unitRate);
+      const period=(state.onCallPeriods||[]).find(r=>r.id===a.onCallId);if(period)period.rate=a.unitRate;
+    }
     const payslips = calculateAll(state,c.id,true).map(p=>Object.assign({},p,{finalised:true,finalisedAt:(new Date()).toISOString().slice(0,10)}));
     state.payslips = (state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id)).concat(payslips);
     state.finalisedCycles[String(c.id)] = { id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c) };
@@ -2093,12 +2110,15 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { ON_CALL_ALLOWANCE_RATE, onCallAllowanceRate, STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   Object.assign(api,Payment);
   const SelfServiceModule=typeof module!=='undefined'?require('./self-service.js'):global.SelfService;
   api.selfService=SelfServiceModule.create(api);
   api.createSelfServiceUI=SelfServiceModule.createUI;
   const OperationsModule=typeof module!=='undefined'?require('./payroll-operations.js'):global.PayrollOperations;
+  const TimeModule=typeof module!=='undefined'?require('./time-records.js'):global.TimeRecords;
+  api.timeRecords=TimeModule.create(api,api.selfService);
+  api.createTimeRecordUI=(typeof module!=='undefined'?require('./time-records-ui.js'):global.TimeRecordsUI).createUI;
   api.operations=OperationsModule.create(api,api.selfService);
   const UrgentModule=typeof module!=='undefined'?require('./urgent-pay.js'):global.UrgentPay;
   api.urgentPay=UrgentModule.create(api,api.selfService);api.createUrgentPayUI=UrgentModule.createUI;

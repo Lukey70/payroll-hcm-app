@@ -199,7 +199,7 @@
       const dateBased=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(input.earningType);
       if(!dateBased&&(!Number.isFinite(Number(amountOnly?input.amount:input.hours))||(amountOnly?Number(input.amount)<0:Number(input.hours)<=0)))throw Error('Enter a valid amount or positive hours/units.');
       const a={id:old?.id||uid('add'),empId:input.empId,cycleId:cycle.id,earningType:input.earningType,startDate:input.startDate,endDate:input.endDate,hours:amountOnly||dateBased?0:Number(input.hours),amount:amountOnly?Number(input.amount):'',saved:true,source:'Manager Self Service',enteredBy:id};
-      if(a.earningType==='On-call Allowance'){E.operations.validateOnCallAdditional(s,input);a.unitRate=Number(input.unitRate);a.ote=input.ote===true;a.accruesLeave=false;a.amount=E.round2(a.hours*a.unitRate);}
+      if(a.earningType==='On-call Allowance'){E.operations.validateOnCallAdditional(s,input);a.unitRate=old?E.onCallAllowanceRate(s,old):E.ON_CALL_ALLOWANCE_RATE;a.ote=input.ote===true;a.accruesLeave=false;a.amount=E.round2(a.hours*a.unitRate);}
       if(['Casual Earnings','Higher Duties Allowance'].includes(a.earningType)){
         const p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(input.positionNumber));if(!p)throw Error('Choose an active position.');
         a.positionNumber=p.positionNumber;a.positionName=p.positionName;a.positionDepartment=p.department;
@@ -223,7 +223,7 @@
       return `<div class="absence-balance-cards">${cards.map(([key,label,glyph])=>`<article class="absence-balance-card leave-balance-${key}${Number(b[key])<0?' leave-balance-negative':''}" data-balance-card="${key}"><h3>${icon(glyph)}${label}</h3><p class="absence-balance-value"><strong>${Number(b[key]||0).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong><span>hours</span></p>${pending[key]!==undefined?`<p class="absence-pending">Pending requests: ${Number(pending[key]||0).toFixed(2)} hours</p>`:''}${Number(b[key])<0?'<p class="absence-pending">Below zero</p>':''}</article>`).join('')}<article class="absence-balance-card absence-entitlement-card" data-balance-card="lslEntitlementDate"><h3>${icon('calendar')}LSL Entitlement Date</h3><p class="absence-balance-value"><strong>${b.lslEntitlementDate?E.fmtPay(b.lslEntitlementDate):'—'}</strong></p></article></div>`;
     }
     function additionalAmount(s,a){
-      if(a.earningType==='On-call Allowance')return E.round2(Number(a.hours||0)*Number(a.unitRate||0));
+      if(a.earningType==='On-call Allowance')return E.round2(Number(a.hours||0)*E.onCallAllowanceRate(s,a));
       if(['Travel Allowance','Bonus','Reimbursement','Overpayment Adjustment'].includes(a.earningType))return Number(a.amount||0);
       if(a.earningType==='Casual Earnings')return E.round2(Number(a.hours||0)*Number(a.casualLoadedRate||0));
       if(a.earningType==='Higher Duties Allowance')return E.round2(Number(a.hours||0)*(Number(a.higherDutiesPositionRate||0)-Number(E.substantivePayRate(s,employee(s,a.empId),a.startDate).hourlyRate||0)));

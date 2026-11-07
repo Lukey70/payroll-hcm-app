@@ -432,3 +432,92 @@ body.notification-pane-open{padding-right:360px}.notification-pane-open .top-act
 #payrollToolOutput>button,#operationsReport>button { margin:8px 8px 12px 0; }
 #payrollToolOutput textarea { width:100%; }
 #opsBackTools { margin-bottom:8px; }
+
+/* Roster confirmation follows the Job Data weekly schedule layout. */
+.roster-confirm-context { display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;background:#f2f6fb;border-radius:10px; }
+.roster-confirm-context span,.roster-confirm-intro { color:#53647c; }
+.roster-confirm-panels { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px; }
+.roster-confirm-panel { min-width:0;border:1px solid #d8dee9;border-radius:12px;padding:18px;background:#fbfcfe; }
+.roster-confirm-panel.is-proposed { border-color:#8eb4f5;background:#f7faff; }
+.roster-confirm-panel>header { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px; }
+.roster-confirm-panel>header h3 { margin:0;font-size:17px; }
+.roster-confirm-panel>header>span { font-size:12px;color:#53647c;background:#e9eef6;padding:5px 8px;border-radius:6px; }
+.roster-confirm-week+.roster-confirm-week { border-top:1px solid #dce4ee;margin-top:16px;padding-top:16px; }
+.roster-confirm-week-heading { display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:10px; }
+.roster-confirm-week-heading h4 { margin:0;font-size:13px; }
+.roster-confirm-week-heading>span { color:#53647c;font-size:12px;white-space:nowrap; }
+.roster-confirm-days { display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:0; }
+.roster-confirm-day { text-align:center;padding:10px 3px;border:1px solid #dce3ed;border-radius:8px;background:#fff; }
+.roster-confirm-day dt { font-size:11px;color:#53647c;margin-bottom:8px;font-weight:600; }
+.roster-confirm-day dd { margin:0;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums; }
+.roster-confirm-day.is-changed { border-color:#7da6ed;background:#e9f1ff;color:#174b95; }
+.roster-confirm-change-label { display:block;font-size:9px;font-weight:600;margin-top:5px; }
+.roster-confirm-panel>footer { margin-top:18px;padding-top:14px;border-top:1px solid #dce4ee;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px; }
+.roster-confirm-panel>footer strong { font-size:20px;font-variant-numeric:tabular-nums; }
+.roster-confirm-summary { padding:14px 16px;margin-bottom:0;background:#f2f6fb;border-radius:10px;font-size:13px;line-height:1.6; }
+.roster-confirm-modal .modal-footer { flex-wrap:wrap;padding-top:14px; }
+@media(max-width:850px) { .roster-confirm-panels { grid-template-columns:1fr; } }
+@media(max-width:500px) {
+ .roster-confirm-panels { gap:14px; }
+ .roster-confirm-panel { padding:14px; }
+ .roster-confirm-days { grid-template-columns:repeat(4,minmax(0,1fr));gap:8px; }
+ .roster-confirm-modal .modal-footer { position:sticky;bottom:-22px;background:#fff;padding:14px 0 4px; }
+ .roster-confirm-modal .modal-footer button { flex:1 1 160px; }
+ .roster-confirm-context span { font-size:12px; }
+}
+.roster-confirm-day { min-height:76px; }
+/* Actual-time record sheets and flex tracking. */
+.tr-purpose { color:#53647c;line-height:1.6;max-width:1000px; }
+.tr-period-picker { display:block;max-width:740px;margin:18px 0; }
+.tr-person { display:grid;grid-template-columns:auto 1fr auto auto;gap:16px;align-items:center;border:1px solid #c8ced7;padding:14px 18px;background:#fff;font-size:13px; }
+.tr-balances { border:1px solid #c8ced7;margin:6px 0 18px;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px 36px; }
+.tr-balances>div { display:flex;gap:16px;justify-content:space-between;align-items:baseline; }
+.tr-balances span { font-size:13px;font-weight:600;color:#53647c; }
+.tr-balances output { font-variant-numeric:tabular-nums;min-width:76px;text-align:right;font-size:15px; }
+.tr-balances p { grid-column:1/-1;margin:0;font-size:12px;color:#65758b; }
+.tr-balances .is-negative output { color:#b42318; }
+.tr-record-sheet { border:1px solid #c8ced7;background:white; }
+.tr-sheet-toolbar { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;background:#fafbfc;border-bottom:1px solid #c8ced7; }
+.tr-sheet-toolbar h3 { margin:0;font-size:16px; }
+.tr-sheet-toolbar .controls { margin:0;gap:6px; }
+.tr-sheet-toolbar button { padding:6px 9px;font-size:12px; }
+.tr-week-selector { display:flex;gap:5px;align-items:center;margin:0;font-size:12px; }
+.tr-week-selector select { width:auto;padding:6px; }
+.tr-scroll { overflow:auto;max-width:100%; }
+.tr-sheet-table { width:100%;min-width:1100px;table-layout:fixed;border-collapse:collapse;margin:0; }
+.tr-sheet-table th:first-child { width:170px; }
+.tr-sheet-table thead th { color:#496b99;background:#fff;border:0;padding:20px 10px 12px;text-align:center;font-size:13px; }
+.tr-sheet-table thead th:first-child { text-align:left; }
+.tr-sheet-table thead small { display:block;margin-top:6px;color:#192639;font-weight:400; }
+.tr-sheet-table tbody th { text-align:right;padding:6px 14px;color:#496b99;border:0;background:#fff;font-size:12px; }
+.tr-sheet-table tbody td { text-align:center;border:0;padding:5px 9px;font-size:13px;vertical-align:middle;font-variant-numeric:tabular-nums; }
+.tr-sheet-table input { min-width:0;width:100%;height:34px;border:1px solid #9ba6b2;border-radius:3px;background:#fff;padding:4px;font-size:13px; }
+.tr-sheet-table textarea { width:100%;min-width:0;height:54px;border:1px solid #aeb7c3;border-radius:3px;padding:5px;font-size:12px; }
+.tr-sheet-table .tr-metric th,.tr-sheet-table .tr-metric td { padding-top:9px;padding-bottom:9px; }
+.tr-sheet-table .tr-flex-row input { max-width:100px; }
+.tr-week+.tr-week { border-top:1px solid #c8ced7; }
+.tr-week-totals { margin:12px 20px 20px;padding-top:14px;border-top:1px solid #c8ced7;display:grid;grid-template-columns:1fr 1fr;gap:8px 30px; }
+.tr-week-totals>div { display:flex;justify-content:space-between;gap:14px; }
+.tr-week-totals dt { color:#496b99;font-size:13px;font-weight:600; }
+.tr-week-totals dd { margin:0;font-size:13px;font-variant-numeric:tabular-nums; }
+.tr-period-remarks { display:block;margin:16px 20px; }
+.tr-period-remarks strong { display:block;color:#496b99;margin-bottom:8px;font-size:13px; }
+.tr-period-remarks textarea { display:block;width:100%; }
+.tr-period-remarks>span { white-space:pre-wrap; }
+.tr-record-sheet>#trAddPair { margin:0 20px; }
+.tr-extra-day { display:block;font-size:10px;line-height:1.4;color:#8b4b00;background:#fff4df;border-radius:4px;padding:5px; }
+.tr-actions { margin-top:18px; }
+.tr-legacy-note { padding:12px;border-left:4px solid #d89400;background:#fff8e6; }
+#trReview { margin-top:24px; }
+#trLocalError:empty { display:none; }
+@media(max-width:900px) { .tr-person { grid-template-columns:1fr 1fr; } .tr-balances { gap:12px; } }
+@media(max-width:600px) { .tr-person,.tr-balances,.tr-week-totals { grid-template-columns:1fr; } .tr-sheet-toolbar .controls { width:100%; } .tr-person { padding:12px; } }
+@media print {
+ .tr-print .tr-person,.tr-print .tr-balances { break-inside:avoid; }
+ .tr-print .tr-scroll { overflow:visible; }
+ .tr-print .tr-sheet-table { min-width:0;table-layout:fixed;font-size:9px; }
+ .tr-print .tr-sheet-table th:first-child { width:105px; }
+ .tr-print .tr-sheet-table th,.tr-print .tr-sheet-table td { font-size:9px;padding:4px 2px; }
+ .tr-print .tr-week { break-inside:avoid; }
+ .tr-print .tr-week-totals { font-size:10px;margin:8px; }
+}

@@ -1,10 +1,20 @@
-# Payroll/HCM App v1.2.8
+# Payroll/HCM App v1.2.9
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.9
+
+- Fortnightly Personal Record Sheet with daily On/Off times, breaks, remarks, roster comparisons and manager review. Timesheets never calculate or generate pay. Managers must enter any payable additional work separately in Additional Earnings.
+- Explicit Flex Time Taken, flex earned above each day's roster (including extra days), approved-only carry-forward capped at 37.5 hours and separate excess display.
+- Fixed $22.50/hour On-call Allowance for new entries; finalised historical rates are preserved.
+- Current/Proposed Job Data roster confirmation grids, highlighted changes, separate weeks and preserved unsaved inputs.
+- Legacy hours-only time records are retained for reference and reset for actual-time resubmission. Unfinalised generated earnings are archived and excluded from pay; finalised sources and payslips are preserved.
+
+See RELEASE-NOTES-v1.2.9.md and TEST-RESULTS-v1.2.9.md.
 
 ## v1.2.8
 

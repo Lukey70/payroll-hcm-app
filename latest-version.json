@@ -1,6 +1,6 @@
 {
-  "version": "1.2.8",
+  "version": "1.2.9",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Timesheets and approvals, leave attachments, payroll reports and dashboard registers, on-call Additional Earnings, urgent-pay CSV batches, employee payment details and same-day casual rehire fix",
-  "releaseNotes": "RELEASE-NOTES-v1.2.8.md"
+  "notes": "Actual-time timesheets and flex tracking without pay changes, fixed $22.50 on-call rate and redesigned roster confirmation",
+  "releaseNotes": "RELEASE-NOTES-v1.2.9.md"
 }

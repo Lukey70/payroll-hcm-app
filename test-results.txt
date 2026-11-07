@@ -1,8 +1,8 @@
-v1.2.8 release validation — 7 November 2026
+Payroll/HCM v1.2.9 — 7 November 2026
 
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.8 test
+> payroll-hcm-app@1.2.9 test
 > node tests/run-all.cjs
 
 PASS: Login button/password strings and app version are present
@@ -252,36 +252,50 @@ PASS: 3 Pay Errors report groups.
 PASS: leave files validate size/content and are scoped to owner, current manager and Payroll
 PASS: excess leave thresholds are configurable, support disabled types and reject invalid values
 PASS: roster comparison respects same-day sequence and both weeks
+PASS: roster comparison reads linked schedules for imported empty Job Data rosters
 PASS: FTE establishment counts active actual positions and supports unconfigured/zero capacity
 PASS: acting register shows current/upcoming and removes ended assignments without mutating data
 PASS: contract expiry buckets use saved authoritative expiry dates
 PASS: recovery statements use recorded repayments and enforce employee visibility
 PASS: probation and response templates validate dates, permissions and retain history
 PASS: on-call periods produce taxable allowances with configurable super and no leave accrual
-PASS: timesheets add no pay before approval; current managers approve once and earnings survive import
-PASS: timesheet denial, resubmission and withdrawal validate state, dates and manager changes
-PASS: approval revalidates dated assignment changes and new records survive backup/import
-PASS: 12 payroll operations groups.
+PASS: 10 payroll operations groups.
 PASS: Urgent Pay reduces net once without changing gross, tax, super or next-period deductions
 PASS: preview is read-only; running snapshots bank accounts, locks deductions and excludes repeat payments
 PASS: batch run rejects stale previews, missing bank details, invalid amounts and excess deductions atomically
 PASS: unprocessed urgent pay blocks regular finalisation; processed pay finalises without extra payslips
 PASS: the deduction form fixes urgent pay to one period and marks processed rows read-only
-PASS: on-call earnings support normal Additional Earnings and scoped manager entry with entered rate
+PASS: on-call earnings support normal Additional Earnings and scoped manager entry with the fixed $22.50 rate
 PASS: stale deduction drafts cannot overwrite a processed batch and duplicate IDs cannot pay twice
-PASS: 7 urgent-pay and on-call groups.
+PASS: fixed on-call rate ignores open-entry overrides and preserves historical finalised rates
+PASS: finalisation freezes the configured on-call rate and does not create a later reversal
+PASS: 9 urgent-pay and on-call groups.
 PASS: same-day sequence 1 casual rehire remains active and rebuilds previous fixed-term service
 PASS: fixed-term AL and accrued LSL payouts equal a normal termination; personal and pro-rata LSL do not pay
 PASS: casual earnings coexist with the final fixed-term pay; finalisation clears paid balances without closing casual
 PASS: a later same-day termination still closes the casual record
 PASS: 4 same-day casual rehire groups.
-PASS: all thirteen Node.js payroll regression suites.
+PASS: On/Off work periods calculate actual time, breaks, roster and flex without pay data
+PASS: daily shortfalls do not reduce flex unless Flex Time Taken is entered; extra days earn flex
+PASS: drafts retain incomplete times, but submission rejects incomplete, overlapping and out-of-period work
+PASS: overnight work and breaks are counted against the start day without adjacent-date overlap
+PASS: save, submit, deny, resubmit, approve and withdrawal never change any payroll data
+PASS: only current direct-report managers can approve and records remain owner-scoped
+PASS: approved flex carries forward, explicit use reduces it, and unapproved flex does not carry
+PASS: carry is capped at 37.5 hours and excess is shown separately without bank or payroll entries
+PASS: flex cannot be taken beyond roster shortfall, approved availability or earlier day earnings
+PASS: time records can be approved for a finalised pay period while finalised pay stays identical
+PASS: legacy migration archives unfinalised generated earnings and detaches historical sources without changing payslips
+PASS: withdrawn records remain archived and time/flex data survive export/import
+PASS: overnight hours cannot be duplicated in a submitted adjacent fortnight
+PASS: approved roster snapshots remain stable after a later Job Data schedule change
+PASS: 14 actual-time/flex groups.
+PASS: all fourteen Node.js payroll regression suites.
 
-Chromium validation:
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.8 test:browser
-> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js
+> payroll-hcm-app@1.2.9 test:browser
+> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js && node tests/time-records-ui.test.js
 
 PASS: Chromium Dashboard, eight reports, PDF download, selected employee leave, compensation roster hours, packaging inline validation/save, cash-out credit validation/save/delete, MSS templates, case history and casual-only ESS login; no JavaScript page errors.
 PASS: real support popup, shared data with unsaved parent work, single-window reuse, popup blocking, failed-save rollback, draft preservation, parent closure, direct-link rejection and logout access; notification pane, per-user dismissal and navigation; ESS/MSS payslip rows, dedicated views, date-preserving Back and finalisation controls.
@@ -301,5 +315,6 @@ STEP MSS
 PASS: Chromium reports, thresholds, FTE, recovery print, on-call, probation, replies, leave attachments/download, roster confirmation, ESS timesheet, MSS approval, protected earnings and mobile; no browser errors.
 PASS: Chromium one-time deduction, editable pre-run amount, Settings preview, failed-save rollback, CSV, frozen bank snapshot, repeat exclusion, locks, no new payslips and mobile; no browser errors.
 PASS: Chromium actual sequence-0 termination/sequence-1 casual Job Data, fixed-term payouts, casual earnings, finalisation, reload and casual ESS payslips.
+PASS: Chromium actual On/Off and breaks, extra-day flex, carry/cap fields, week navigation, preserved draft, failed-save rollback, manager review/print, pay-data invariance, no pay calculations and mobile containment.
 
-41 JavaScript/CommonJS syntax checks passed. Version/cache metadata and referenced scripts verified.
+PASS: 45 JavaScript syntax checks and matching versions/assets.

@@ -120,7 +120,7 @@
   function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
 
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:()=>{calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:change=>{if(change?.kind!=='timesheet')calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -134,6 +134,7 @@
     state = DataStore.migrate(state);F?.migrateCashOuts(state);
     T.closeDue(state);
     E.reconcileAllEmploymentFromJobData(state);
+    E.timeRecords.migrateTimesheets(state);
     const lslMigration=E.reconcileLslSevenYearMigration(state,currentCycle().end);
     const personalLeaveBreakRepair=E.reconcilePersonalLeaveBreakRules(state,currentCycle().end);
     const personalLeaveRepair=E.repairPersonalLeaveBalances(state);
@@ -694,7 +695,7 @@
   function urgentPayUI(){if(!urgentView)urgentView=E.createUrgentPayUI({E,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save urgent pay. No deductions have been locked.');deductionDraftLoadedFor='';calculateAllForCurrent();renderAlerts();}});return urgentView;}
 
   let operationsView=null;
-  function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');calculateAllForCurrent();renderAlerts();renderDashboard();}});return operationsView;}
+  function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:change=>{if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');if(change?.kind!=='timesheet')calculateAllForCurrent();renderAlerts();renderDashboard();}});return operationsView;}
   function renderPayrollTools(){
     h('payrollTools','<h2>Payroll Tools</h2><div class="report-tiles">'+[['probation','Probation Tracking'],['responses','Support Response Templates'],['timesheets','Timesheets']].map(([key,label])=>'<button class="landing-tile" data-ops-tool="'+key+'"><span class="landing-tile-icon">'+(typeof PayrollUI!=='undefined'?PayrollUI.icon(key==='oncall'?'clock':key==='responses'?'support':'report'):'▤')+'</span><span>'+label+'</span></button>').join('')+'</div><div id="payrollToolOutput"></div>');
     $('payrollTools').querySelectorAll('[data-ops-tool]').forEach(b=>b.addEventListener('click',()=>{const key=b.dataset.opsTool;h('payrollTools','<button id="opsBackTools" class="secondary">Back to Payroll Tools</button><div id="payrollToolOutput"></div>');$('opsBackTools').addEventListener('click',renderPayrollTools);operationsUI().mount('payrollToolOutput',key);}));
@@ -1001,6 +1002,22 @@
     return affected;
   }
 
+  function rosterConfirmationHtml(row,e,comparison){
+    const order=[1,2,3,4,5,6,0],names=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const weeks=comparison.oldPattern==='2-week'||comparison.newPattern==='2-week'?2:1;
+    const sum=map=>order.reduce((total,day)=>total+Number(map[day]||0),0);
+    function panel(proposed){
+      const values=proposed?comparison.after:comparison.before,pattern=proposed?comparison.newPattern:comparison.oldPattern;
+      return '<section class="roster-confirm-panel'+(proposed?' is-proposed':'')+'" aria-label="'+(proposed?'Proposed roster':'Current roster')+'"><header><h3>'+(proposed?'Proposed Roster':'Current Roster')+'</h3><span>'+(pattern==='2-week'?'Two-week pattern':'Weekly pattern')+'</span></header>'+
+        Array.from({length:weeks},(_,week)=>'<section class="roster-confirm-week"><div class="roster-confirm-week-heading"><h4>'+(weeks===2?(week===0?'Week 1 — Pay Week':'Week 2 — Pay Close Week'):'Regular Week')+'</h4><span>'+sum(values[week]).toFixed(2)+' hours</span></div><dl class="roster-confirm-days">'+order.map(day=>{
+          const changed=Number(comparison.before[week][day]||0)!==Number(comparison.after[week][day]||0);
+          return '<div class="roster-confirm-day'+(proposed&&changed?' is-changed':'')+'"><dt>'+names[day]+'</dt><dd>'+Number(values[week][day]||0).toFixed(2)+(proposed&&changed?'<span class="roster-confirm-change-label">Changed</span>':'')+'</dd></div>';
+        }).join('')+'</dl></section>').join('')+'<footer><span>Average weekly hours</span><strong>'+(proposed?comparison.newWeekly:comparison.oldWeekly).toFixed(2)+'</strong></footer></section>';
+    }
+    const delta=E.round4(comparison.newWeekly-comparison.oldWeekly);
+    return '<div class="roster-confirmation"><div class="roster-confirm-context"><strong>'+esc(E.employeeName(e))+' ('+esc(e.id)+')</strong><span>Effective '+esc(E.fmtPay(row.effectiveDate))+' · Sequence '+Number(row.effectiveSequence||0)+'</span></div><p class="roster-confirm-intro">Review the current and proposed work schedules before saving.</p><div class="roster-confirm-panels">'+panel(false)+panel(true)+'</div><p class="roster-confirm-summary">Average weekly change: <strong>'+(delta>0?'+':'')+delta.toFixed(2)+' hours</strong>. Changed days are highlighted in the proposed roster.</p></div>';
+  }
+
   function saveJobDataRow(confirmedRow=null){
     const row=confirmedRow?.empId?confirmedRow:readJobDataForm(); const e=emp(row.empId); if(!e) return alert('Select an employee.');
     if(!row.effectiveDate) return alert('Enter an effective date.');
@@ -1010,9 +1027,8 @@
     if(!confirmedRow?.empId&&row.action!=='Termination'){
       const comparison=E.operations.rosterComparison(state,row);
       if(comparison.changed){
-        const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],details=[];
-        for(let week=0;week<2;week++)for(let day of [1,2,3,4,5,6,0])details.push([String(week+1),days[day],Number(comparison.before[week][day]||0),Number(comparison.after[week][day]||0)]);
-        modal('Confirm Roster Change','<p>Average weekly hours: <strong>'+comparison.oldWeekly.toFixed(2)+' → '+comparison.newWeekly.toFixed(2)+'</strong></p>'+table(['Week','Day','Old hours','New hours'],details),'<button id="confirmRosterSave">Confirm and Save</button><button data-close-modal class="secondary">Back to Job Data</button>',false);
+        modal('Confirm Roster Change',rosterConfirmationHtml(row,e,comparison),'<button data-close-modal class="secondary">Back to Job Data</button><button id="confirmRosterSave">Confirm and Save</button>',false);
+        document.querySelector('#modalRoot .modal')?.classList.add('roster-confirm-modal');
         $('confirmRosterSave').addEventListener('click',()=>{closeModal();saveJobDataRow(row);});return;
       }
     }
@@ -1116,7 +1132,7 @@
   }
   function additionalDraftAmount(a){
     const c=additionalCycle();
-    if(a.earningType==='On-call Allowance')return E.round2(Number(a.hours||0)*Number(a.unitRate||0));
+    if(a.earningType==='On-call Allowance')return E.round2(Number(a.hours||0)*E.onCallAllowanceRate(state,a));
     if(['Overpayment Adjustment','Reimbursement','Travel Allowance','Bonus'].includes(a.earningType||'')) return Number(a.amount||0);
     if(a.earningType==='Meal Allowance') return E.round2(E.calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start)*18);
     if(a.earningType==='Special Responsibility Allowance (Days)') return E.round2(E.calendarDaysInclusive(a.startDate||c.start,a.endDate||a.startDate||c.start)*20);
@@ -1159,7 +1175,7 @@
       const options=(paymentManagerId?S.EARNINGS:['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement']).map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
       const positionBased=isCasual||isHigherDuties;
       const positionSelect=`<select data-add-field="${i}|positionNumber" ${positionBased?'':'disabled class="readonly"'}>${positionBased?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
-      const onCallControls=a.earningType==='On-call Allowance'?'<label>Allowance per hour<input type="number" min="0" step="0.01" value="'+esc(a.unitRate||0)+'" data-add-field="'+i+'|unitRate"></label><label><input type="checkbox" '+(a.ote===true?'checked':'')+' data-add-field="'+i+'|ote"> Super eligible</label>':'';
+      const onCallControls=a.earningType==='On-call Allowance'?'<label>Allowance per hour<input type="number" readonly class="readonly" value="'+esc(E.onCallAllowanceRate(state,a).toFixed(2))+'" data-add-field="'+i+'|unitRate"></label><label><input type="checkbox" '+(a.ote===true?'checked':'')+' data-add-field="'+i+'|ote"> Super eligible</label>':'';
       return [`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,onCallControls+`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
     h('addRows', table(['Earnings Type','Position','Start Date','End Date','Hours','Amount','Delete'], rows));
@@ -1169,7 +1185,7 @@
       if(paymentManagerId&&field==='earningType'&&!S.EARNINGS.includes(el.value)){el.value=row.earningType;return alert('Select an earning type available in Manager Self Service.');}
       if(field==='earningType' && el.value==='Overpayment Adjustment' && Number(additionalCycle().id)!==Number(currentCycle().id)){ el.value=row.earningType||'Additional Hours'; return alert('Overpayment Adjustment can only be entered in the current open pay period.'); }
       row[field]=field==='ote'?!!el.checked:['hours','amount','unitRate'].includes(field)?Number(el.value||0):el.value;
-      if(field==='earningType'&&row.earningType==='On-call Allowance'){row.unitRate=0;row.ote=false;}
+      if(field==='earningType'&&row.earningType==='On-call Allowance'){row.unitRate=E.ON_CALL_ALLOWANCE_RATE;row.ote=false;}
       if(field==='earningType'&&!Features?.CASH_TYPES.includes(row.earningType)){delete row.legacyCashOutId;delete row.migrated;}
       if(field==='earningType' && row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=0; row.positionNumber=''; }
       if(field==='earningType' && ['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.startDate=row.startDate||c.start; row.endDate=row.endDate||row.startDate; row.amount=0; row.positionNumber=''; }
@@ -1240,6 +1256,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
       stagedRows.forEach(a=>{
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
         if(row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=Number(row.amount||0); }
+        else if(row.earningType==='On-call Allowance'){row.unitRate=E.onCallAllowanceRate(state,row);row.amount=E.round2(Number(row.hours||0)*row.unitRate);row.accruesLeave=false;}
         else if(['Reimbursement','Travel Allowance','Bonus'].includes(row.earningType)){ row.hours=0; row.amount=Number(row.amount||0); }
         else if(['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(row.earningType)){ row.hours=0; row.amount=additionalDraftAmount(row); }
         else if(row.earningType==='Casual Earnings'){
@@ -2251,6 +2268,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {version:'v1.2.9',notes:['Timesheets now record daily On/Off times, breaks, remarks and flex only. Saves and approvals never change pay; managers enter any payment separately in Additional Earnings.','Approved flex carries forward up to 37.5 hours; excess is shown separately. Only explicit Flex Time Taken reduces the balance, and additional days earn flex.','On-call Allowance is fixed at $22.50 per hour for new entries, preserving finalised history.','Roster confirmation now uses Current and Proposed daily grids, separate weeks, highlighted changes and weekly totals.','Earlier unfinalised timesheet-generated earnings are archived; finalised payslips are preserved. Legacy hours-only sheets require actual times before resubmission.']},
     {version:'v1.2.8',notes:['Added leave attachments, Excess Leave/FTE Establishment/Recovery reports, roster comparison, timesheets and manager approval.','Added acting/contract-expiry Dashboard registers, probation tracking and shared support replies.','On-call Allowance is entered in Additional Earnings; Urgent Pay is a one-time post-tax deduction with Settings CSV batches and processed-entry locks.','New employees require Super and Bank details; payslip LSL dates use DD/MM/YYYY; added Payroll-only paid/unpaid suspension.','Fixed same-day fixed-term termination followed by casual rehire: normal final leave payouts are preserved while casual employment and earnings stay active.']},
 
     {version:'v1.2.7',notes:['New-employee commencement requests now collect structured personal, tax, super and bank details.','Existing-employee commencement requests automatically populate name and employee ID without requesting duplicate private details.','Added validation, active super fund lookup, masked TFN display and request-only storage without creating employee master records.']},
@@ -2547,7 +2565,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function importData(event){
     const file=event.target.files[0]; if(!file) return;
     const reader=new FileReader();
-    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; E.reconcileAllEmploymentFromJobData(state); F?.migrateCashOuts(state); E.reconcileLslSevenYearMigration(state,currentCycle().end); E.reconcilePersonalLeaveBreakRules(state,currentCycle().end); E.repairPersonalLeaveBalances(state); save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
+    reader.onload=()=>{ try{ const imported=DataStore.importJson(reader.result); modal('Import Preview', `<p class="small-note">Review the file summary below. Your current data will only be replaced if you confirm.</p>${importPreviewRows(imported)}`, `<button id="confirmImport" class="danger">Import and Replace Data</button><button data-close-modal class="secondary">Cancel</button>`); $('confirmImport').addEventListener('click',()=>{ state=imported; E.reconcileAllEmploymentFromJobData(state); E.timeRecords.migrateTimesheets(state); F?.migrateCashOuts(state); E.reconcileLslSevenYearMigration(state,currentCycle().end); E.reconcilePersonalLeaveBreakRules(state,currentCycle().end); E.repairPersonalLeaveBalances(state); save(); calculateAllForCurrent(); closeModal(); renderAll(); log('Data imported'); toast('Import Successful'); }); }catch(err){ alert('Import failed. Please select a valid payroll-app-data.json file.'); } };
     reader.readAsText(file); event.target.value='';
   }
   function todayIso(){ const d=new Date(); return E.iso(new Date(d.getFullYear(),d.getMonth(),d.getDate())); }

@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.8';
+  const APP_VERSION = '1.2.9';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -11,7 +11,7 @@
       payRates: [],
       leaveBookings: [],
       leaveRequestArchive: [],
-      supportRequests: [], timesheets: [], onCallPeriods: [], probations: [], supportResponseTemplates: [], urgentPayBatches: [], urgentPaySequence: 0,
+      supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: [], urgentPayBatches: [], urgentPaySequence: 0,
       supportSequence: 0,
       additionalEarnings: [],
       deductions: [],
@@ -69,8 +69,8 @@
     const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
-    ['payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
+    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['flexOpeningBalances','payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
     // Preserve trustworthy pending-status timestamps; unknown legacy ages start now.
     state.leaveBookings.forEach(l=>{
