@@ -415,3 +415,20 @@ body.notification-pane-open{padding-right:360px}.notification-pane-open .top-act
 .support-onboarding-section{margin:22px 0;padding:18px;border:1px solid #dce5ef;border-radius:10px;background:#fff;min-width:0}.support-onboarding-section h4{margin:0 0 16px;color:#173e66}.support-onboarding-section .grid{margin-bottom:0}.support-onboarding-section input[readonly]{background:#f1f5f9}.support-onboarding-section [data-request-tfn]{margin-top:8px;font-size:12px}.support-onboarding-section dd{overflow-wrap:anywhere}
 
 .support-page .support-onboarding-section .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.support-onboarding-section .inline-check{flex-direction:row;align-items:center;align-self:center;gap:8px}.support-onboarding-section .inline-check input{width:auto}@media(max-width:600px){.support-page .support-onboarding-section .form-grid{grid-template-columns:1fr}.support-onboarding-section{padding:14px}}
+
+/* Payroll operations draft */
+#dashboardOperations { grid-column:1/-1; }
+#dashboardOperations h3 { margin-top:1.3rem; }
+.ops-expiry-groups { display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px; }
+.ops-expiry-groups details,.ops-panel { border:1px solid #dce3eb;border-radius:12px;padding:14px;background:#fff; }
+.ops-expiry-groups summary { cursor:pointer;font-weight:600; }
+#payrollToolOutput { margin-top:24px; }
+#opsLines input,#opsLines select { min-width:110px; }
+#opsLines table { min-width:650px; }
+#payrollTools .report-tiles { grid-template-columns:repeat(auto-fit,minmax(180px,240px)); }
+@media print { #printArea button,#printArea input,#printArea select,#printArea label { display:none!important; } }
+
+.ops-expiry-groups details[open] { grid-column:1/-1; }
+#payrollToolOutput>button,#operationsReport>button { margin:8px 8px 12px 0; }
+#payrollToolOutput textarea { width:100%; }
+#opsBackTools { margin-bottom:8px; }

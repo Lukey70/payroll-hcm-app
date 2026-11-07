@@ -114,7 +114,7 @@
       if(!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error(manager.message+' Payroll must correct Reports To before submission.');
       const result=validateRequest(s,Object.assign({},input,{empId:target,type}));
       const stamp=new Date().toISOString(),status=area==='mss'||manager.automatic?'Approved':'Awaiting Manager Approval';
-      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.automatic?'automatic':area==='mss'?id:manager.managerId,approverIds:manager.managerIds,approverName:manager.automatic?'Automatically Approved':area==='mss'?E.employeeName(employee(s,id)):manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
+      const l={id:uid('leave'),empId:target,type,startDate:input.startDate,endDate:input.endDate,hours:result.hours,attachments:E.operations.attachments(input.attachments||[]),requestedHours:input.requestedHours,workingDays:result.workingDays,evidenceProvided:!!input.evidenceProvided,status,source:area==='mss'?'Manager Self Service':'Employee Self Service',submittedBy:id,submittedAt:stamp,approverId:manager.automatic?'automatic':area==='mss'?id:manager.managerId,approverIds:manager.managerIds,approverName:manager.automatic?'Automatically Approved':area==='mss'?E.employeeName(employee(s,id)):manager.managerName,pendingApprovalSince:status==='Approved'?'':stamp,pendingApprovalNotifiedSince:'',forecastApproved:type==='Annual Leave'&&result.forecastApproved===true,statusHistory:[{status,changedAt:stamp,source:area,actorId:id}]};
       s.leaveBookings.push(l);
       if(area==='ess'&&status==='Awaiting Manager Approval')notify(s,manager.managerIds,`${E.employeeName(e)} submitted ${type==='LWOP'?'Leave without Pay':type}: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-submit:${l.id}`,{area:'mss',page:'approvals',requestId:l.id});
       else if(area==='mss')notify(s,[target],`${E.employeeName(employee(s,id))} booked approved ${type==='LWOP'?'Leave without Pay':type} for you: ${E.fmtPay(l.startDate)} - ${E.fmtPay(l.endDate)}.`,`leave-manager-book:${l.id}`,{area:'ess',page:'requests'});
@@ -182,12 +182,13 @@
       const list=open.concat(s.payslips).filter(p=>p.empId===id&&(!from||p.cycle.end>=from)&&(!to||p.cycle.end<=to)).slice().sort((a,b)=>b.cycle.end.localeCompare(a.cycle.end)||Number(b.segmentIndex)-Number(a.segmentIndex));
       return recent?list.slice(0,10):list;
     }
-    const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Reimbursement'];
-    function canManageAdditional(a){return !a.legacyCashOutId&&!['Annual Leave Cash Out','Long Service Leave Cash Out','Overpayment Adjustment'].includes(a.earningType);}
+    const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Reimbursement'];
+    function canManageAdditional(a){return !a.sourceTimesheetId&&!a.onCallId&&!a.legacyCashOutId&&!['Annual Leave Cash Out','Long Service Leave Cash Out','Overpayment Adjustment'].includes(a.earningType);}
     function saveAdditional(s,id,input,date=today()){
       assertScope(s,id,input.empId,'mss',date);
       const old=input.id&&s.additionalEarnings.find(a=>a.id===input.id);
       if(input.id&&(!old||old.empId!==input.empId))throw Error('Earnings record is not available for this employee.');
+      if(old?.sourceTimesheetId||old?.onCallId)throw Error('Generated earnings cannot be changed here.');
       if(input.earningType==='Overpayment Adjustment'||old?.earningType==='Overpayment Adjustment')throw Error('Overpayment Adjustments can only be changed by Payroll Management.');
       if(old&&(old.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(old.earningType)))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       if(!EARNINGS.includes(input.earningType))throw Error('Select a valid earning type.');
@@ -198,6 +199,7 @@
       const dateBased=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(input.earningType);
       if(!dateBased&&(!Number.isFinite(Number(amountOnly?input.amount:input.hours))||(amountOnly?Number(input.amount)<0:Number(input.hours)<=0)))throw Error('Enter a valid amount or positive hours/units.');
       const a={id:old?.id||uid('add'),empId:input.empId,cycleId:cycle.id,earningType:input.earningType,startDate:input.startDate,endDate:input.endDate,hours:amountOnly||dateBased?0:Number(input.hours),amount:amountOnly?Number(input.amount):'',saved:true,source:'Manager Self Service',enteredBy:id};
+      if(a.earningType==='On-call Allowance'){E.operations.validateOnCallAdditional(s,input);a.unitRate=Number(input.unitRate);a.ote=input.ote===true;a.accruesLeave=false;a.amount=E.round2(a.hours*a.unitRate);}
       if(['Casual Earnings','Higher Duties Allowance'].includes(a.earningType)){
         const p=s.positions.find(p=>p.active!==false&&String(p.positionNumber)===String(input.positionNumber));if(!p)throw Error('Choose an active position.');
         a.positionNumber=p.positionNumber;a.positionName=p.positionName;a.positionDepartment=p.department;
@@ -209,6 +211,7 @@
     }
     function deleteAdditional(s,id,recordId,date=today()){
       const a=s.additionalEarnings.find(a=>a.id===recordId);if(!a)throw Error('Earnings record no longer exists.');assertScope(s,id,a.empId,'mss',date);
+      if(a.sourceTimesheetId||a.onCallId)throw Error('Generated earnings cannot be deleted here.');
       if(a.earningType==='Overpayment Adjustment')throw Error('Overpayment Adjustments can only be changed by Payroll Management.');
       if(a.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType))throw Error('Leave cash-outs can only be changed by Payroll Management.');
       s.additionalEarnings=s.additionalEarnings.filter(x=>x.id!==recordId);
@@ -220,6 +223,7 @@
       return `<div class="absence-balance-cards">${cards.map(([key,label,glyph])=>`<article class="absence-balance-card leave-balance-${key}${Number(b[key])<0?' leave-balance-negative':''}" data-balance-card="${key}"><h3>${icon(glyph)}${label}</h3><p class="absence-balance-value"><strong>${Number(b[key]||0).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong><span>hours</span></p>${pending[key]!==undefined?`<p class="absence-pending">Pending requests: ${Number(pending[key]||0).toFixed(2)} hours</p>`:''}${Number(b[key])<0?'<p class="absence-pending">Below zero</p>':''}</article>`).join('')}<article class="absence-balance-card absence-entitlement-card" data-balance-card="lslEntitlementDate"><h3>${icon('calendar')}LSL Entitlement Date</h3><p class="absence-balance-value"><strong>${b.lslEntitlementDate?E.fmtPay(b.lslEntitlementDate):'—'}</strong></p></article></div>`;
     }
     function additionalAmount(s,a){
+      if(a.earningType==='On-call Allowance')return E.round2(Number(a.hours||0)*Number(a.unitRate||0));
       if(['Travel Allowance','Bonus','Reimbursement','Overpayment Adjustment'].includes(a.earningType))return Number(a.amount||0);
       if(a.earningType==='Casual Earnings')return E.round2(Number(a.hours||0)*Number(a.casualLoadedRate||0));
       if(a.earningType==='Higher Duties Allowance')return E.round2(Number(a.hours||0)*(Number(a.higherDutiesPositionRate||0)-Number(E.substantivePayRate(s,employee(s,a.empId),a.startDate).hourlyRate||0)));
@@ -236,7 +240,7 @@
     const $=id=>document.getElementById(id),v=id=>$ (id)?.value||'',put=(id,html)=>{if($(id))$(id).innerHTML=html;};
     const table=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     const reportError=o.reportError||alert;
-    const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{fn();}catch(e){reportError(e.message);}});
+    const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{const result=fn();if(result?.catch)result.catch(e=>reportError(e.message));}catch(e){reportError(e.message);}});
     const change=(id,fn)=>$(id)?.addEventListener('change',()=>{try{fn();}catch(e){reportError(e.message);}});
     const buttons=(attribute,fn)=>document.querySelectorAll(`[${attribute}]`).forEach(b=>b.addEventListener('click',()=>{try{fn(b.getAttribute(attribute));}catch(e){reportError(e.message);}}));
     let area='ess',page='',section='',target='',requestId='',slipId='',from='',to='',recent=true,earnId='';
@@ -297,13 +301,20 @@
       click('ssPrint',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');put('printArea',payslipHtml(current));setTimeout(()=>window.print(),0);});
       click('ssDownload',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     }
-    function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',esc(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')]]);}
+    let operationsView=null;
+    function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState,getUser,reportError,onChange});return operationsView;}
+    function filesHtml(l){return (l.attachments||[]).map((f,i)=>'<button data-ss-file="'+esc(l.id)+'|'+i+'">'+esc(f.name)+'</button>').join('');}
+    function bindLeaveFiles(){buttons('data-ss-file',key=>{const [id,index]=key.split('|'),files=E.operations.leaveFiles(state(),user(),id,area);E.operationFiles.download(files[Number(index)],document);});}
+    function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',esc(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')],['Documents',filesHtml(l)]]);}
     function renderApprovals(){
+      if(section==='timesheets'){put('ssSidebar','<button id="ssLeaveApprovals">Leave Approvals</button>');click('ssLeaveApprovals',()=>{section='';render();});operationsUI().mount('ssMain','approvals','mss');return;}
       const requests=S.requests(state(),user(),'mss').filter(l=>l.status==='Awaiting Manager Approval');
       put('ssSidebar',`<h2>Pending Requests</h2>${requests.map(l=>`<button data-ss-request="${esc(l.id)}">${esc(E.employeeName(state().employees.find(e=>e.id===l.empId)))} — ${esc(l.type)} — ${E.fmtPay(l.startDate)}</button>`).join('')||'<p>No pending requests.</p>'}`);
+      put('ssSidebar',$('ssSidebar').innerHTML+'<button id="ssTimesheetApprovals">Timesheet Approvals ('+E.operations.timesheets(state(),user(),'mss').filter(t=>t.status==='Awaiting Manager Approval').length+')</button>');
+      click('ssTimesheetApprovals',()=>{section='timesheets';render();});
       if(!requests.some(l=>l.id===requestId))requestId=requests[0]?.id||'';
-      const l=requests.find(l=>l.id===requestId);put('ssMain',l?`<h2>Request Details</h2>${requestDetails(l)}<label>Comment (required when denying)<textarea id="ssDecisionComment" rows="4"></textarea></label><div class="controls"><button id="ssApprove">Approve</button><button id="ssDeny" class="danger">Deny</button></div>`:'<h2>Approvals</h2><p>No pending leave requests. Timesheets will appear here when implemented.</p>');
-      buttons('data-ss-request',id=>{requestId=id;render();});for(const [id,status]of [['ssApprove','Approved'],['ssDeny','Denied']])click(id,()=>{mutate(s=>S.decide(s,user(),requestId,status,v('ssDecisionComment')));requestId='';render();});
+      const l=requests.find(l=>l.id===requestId);put('ssMain',l?`<h2>Request Details</h2>${requestDetails(l)}<label>Comment (required when denying)<textarea id="ssDecisionComment" rows="4"></textarea></label><div class="controls"><button id="ssApprove">Approve</button><button id="ssDeny" class="danger">Deny</button></div>`:'<h2>Approvals</h2><p>No pending leave requests.</p>');
+      bindLeaveFiles();buttons('data-ss-request',id=>{requestId=id;render();});for(const [id,status]of [['ssApprove','Approved'],['ssDeny','Denied']])click(id,()=>{mutate(s=>S.decide(s,user(),requestId,status,v('ssDecisionComment')));requestId='';render();});
     }
     function renderReports(){
       const people=S.directReports(state(),user());put('ssSidebar',`<h2>Direct Reports</h2>${people.map(e=>`<button data-ss-report="${esc(e.id)}">${esc(E.employeeName(e))}</button>`).join('')||'<p>No direct reports.</p>'}`);
@@ -333,11 +344,11 @@
     }
     function renderLeave(){
       nav(area==='ess'?[['request','Absence Request'],['requests','My Requests'],['balances','Absence Balances'],['calendar','Leave Calendar'],['timesheets','Timesheets']]:[['request','Request Absence'],['requests','View Request'],['balances','Absence Balance'],['timesheets','Timesheet Manager'],['calendar','Absence Monthly Calendar']]);
-      if(section==='timesheets'){put('ssMain','');return;}
+      if(section==='timesheets'){operationsUI().mount('ssMain','timesheets',area);return;}
       if(section==='requests'){
         const requests=S.requests(state(),user(),area);
-        put('ssMain',`<h2>${area==='ess'?'My Requests':'View Request'}</h2>${table(['Employee','Leave','From','To','Hours','Status','Approver','Comment','Action'],requests.map(l=>[esc(E.employeeName(state().employees.find(e=>e.id===l.empId))),esc(l.type==='LWOP'?'Leave without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),esc(l.status),esc(l.approverName),esc(l.decisionComment||''),((area==='ess'&&l.status==='Awaiting Manager Approval')||(area==='mss'&&l.status==='Approved'))?`<button class="danger" data-ss-delete="${esc(l.id)}">Delete</button>`:'']))}`);
-        buttons('data-ss-delete',id=>{if(!confirm('Delete this leave request?'))return;mutate(s=>S.deleteRequest(s,user(),id,area));render();});return;
+        put('ssMain',`<h2>${area==='ess'?'My Requests':'View Request'}</h2>${table(['Employee','Leave','From','To','Hours','Status','Approver','Comment','Documents','Action'],requests.map(l=>[esc(E.employeeName(state().employees.find(e=>e.id===l.empId))),esc(l.type==='LWOP'?'Leave without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours||0).toFixed(2),esc(l.status),esc(l.approverName),esc(l.decisionComment||''),filesHtml(l),((area==='ess'&&l.status==='Awaiting Manager Approval')||(area==='mss'&&l.status==='Approved'))?`<button class="danger" data-ss-delete="${esc(l.id)}">Delete</button>`:'']))}`);
+        bindLeaveFiles();buttons('data-ss-delete',id=>{if(!confirm('Delete this leave request?'))return;mutate(s=>S.deleteRequest(s,user(),id,area));render();});return;
       }
       if(section==='calendar')return calendar();
       const picker=selector(),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
@@ -348,7 +359,7 @@
       }
       const types=area==='ess'?S.EMPLOYEE_LEAVE:S.MANAGER_LEAVE;
       const manager=S.managerFor(state(),e.id);
-      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
+      put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2><p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><label>Supporting documents<input id="ssLeaveFiles" type="file" multiple></label><p class="small-note">Optional: up to five files, 1 MB each and 2 MB total.</p><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();
       const updateHours=(reset=true)=>{
         const type=v('ssLeaveType'),start=v('ssLeaveStart'),end=v('ssLeaveEnd');
         const basic=E.validateLeaveBooking(state(),e.id,type,start,end,undefined,undefined,{evidenceProvided:!!$('ssEvidence').checked});
@@ -361,7 +372,10 @@
       change('ssLeaveStart',()=>{$('ssLeaveEnd').value=v('ssLeaveStart');updateHours();});
       change('ssLeaveEnd',()=>updateHours());change('ssLeaveType',()=>updateHours());change('ssEvidence',()=>updateHours());
       $('ssLeaveHours').addEventListener('input',()=>updateHours(false));updateHours();
-      click('ssLeaveSubmit',()=>{const hours=$('ssLeaveHours').readOnly?'':v('ssLeaveHours');mutate(s=>S.submitLeave(s,user(),{empId:target,type:v('ssLeaveType'),startDate:v('ssLeaveStart'),endDate:v('ssLeaveEnd'),requestedHours:hours===''?undefined:Number(hours),evidenceProvided:!!$('ssEvidence').checked},area));section='requests';render();});
+      click('ssLeaveSubmit',()=>{const actor=user(),employeeId=target,type=v('ssLeaveType'),start=v('ssLeaveStart'),end=v('ssLeaveEnd'),submitButton=$('ssLeaveSubmit');
+        const finish=attachments=>{if(actor!==user()||employeeId!==target||submitButton!==$('ssLeaveSubmit')||type!==v('ssLeaveType')||start!==v('ssLeaveStart')||end!==v('ssLeaveEnd'))throw Error('The booking changed. Please submit again.');const hours=$('ssLeaveHours').readOnly?'':v('ssLeaveHours');mutate(s=>S.submitLeave(s,user(),{empId:target,type:v('ssLeaveType'),startDate:v('ssLeaveStart'),endDate:v('ssLeaveEnd'),requestedHours:hours===''?undefined:Number(hours),evidenceProvided:!!$('ssEvidence').checked,attachments},area));section='requests';render();};
+        return $('ssLeaveFiles')?.files?.length?E.operationFiles.readFiles($('ssLeaveFiles').files).then(finish):finish([]);
+      });
     }
     function calendar(){
       if(area==='ess'){
@@ -387,7 +401,7 @@
     function navigateNotification(action){
       const mode=action.area||'ess';if(mode==='mss'&&!S.profile(state(),user()).mss)throw Error('Manager Self Service access is required.');
       if(action.page==='approvals'&&action.requestId&&!S.requests(state(),user(),'mss').some(l=>l.id===action.requestId&&l.status==='Awaiting Manager Approval'))throw Error('This request is no longer awaiting your approval.');
-      show(mode,action.page==='requests'?'leave':action.page);if(action.page==='requests')section='requests';if(action.requestId)requestId=action.requestId;render();
+      show(mode,action.page==='requests'?'leave':action.page);if(action.page==='requests')section='requests';if(action.requestId)requestId=action.requestId;if(action.timesheetId)section='timesheets';render();
     }
     return {show,hide,render,refreshNotifications,navigateNotification};
   }

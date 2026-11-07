@@ -161,12 +161,12 @@ function uiFixture(){
   const find=(attr,value)=>all.find(n=>n.attributes[attr]===value);
   return {s,ui,app,nodes,errors,context,timeouts,login(user){id=user;nodes.get('loginUser').value=user;nodes.get('loginPassword').value='1234';app.login();},flush(){let n=0;while(timers.length){assert(n++<100);timers.shift()();}},fire:(name,event='change')=>nodes.get(name).fire(event),edit:(attr,value,next)=>{const n=find(attr,value);assert(n);n.value=next;n.fire('change');},setUser:x=>{id=x;},set:(name,value)=>{assert(nodes.has(name),'Missing field '+name);nodes.get(name).value=value;},click:name=>{assert(nodes.has(name),'Missing control '+name);return nodes.get(name).fire();},choose:(attr,value)=>{const n=find(attr,value);assert(n,'Missing action '+attr+' '+value);n.fire();},html:name=>nodes.get(name)?.innerHTML||''};
 }
-test('ESS tiles, exact sidebar order, read-only tax/bank/super/job and blank timesheets render',()=>{
+test('ESS tiles, exact sidebar order, read-only tax/bank/super/job and timesheet entry render',()=>{
   const f=uiFixture();f.ui.show('ess');let html=f.html('ssBody');for(const label of ['Payslips','Leave &amp; Timesheets','Personal Details'])assert(html.includes(label)||html.includes(label.replace('&amp;','&')));assert.strictEqual((html.match(/landing-tile-icon/g)||[]).length,4);
   f.choose('data-ss-tile','details');html=f.html('ssSidebar');assert(html.indexOf('Bank Details')<html.indexOf('Tax Details'));assert(html.indexOf('Tax Details')<html.indexOf('Super'));
   f.choose('data-ss-section','tax');assert(f.html('ssMain').includes('Read only'));assert(!f.html('ssMain').includes('outsider'));assert(!f.html('ssMain').includes('Save'));
   f.ui.show('ess','leave');html=f.html('ssSidebar');assert(html.indexOf('Absence Request')<html.indexOf('My Requests'));
-  f.choose('data-ss-section','timesheets');assert.strictEqual(f.html('ssMain'),'');assert.strictEqual(f.errors.length,0);
+  f.choose('data-ss-section','timesheets');assert(f.html('ssMain').includes('Timesheet'));assert.strictEqual(f.errors.length,0);
 });
 test('actual ESS form submits pending request; MSS queue shows full details and approves',()=>{
   const f=uiFixture();f.ui.show('ess','leave');f.set('ssLeaveType','Annual Leave');f.set('ssLeaveStart','2026-10-12');f.set('ssLeaveEnd','2026-10-12');f.click('ssLeaveSubmit');
@@ -180,9 +180,9 @@ test('actual MSS tiles, direct reports, readonly details, auto-approved booking 
   f.ui.show('mss','leave');f.set('ssLeaveType','Absent Without Leave');f.set('ssLeaveStart','2026-10-12');f.set('ssLeaveEnd','2026-10-12');f.click('ssLeaveSubmit');assert.strictEqual(f.s.leaveBookings[0].status,'Approved');
   f.ui.show('mss','payments');f.set('addEmp','worker');f.fire('addEmp');f.click('addRow');f.edit('data-add-field','0|startDate','2026-10-13');f.edit('data-add-field','0|hours','2');f.click('saveAdditional');f.flush();assert.strictEqual(f.s.additionalEarnings.length,1);assert.strictEqual(f.s.additionalEarnings[0].empId,'worker');assert.strictEqual(f.errors.length,0);
 });
-test('actual monthly calendar is team-scoped, MSS timesheets blank and notification refresh preserves form input',()=>{
+test('actual monthly calendar is team-scoped, MSS Timesheet Manager and notification refresh preserves form input',()=>{
   const f=uiFixture();f.setUser('manager');f.ui.show('mss','leave');f.choose('data-ss-section','calendar');assert.deepStrictEqual(f.errors,[]);assert(f.html('ssCalendar').includes('worker'));assert(!f.html('ssCalendar').includes('outsider'));
-  f.choose('data-ss-section','timesheets');assert.strictEqual(f.html('ssMain'),'');
+  f.choose('data-ss-section','timesheets');assert(f.html('ssMain').includes('Timesheet'));
   f.setUser('worker');f.ui.show('ess','leave');f.set('ssLeaveStart','2026-10-12');f.ui.refreshNotifications();assert.strictEqual(f.nodes.get('ssLeaveStart').value,'2026-10-12');assert.strictEqual(f.errors.length,0);
 });
 test('actual pending employee delete and approved manager delete obey workflow and notify',()=>{

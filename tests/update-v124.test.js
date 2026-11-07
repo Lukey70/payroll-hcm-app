@@ -54,8 +54,8 @@ test('template validation rejects missing fields, invalid reasons and inconsiste
 test('activity history records creator, assignee, status, messages, reopen reason, resolutions and automatic closure',()=>{
  const s=fixture(),c=T.submit(s,'worker',{subject:'Test',description:'Details'},'ess',DATE);T.assign(s,'payroll',c.id,'payroll',DATE);T.message(s,'payroll',c.id,'Reply',[],'payroll',DATE);T.status(s,'payroll',c.id,'Awaiting Info','',DATE);T.status(s,'payroll',c.id,'Resolved','Fixed',DATE);T.reopen(s,'worker',c.id,'Still not fixed',DATE);T.status(s,'payroll',c.id,'Resolved','Fixed again',DATE);T.closeDue(s,Date.now()+15*86400000);assert.equal(c.status,'Closed');assert(c.history.some(h=>h.actorId==='worker'&&h.status==='New'));assert(c.history.some(h=>h.assignedTo==='payroll'));assert(c.history.some(h=>h.action==='Message sent'));assert(c.history.some(h=>h.reason==='Still not fixed'));assert(c.history.some(h=>h.actorId==='system'&&h.status==='Closed'));assert.deepStrictEqual(c.resolutions.map(r=>r.notes),['Fixed','Fixed again']);
 });
-test('Dashboard owns the four metrics; report menu has five tiles; Pay Errors removed from Settings',()=>{
- const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert(html.indexOf('data-tab="dashboard"')<html.indexOf('data-tab="employees"'));const dashboard=html.slice(html.indexOf('<section id="dashboard"'),html.indexOf('<section id="employees"'));for(const key of ['metricEmployees','metricGross','metricRetro','metricPayStatus'])assert(dashboard.includes(key));const f=uiFixture();f.app.renderReports();assert.equal((f.html('reports').match(/data-report-tile=/g)||[]).length,5);assert(f.html('reports').includes('Pay Errors'));f.app.renderSettings();assert(!f.html('settings').includes('id="checkErrors"'));
+test('Dashboard owns the four metrics; report menu has eight tiles; Pay Errors removed from Settings',()=>{
+ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');assert(html.indexOf('data-tab="dashboard"')<html.indexOf('data-tab="employees"'));const dashboard=html.slice(html.indexOf('<section id="dashboard"'),html.indexOf('<section id="employees"'));for(const key of ['metricEmployees','metricGross','metricRetro','metricPayStatus'])assert(dashboard.includes(key));const f=uiFixture();f.app.renderReports();assert.equal((f.html('reports').match(/data-report-tile=/g)||[]).length,8);assert(f.html('reports').includes('Pay Errors'));f.app.renderSettings();assert(!f.html('settings').includes('id="checkErrors"'));
 });
 test('backup/import retains cash-out links, packaging, request templates and activity history',()=>{
  const s=fixture();s.additionalEarnings.push(cash());F.syncCashOuts(s,'worker',E.currentCycle(s));s.deductions.push({id:'pack',empId:'worker',deductionType:'Salary Packaging - Post-Tax',amount:100,startDate:E.currentCycle(s).start,saved:true,deleted:false,percentage:'',endDate:''});T.submit(s,'manager',{subject:'Change',description:'Details',raisedFor:'worker',requestType:'Variation',template:templates.Variation,additionalComments:'Context'},'mss',DATE);
@@ -70,5 +70,28 @@ test('MSS edits preserve Payroll cash-outs and cannot convert or delete their pr
 });
 test('native PDF embeds its fonts with correct byte offsets and offers printing for unsupported characters',()=>{
  const bytes=Features.pdf([['Statement of Earnings',true,14],'Björk Example - $3,000.00']),data=Buffer.from(bytes).toString('latin1');assert(data.startsWith('%PDF-1.4'));assert(data.includes('/FontFile2'));const offset=Number(data.match(/startxref\n(\d+)/)[1]);assert.equal(data.slice(offset,offset+4),'xref');assert(data.includes('/MediaBox [0 0 595 842]'));assert.throws(()=>Features.pdf(['Example 漢字']),/Print \/ Save PDF/);
+});
+test('Payroll new employee requires valid super and bank details and saves them atomically',()=>{
+ const f=uiFixture();f.login('payroll');f.app.openPayrollManagement();f.app.showTab('employees');f.click('addEmployeeBtn');
+ f.s.superFunds.push({id:'new-hire-fund',fundName:'Active Super',usi:'ACTIVEUSI',abn:'12345678901',active:true});
+ f.set('newFirst','New');f.set('newLast','Hire');const before=f.s.employees.length;
+ f.click('saveNewEmployee');assert.equal(f.app.getState().employees.length,before);assert(/active super fund/.test(f.errors.at(-1)));
+ f.set('newSuperUsi','ACTIVEUSI');f.fire('newSuperUsi','input');assert.equal(f.nodes.get('newSuperName').value,'Active Super');assert.equal(f.nodes.get('newSuperAbn').value,'12345678901');
+ f.set('newSuperMember','000123');f.set('newBankBsb','123-456');f.set('newBankNumber','0012345');f.set('newBankName','New Hire');
+ f.set('newBankEffective','2020-01-01');f.click('saveNewEmployee');assert.equal(f.app.getState().employees.length,before);assert(/Effective Date/.test(f.errors.at(-1)));
+ f.set('newBankEffective',E.currentCycle(f.s).start);f.set('newBankBsb','12');f.click('saveNewEmployee');assert.equal(f.app.getState().employees.length,before);assert(/six-digit BSB/.test(f.errors.at(-1)));
+ f.set('newBankBsb','123-456');f.context.DataStore.save=()=>false;f.click('saveNewEmployee');assert.equal(f.app.getState().employees.length,before);assert.equal(f.app.getState().superDetails.filter(r=>r.fundId==='new-hire-fund').length,0);
+ f.context.DataStore.save=()=>true;f.click('saveNewEmployee');const state=f.app.getState(),e=state.employees.at(-1);assert.equal(state.employees.length,before+1);const bank=state.bankDetails.find(r=>r.empId===e.id),superRow=state.superDetails.find(r=>r.empId===e.id);assert.equal(bank.bsb,'123456');assert.equal(bank.accountNumber,'0012345');assert.equal(superRow.memberNumber,'000123');assert.equal(superRow.fundId,'new-hire-fund');assert.equal(bank.effectiveSequence,0);assert.equal(superRow.effectiveDate,E.currentCycle(state).start);
+});
+test('Payroll-only suspension types pay correctly without consuming leave credits',()=>{
+ const base=fixture(),e=base.employees.find(e=>e.id==='worker'),c=E.currentCycle(base),baseline=E.calculateEmployee(base,e.id,c.id)[0];
+ for(const type of ['Suspension with Pay','Suspension without Pay']){
+  const state=D.clone(base);const valid=E.validateLeaveBooking(state,e.id,type,'2026-10-12','2026-10-12',3);assert(valid.ok,valid.message);assert.equal(valid.hours,3);assert(E.validateLeaveBooking(state,e.id,type,'2026-10-12','2027-10-12').ok);
+  state.leaveBookings.push({id:'suspension',empId:e.id,type,startDate:'2026-10-12',endDate:'2026-10-12',hours:3,status:'Approved'});
+  const pay=E.calculateEmployee(state,e.id,c.id)[0],line=pay.rows.find(r=>r.description===type);assert(line);assert.equal(line.units,3);assert.equal(line.amount,type==='Suspension with Pay'?120:0);assert.equal(pay.gross,baseline.gross-(type==='Suspension without Pay'?120:0));assert.equal(line.ote,type==='Suspension with Pay');assert.equal(E.absenceCalendarStatus(state,e,'2026-10-12').label,'OL');
+  const b=E.projectedBalances(state,e,c),without=E.projectedBalances(base,e,c);assert(Math.abs(b.annual-(without.annual-(type==='Suspension without Pay'?3*E.ANNUAL_LEAVE_WEEKS_PER_YEAR/52:0)))<0.00011);assert(Math.abs(b.personal-(without.personal-(type==='Suspension without Pay'?3*E.PERSONAL_LEAVE_WEEKS_PER_YEAR/52:0)))<0.00011);
+  for(const [actor,area]of [['worker','ess'],['manager','mss']]){assert(!S[area==='ess'?'EMPLOYEE_LEAVE':'MANAGER_LEAVE'].includes(type));assert.throws(()=>S.submitLeave(base,actor,{empId:e.id,type,startDate:'2026-10-12',endDate:'2026-10-12'},area,DATE),/only be booked by payroll/);}
+ }
+ const f=uiFixture();f.login('payroll');f.app.openPayrollManagement();f.app.renderLeave();f.set('leaveSelectedEmp','worker');f.fire('leaveSelectedEmp');f.click('bookLeaveBtn');assert(f.html('modalRoot').includes('<option>Suspension with Pay</option>'));assert(f.html('modalRoot').includes('<option>Suspension without Pay</option>'));
 });
 console.log(`PASS: ${count} v1.2.4 feature test groups.`);

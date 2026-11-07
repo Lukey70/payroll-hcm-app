@@ -1,10 +1,22 @@
-# Payroll/HCM App v1.2.7
+# Payroll/HCM App v1.2.8
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.8
+
+- Leave attachments; roster comparison; employee timesheets and manager approvals.
+- Excess Leave, FTE Establishment and Recovery Statements reports; configured leave thresholds and Approved FTE.
+- Dashboard acting/contract-expiry registers; probation tracking and saved Payroll support replies.
+- On-call Allowance in Additional Earnings and MSS Payment Processing.
+- One-time Urgent Pay post-tax deductions and Settings CSV batches, with immutable processed sources and repeat-download history.
+- Required Super/Bank details for new employees, DD/MM/YYYY payslip LSL dates and Payroll-only suspension types.
+- Same-day fixed-term termination/casual rehire now preserves normal final payouts and ongoing casual pay/access.
+
+Urgent CSV columns are BSB, Account Number, Account Name, Amount and Reference. Bank-specific import acceptance is unverified without the bank's layout. The earlier stale LSL date report remains unconfirmed. See RELEASE-NOTES-v1.2.8.md and TEST-RESULTS-v1.2.8.md for scope and validation.
 
 ## v1.2.7
 
@@ -63,6 +75,6 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.7.md` records the release checks and their limits.
+An existing Chromium executable can be selected using `PAYROLL_CHROMIUM_PATH`. Browser QA files are written to `tmp/browser-qa` by default; `PAYROLL_QA_OUTPUT` can change that destination. Browser tests use synthetic employees and browser-local storage only. `TEST-RESULTS-v1.2.8.md` records the release checks and their limits.
 
 Two historical payroll engine fixtures under `tests/` support regression checks for already-paid casual earnings and settlement compatibility. They are test references and are not loaded by the app.

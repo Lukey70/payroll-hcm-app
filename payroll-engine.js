@@ -351,7 +351,7 @@
     const permanentTransition=permanencyRows.find(r=>!latestFixedStart||compare(r.effectiveDate,latestFixedStart)>=0)||null;
     const currentPermanent=currentEmploymentClass==='Permanent'&&!!permanentTransition;
     const applicableTerminationRows=terminationRows.filter(r=>!(currentPermanent && r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,permanentTransition.effectiveDate)>=0));
-    const explicitTermination=applicableTerminationRows.filter(r=>compare(r.effectiveDate,currentStart)>=0).slice(-1)[0] || null;
+    const explicitTermination=applicableTerminationRows.filter(r=>compare(r.effectiveDate,currentStart)>0||(compare(r.effectiveDate,currentStart)===0&&(!latestCommencement||Number(r.effectiveSequence||0)>=Number(latestCommencement.effectiveSequence||0)))).slice(-1)[0] || null;
     const explicitExpiry=applicableTerminationRows.filter(r=>r.reason==='Expiry of Fixed Term' && compare(r.effectiveDate,contractBoundaryStart)>=0).slice(-1)[0] || null;
     let terminationDate=explicitTermination ? explicitTermination.effectiveDate : '';
     let terminationReason=explicitTermination ? String(explicitTermination.reason||'') : '';
@@ -361,7 +361,9 @@
     // new Expiry of Fixed Term row. A saved Expiry effective date is exclusive, so
     // contractEndDate is the previous calendar day. Do not keep a stale master end
     // date once Job Data contains a fixed-term contract sequence.
-    if(currentPermanent){
+    if(currentEmploymentClass==='Casual'){
+      e.type='Casual';e.autoTerminate=false;e.contractEndDate='';
+    }else if(currentPermanent){
       e.type='Permanent';
       e.autoTerminate=false;
       e.contractEndDate='';
@@ -383,6 +385,15 @@
 
     const existing=Array.isArray(e.employmentSegments) ? e.employmentSegments : [];
     const preserved=existing.filter(seg=>seg && seg.startDate && seg.endDate && seg.startDate!==currentStart && compare(seg.endDate,currentStart)<=0);
+    // Rebuild missing completed employments from authoritative ordered Job Data.
+    // A lower-sequence termination closes the old hire, not a later same-day rehire.
+    for(let i=0;i<commencementRows.length-1;i++){
+      const hire=commencementRows[i],next=commencementRows[i+1];
+      if(hire.effectiveDate===currentStart||preserved.some(seg=>seg.startDate===hire.effectiveDate))continue;
+      const hireIndex=rows.indexOf(hire),nextIndex=rows.indexOf(next);
+      const term=rows.slice(hireIndex+1,nextIndex).find(r=>r.action==='Termination');
+      if(term)preserved.push({id:'segment_'+hire.id,startDate:hire.effectiveDate,endDate:term.effectiveDate,inclusiveEnd:false,terminationReason:term.reason||'',source:'jobData-reconciled'});
+    }
     const sameStart=existing.find(seg=>seg && seg.startDate===currentStart);
     const currentSegment={
       id:(sameStart&&sameStart.id)||`segment_${e.id}_${preserved.length+1}`,
@@ -518,7 +529,7 @@
     return {start:(segments[0]&&segments[0].startDate)||eligibleStart,segments,shortBreaks,lastResetBreakDays};
   }
   function continuousLwopRanges(state,e){
-    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && ['LWOP','Absent Without Leave'].includes(l.type) && l.startDate && l.endDate)
+    const source=(state.leaveBookings||[]).filter(l=>l.empId===e.id && leaveBookingIsApproved(l) && ['LWOP','Absent Without Leave','Suspension without Pay'].includes(l.type) && l.startDate && l.endDate)
       .map(l=>({start:l.startDate,end:l.endDate,reason:'Leave Without Pay'}));
     return mergeDateRanges(source).filter(r=>calendarDaysInclusive(r.start,r.end)>LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS);
   }
@@ -814,7 +825,7 @@
     return [PARENTAL_PAID_LEAVE_TYPE,PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(type);
   }
   function isUnpaidLeaveType(type){
-    return ['LWOP','Absent Without Leave'].includes(type) || type===PARENTAL_UNPAID_LEAVE_TYPE || type===PARENTAL_UNPAID_EXTENSION_TYPE;
+    return ['LWOP','Absent Without Leave','Suspension without Pay'].includes(type) || type===PARENTAL_UNPAID_LEAVE_TYPE || type===PARENTAL_UNPAID_EXTENSION_TYPE;
   }
   function parentalLeaveUsage(state,e,excludeLeaveId){
     let paidCalendarDays=0, paidFullPayEquivalentDays=0, unpaidDays=0, extensionDays=0;
@@ -871,7 +882,7 @@
     return !!defaultValue;
   }
   function normaliseLeaveDescription(type){ if(type==='Workers Compensation Leave')return 'Income Compensation Payment'; if(type===FDV_LEAVE_TYPE) return 'Regular Pay'; return type === 'LWOP' ? 'Leave Without Pay' : (type || 'Leave'); }
-  function isLeaveWithoutPay(desc){ return ['LWOP','Leave Without Pay','Absent Without Leave',PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(desc); }
+  function isLeaveWithoutPay(desc){ return ['LWOP','Leave Without Pay','Absent Without Leave','Suspension without Pay',PARENTAL_UNPAID_LEAVE_TYPE,PARENTAL_UNPAID_EXTENSION_TYPE].includes(desc); }
   function residentAnnualTax(annualIncome, claimTaxFreeThreshold=true){
     const x = Math.max(0, Number(annualIncome||0));
     if(!claimTaxFreeThreshold){
@@ -998,7 +1009,7 @@
     return {ok:true,message:'OK'};
   }
   function activeDeductions(state,e,c,kind){
-    return (state.deductions||[]).filter(d=>d.empId===e.id && d.saved !== false && d.deleted !== true && (!kind || d.deductionType===kind) && d.startDate && compare(d.startDate,c.end)<=0 && (!d.endDate || compare(d.endDate,c.start)>=0));
+    return (state.deductions||[]).filter(d=>d.empId===e.id && d.saved !== false && d.deleted !== true && (!kind || d.deductionType===kind) && (d.deductionType!=='Urgent Pay'||d.startDate===c.start&&d.endDate===c.end) && d.startDate && compare(d.startDate,c.end)<=0 && (!d.endDate || compare(d.endDate,c.start)>=0));
   }
   function deductionLineAmount(d, base){
     if(d.deductionType==='Union Fees') return round2(Number(d.amount||0));
@@ -1011,7 +1022,7 @@
     const preTaxDeductions = active.filter(d=>['Pre-tax Super Deduction','Salary Packaging - Pre-Tax'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,gross), basis:d.percentage!==''&&d.percentage!=null?'percentage':'amount' })).filter(d=>Math.abs(d.amount)>0.004);
     const preTaxTotal = round2(preTaxDeductions.reduce((s,d)=>s+d.amount,0));
     const postBase = netAfterPreTax === undefined || netAfterPreTax === null ? Math.max(0, Number(gross||0)-preTaxTotal) : netAfterPreTax;
-    const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees','Salary Packaging - Post-Tax'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
+    const postTaxDeductions = active.filter(d=>['Post-Tax Super Deduction','Union Fees','Salary Packaging - Post-Tax','Urgent Pay'].includes(d.deductionType)).map(d=>({ id:d.id, description:d.deductionType, amount:deductionLineAmount(d,postBase), basis:d.deductionType==='Union Fees'?'amount':(d.percentage!==''&&d.percentage!=null?'percentage':'amount') })).filter(d=>Math.abs(d.amount)>0.004);
     const otherPostTaxTotal=round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
     postTaxDeductions.push(...Payment.recoveryDeductionLines(state,active,c,Number(availableRecoveryNet??postBase)-otherPostTaxTotal));
     const postTaxTotal = round2(postTaxDeductions.reduce((s,d)=>s+d.amount,0));
@@ -1097,7 +1108,7 @@
     const existingOverlap = (state.leaveBookings||[]).find(l=>l.empId===empId && l.id!==excludeLeaveId && l.status!=='Denied' && compare(l.startDate,endDate)<=0 && compare(startDate,l.endDate)<=0);
     if(existingOverlap) return { ok:false, hours:0, detail:[], partialAllowed:false, message:`Leave overlaps an existing ${existingOverlap.type || 'leave'} booking from ${fmtPay(existingOverlap.startDate)} to ${fmtPay(existingOverlap.endDate)}.` };
     const singleDay = startDate === endDate;
-    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave'].includes(leaveType);
+    const partialAllowedType = ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave','Suspension with Pay','Suspension without Pay'].includes(leaveType);
     let hours = 0;
     const detail = [];
     daysBetween(startDate,endDate).forEach(d=>{
@@ -1144,7 +1155,7 @@
       if(requestedDays>availableDays+0.0001) return { ok:false, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays, message:'Insufficient Family and Domestic Violence Leave balance.' };
       return { ok:true, hours:round4(hours), detail, partialAllowed, maxHours:scheduledAvailable, workingDays, requestedDays, availableDays:round4(availableDays-requestedDays), message:'OK' };
     }
-    if(leaveType && !['LWOP','Absent Without Leave','Workers Compensation Leave'].includes(leaveType) && !isParentalLeaveType(leaveType)){
+    if(leaveType && !['LWOP','Absent Without Leave','Workers Compensation Leave','Suspension with Pay','Suspension without Pay'].includes(leaveType) && !isParentalLeaveType(leaveType)){
       const cycle = currentCycle(state);
       const balances = projectedBalances(state, e, cycle);
       const available = leaveType === 'Annual Leave' ? balances.annual : leaveType === 'Personal Leave' ? balances.personal : leaveType === 'Long Service Leave' ? balances.lslAccrued : 999999;
@@ -1218,6 +1229,18 @@
     return output;
   }
 
+  function terminationPayoutEmployee(state,e,c){
+    const end=employmentEnd(e),last=end?(hasInclusiveEmploymentEnd(e)?end:addDays(end,-1)):'';
+    if(last&&compare(last,e.startDate||last)>=0&&between(last,c.start,c.end)&&!isCasualOnly(state,e,last))return e;
+    const candidates=employmentSegments(e).filter(seg=>seg.endDate&&seg.terminationReason&&seg.startDate!==e.startDate&&between(segmentLastEmployedDay(seg),c.start,c.end))
+      .sort((a,b)=>compare(b.endDate,a.endDate));
+    const prior=candidates.find(seg=>activeEmploymentType(state,e,segmentLastEmployedDay(seg))!=='Casual'&&
+      (state.jobDataRows||[]).some(r=>r.empId===e.id&&r.saved!==false&&r.action==='Commencement'&&r.reason==='Rehire Casual'&&r.effectiveDate===seg.endDate));
+    if(!prior)return e;
+    const priorLast=segmentLastEmployedDay(prior);
+    return Object.assign({},e,{type:activeEmploymentType(state,e,priorLast),startDate:prior.startDate,terminationDate:prior.endDate,terminationReason:prior.terminationReason,contractEndDate:'',autoTerminate:false,
+      employmentSegments:employmentSegments(e).filter(seg=>seg.startDate!==e.startDate&&compare(seg.startDate,prior.endDate)<0)});
+  }
   function earningRowsForCycle(state, e, c, options={}){
     const includeAdditional = options.includeAdditional !== false;
     const includePayouts = options.includePayouts !== false;
@@ -1256,7 +1279,7 @@
       if(parentalLeave && isPublicHoliday(d)) return;
       if(leave){
         const paid = !isUnpaidLeaveType(leave.type);
-        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave'].includes(leave.type);
+        const partialSingleDay = leave.startDate === leave.endDate && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave',FDV_LEAVE_TYPE,'Workers Compensation Leave','Suspension with Pay','Suspension without Pay'].includes(leave.type);
         const leaveUnits = Math.min(hours, partialSingleDay ? Number(leave.hours || hours) : hours);
         const regularRemainder = round4(Math.max(0, hours - leaveUnits));
         const parentalPayFactor = leave.type===PARENTAL_PAID_LEAVE_TYPE && String(leave.payOption||'Full Pay')==='Half Pay' ? 0.5 : 1;
@@ -1295,6 +1318,9 @@
         if(earningType === 'Overpayment Adjustment'){
           rows.push({ description:'Overpayment Adjustment', units:0, amount:round2(Number(a.amount||0)), startDate:c.start, endDate:c.end, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0, amountOnly:true, nonTaxable:true });
           return;
+        }
+        if(earningType==='On-call Allowance'){
+          rows.push({description:'On-call Allowance',units:Number(a.hours||0),amount:round2(Number(a.amount||0)),startDate:a.startDate,endDate:a.endDate,rate:Number(a.unitRate||0),baseRate:Number(baseRate.hourlyRate||0),position:baseRate.position||e.position,kind:'additional',ote:a.ote===true,accruesLeave:false,serviceHours:0,onCallId:a.onCallId});return;
         }
         if(['Reimbursement','Travel Allowance','Bonus'].includes(earningType)){
           rows.push({ description:earningType, units:0, amount:round2(Number(a.amount||0)), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:earningType==='Bonus', accruesLeave:false, serviceHours:0, amountOnly:true, nonTaxable:earningType==='Reimbursement' });
@@ -1354,8 +1380,9 @@
     });
 
     if(includePayouts){
-      const end = employmentEnd(e);
-      const payoutDate=end ? (hasInclusiveEmploymentEnd(e)?end:addDays(end,-1)) : '';
+      const payoutEmployee=terminationPayoutEmployee(state,e,c);
+      const end = employmentEnd(payoutEmployee);
+      const payoutDate=end ? (hasInclusiveEmploymentEnd(payoutEmployee)?end:addDays(end,-1)) : '';
       if(payoutDate && between(payoutDate,c.start,c.end) && !isCasualOnly(state,e,payoutDate)){
         const rate = activePayRate(state,e.id,payoutDate);
         // For a final pay, calculate leave payouts from the final projected balance
@@ -1364,9 +1391,11 @@
         const payoutBaseRows = Array.isArray(options.payoutBalanceRows)
           ? options.payoutBalanceRows
           : rows.filter(r=>!(r.kind==='payout'));
-        const balances = projectedBalances(state,e,c,true,payoutBaseRows);
+        const payoutCycle=payoutEmployee===e?c:Object.assign({},c,{end:payoutDate});
+        const balanceRows=payoutEmployee===e?payoutBaseRows:payoutBaseRows.filter(r=>!r.startDate||compare(r.startDate,payoutDate)<=0);
+        const balances = projectedBalances(state,payoutEmployee,payoutCycle,true,balanceRows);
         if(balances.annual > 0) rows.push({ description:'Annual Leave Payout', units:balances.annual, amount:round2(balances.annual*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
-        if(/resign/i.test(String(e.terminationReason||'')) && balances.annual < -0.0001){
+        if(/resign/i.test(String(payoutEmployee.terminationReason||'')) && balances.annual < -0.0001){
           // Recover the employee's actual outstanding Annual Leave deficit on resignation.
           // This applies both to forecast-approved leave and to the normal one-workday
           // negative-balance facility. projectedBalances() has already included current-pay
@@ -1375,7 +1404,7 @@
           if(recoveryHours>0) rows.push({ description:'Annual Leave Overuse Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, annualLeaveDeficitRecovery:true });
         }
         if(balances.lslAccrued > 0) rows.push({ description:'Long Service Leave Payout', units:balances.lslAccrued, amount:round2(balances.lslAccrued*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
-        if(/retire/i.test(String(e.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
+        if(/retire/i.test(String(payoutEmployee.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
       }
     }
     rows.forEach(row=>{
@@ -1416,6 +1445,10 @@
     const hours = Number(ordinary||0);
     return { annual:round4(hours * ANNUAL_LEAVE_WEEKS_PER_YEAR / 52), personal:round4(hours * PERSONAL_LEAVE_WEEKS_PER_YEAR / 52) };
   }
+  function leaveAccrualForRows(state,e,c,rows){
+    const eligible=(rows||[]).filter(r=>activeEmploymentType(state,e,r.startDate||c.end)!=='Casual');
+    return leaveAccrualForOrdinaryHours(Object.assign({},e,{type:'Permanent'}),ordinaryHours(eligible));
+  }
   function projectedBalances(state,e,c,includeCurrent=true,overrideRows=null){
     let annual = Number(e.annualLeaveBalance||0);
     let personal = Number(e.personalLeaveBalance||0);
@@ -1425,11 +1458,9 @@
     if(includeCurrent){
       const rows = overrideRows || earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true});
       const ordinary = ordinaryHours(rows);
-      if(activeEmploymentType(state,e,c.end) !== 'Casual'){
-        const accrual = leaveAccrualForOrdinaryHours(e, ordinary);
-        annual += accrual.annual;
-        personal += accrual.personal;
-      }
+      const accrual = leaveAccrualForRows(state,e,c,rows);
+      annual += accrual.annual;
+      personal += accrual.personal;
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       lslAccrued -= rows.filter(r=>r.description==='Long Service Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Long Service Leave');
@@ -1779,7 +1810,7 @@
     const superAmt=round2(superCurrent+superRetro);
     const net=round2(gross-tax-deductionParts.preTaxTotal-deductionParts.postTaxTotal);
     const ordinary=ordinaryHours(wholeRows);
-    const leaveAccrual=activeEmploymentType(state,e,c.end)==='Casual'?{annual:0,personal:0}:leaveAccrualForOrdinaryHours(e,ordinary);
+    const leaveAccrual=leaveAccrualForRows(state,e,c,wholeRows);
     const annualAccrual=leaveAccrual.annual;
     const personalAccrual=leaveAccrual.personal;
     const balances=projectedBalances(state,e,c,true,wholeRows);
@@ -1856,6 +1887,8 @@
       payslip.casualOnly=casualOnly;
       if(casualOnly) payslip.employmentType='Casual';
       if(g.casual&&g.rows.every(isCasualEarningsRow)) payslip.employmentType='Casual';
+      if(!g.casual&&!casualOnly){const source=g.rows.find(r=>r.kind!=='retro'&&r.startDate)||g.rows[0];if(source?.startDate)payslip.employmentType=activeEmploymentType(state,e,source.startDate);}
+
       return payslip;
     }).filter(p=>Math.abs(p.gross)>0.004||p.rows.some(r=>r.kind==='retro'&&(Math.abs(Number(r.units||0))>0.0001||Math.abs(Number(r.amount||0))>0.004)));
   }
@@ -1907,11 +1940,9 @@
       if(!e) return;
       const rows = payslips.filter(x=>x.empId===e.id).flatMap(x=>x.rows||[]);
       const ordinary = ordinaryHours(rows);
-      if(activeEmploymentType(state,e,c.end) !== 'Casual'){
-        const accrual = leaveAccrualForOrdinaryHours(e, ordinary);
-        e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + accrual.annual);
-        e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + accrual.personal);
-      }
+      const accrual = leaveAccrualForRows(state,e,c,rows);
+      e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + accrual.annual);
+      e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + accrual.personal);
       const annualUsed = rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
       const personalUsed = rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0));
@@ -1928,6 +1959,7 @@
   function finaliseCurrentPay(state){
     const c = currentCycle(state);
     if(isFinalised(state,c)) throw new Error(`${ppeLabel(c)} has already been finalised.`);
+    api.urgentPay.finalisationCheck(state,c);
     const payslips = calculateAll(state,c.id,true).map(p=>Object.assign({},p,{finalised:true,finalisedAt:(new Date()).toISOString().slice(0,10)}));
     state.payslips = (state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id)).concat(payslips);
     state.finalisedCycles[String(c.id)] = { id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c) };
@@ -2066,6 +2098,12 @@
   const SelfServiceModule=typeof module!=='undefined'?require('./self-service.js'):global.SelfService;
   api.selfService=SelfServiceModule.create(api);
   api.createSelfServiceUI=SelfServiceModule.createUI;
+  const OperationsModule=typeof module!=='undefined'?require('./payroll-operations.js'):global.PayrollOperations;
+  api.operations=OperationsModule.create(api,api.selfService);
+  const UrgentModule=typeof module!=='undefined'?require('./urgent-pay.js'):global.UrgentPay;
+  api.urgentPay=UrgentModule.create(api,api.selfService);api.createUrgentPayUI=UrgentModule.createUI;
+  api.operationFiles=OperationsModule;
+  api.createOperationsUI=(typeof module!=='undefined'?require('./payroll-operations-ui.js'):global.PayrollOperationsUI).createUI;
   global.PayrollEngine = api;
   if(typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
