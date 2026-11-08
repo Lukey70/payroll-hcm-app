@@ -1,7 +1,7 @@
 (function(g){
  'use strict';
  const CASH_TYPES=['Annual Leave Cash Out','Long Service Leave Cash Out'];
- const REASONS={Commencement:['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],Variation:['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change'],Movement:['Acting Same Level','Acting Higher Level','Acting Lower Level','Return from Temp Assignment','Promotion','Regression'],Termination:['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term','Deceased','Misconduct','Abandonment','Redundant','Dismissal','Ill Health']};
+ const REASONS={Commencement:['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],Variation:['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change','Cease Pay','Return from Cease Pay'],Movement:['Acting Same Level','Acting Higher Level','Acting Lower Level','Return from Temp Assignment','Promotion','Regression'],Termination:['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term','Deceased','Misconduct','Abandonment','Redundant','Dismissal','Ill Health']};
  function create(E){
   function migrateCashOuts(s){
    for(const c of s.cashOutRequests||[]){if(c.deleted)continue;const existing=s.additionalEarnings.find(a=>a.legacyCashOutId===c.id);if(existing){c.additionalId=existing.id;continue;}const cycle=E.cycleById(c.cycleId),date=c.effectiveDate||cycle.start,rate=E.activePayRate(s,c.empId,date).hourlyRate;
@@ -28,10 +28,11 @@
    const keys=new Set(rows.map(a=>a.legacyCashOutId).filter(Boolean));
    s.cashOutRequests=s.cashOutRequests.filter(c=>!(c.empId===empId&&Number(c.cycleId)===cycle.id&&c.additionalId&&!keys.has(c.id)));
    for(const a of rows){let c=s.cashOutRequests.find(c=>c.id===a.legacyCashOutId);if(c){c.additionalId=a.id;if(E.isFinalised(s,cycle))continue;}else{a.legacyCashOutId='cash_'+a.id;c={id:a.legacyCashOutId};s.cashOutRequests.push(c);}
-    Object.assign(c,{additionalId:a.id,empId,cycleId:cycle.id,effectiveDate:a.startDate,leaveType:a.earningType===CASH_TYPES[1]?'Long Service Leave':'Annual Leave',hours:Number(a.hours),saved:true,deleted:false});}
+    Object.assign(c,{jobRecord:Number(a.jobRecord||0),additionalId:a.id,empId,cycleId:cycle.id,effectiveDate:a.startDate,leaveType:a.earningType===CASH_TYPES[1]?'Long Service Leave':'Annual Leave',hours:Number(a.hours),saved:true,deleted:false});}
   }
   function statement(s,id,date){
    const e=s.employees.find(e=>e.id===id);if(!e)throw Error('Select an employee.');if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||E.iso(E.parseDate(date))!==date)throw Error('Enter a valid as-at date.');if(!E.isEmployedOn(e,date))throw Error('Employee must be employed on the as-at date.');
+   if(E.jobRecords.multiple(s,id)){const list=E.jobRecords.activeRecords(s,id,date,false).map(r=>statement(E.jobRecords.scope(s,id,r.recordNumber),id,date));if(!list.length)throw Error('Casual employees do not have guaranteed regular fortnightly earnings.');const hours=E.round4(list.reduce((n,r)=>n+r.hours,0)),gross=E.round2(list.reduce((n,r)=>n+r.gross,0));return {name:E.employeeName(e),type:'Concurrent appointments',hours,position:list.map(r=>r.position).join(' / '),regular:gross,gross,date,fullTime:hours>=E.STANDARD_WEEKLY_HOURS*2};}
    const type=E.activeEmploymentType(s,e,date);if(type==='Casual')throw Error('Casual employees do not have guaranteed regular fortnightly earnings.');
    const schedule=E.activeSchedule(s,id,date);if(!schedule)throw Error('No active roster was found.');
    const hours=E.weeklyHoursFromSchedule(schedule)*2;

@@ -36,6 +36,9 @@
   let absenceEditing = false;
   let absenceDraft = null;
   let selectedJobDataEmp = '';
+  let selectedJobRecord=0;
+  function jobView(id,n=selectedJobRecord){return E.jobRecords.scope(state,id,n);}
+  function recordOptions(id,n=0,managerId=''){const allowed=managerId?E.jobRecords.eligibleForManager(state,managerId,id).map(r=>r.recordNumber):null;return E.jobRecords.options(state,id,n,allowed).map(r=>`<option value="${r.value}" ${r.selected?'selected':''}>${esc(r.label)}</option>`).join('');}
   let selectedJobDataRowIndex = 0;
   let selectedJobDataDraft = null;
   let settingsView = 'general';
@@ -55,7 +58,7 @@
   const uid = prefix => DataStore.uid(prefix);
   const E = PayrollEngine;
   const S = E.selfService;
-  const Features=typeof PayrollFeatures!=='undefined'?PayrollFeatures:null;const F=Features?.create(E);let reportMode='',payErrorReport=null;
+  const Features=typeof PayrollFeatures!=='undefined'?PayrollFeatures:null;const F=Features?.create(E);let reportMode='',selectedRecoveryEmployee='',payErrorReport=null;
   const nativeAlert=globalThis.alert;function alert(message){if(typeof PayrollUI!=='undefined')PayrollUI.error(message);else nativeAlert(message);}
   let ssUI=null;const supportUIs=new Map();
   const T=SupportRequests.create(E,S);
@@ -63,7 +66,11 @@
   function supportWindowAccess(actorId=currentUserId){return !!actorId&&actorId===currentUserId&&sessionStorage.getItem('payrollAuthed')==='true'&&S.profile(state,actorId).payroll;}
   function supportViewsChanged(source){
     renderAlerts();renderDashboard();ssUI?.refreshNotifications();
-    for(const [id,ui] of supportUIs)if(id!==source&&$(id)&&!$(id).hidden&&(id!=='support'||$(id).classList.contains('active')))ui.refresh?.();
+    for(const [id,ui] of supportUIs){
+      const root=$(id);if(id===source||!root||root.hidden||!root.innerHTML.trim())continue;
+      const visible=id==='support'?!!$('appShell')&&!$('appShell').hidden&&root.classList.contains('active')&&S.profile(state,currentUserId).payroll:id==='ssSupport'?!!$('selfServiceScreen')&&!$('selfServiceScreen').hidden:false;
+      if(visible)ui.refresh?.();
+    }
   }
   function commitSupportWindowChanges(actorId){
     if(!supportWindowAccess(actorId))throw Error('Payroll Management access is required.');
@@ -105,7 +112,7 @@
   let certManagerId='',certContainer='certification';
   function unmountSelfServiceCertification(){certManagerId='';certContainer='certification';}
   function mountSelfServiceCertification(container,managerId){if(managerId!==currentUserId||!S.profile(state,currentUserId).mss)throw Error('Manager Self Service access is required.');certManagerId=managerId;certContainer=container;h('certification','');renderCertification();}
-  function certLines(c){const lines=Number(c.id)===Number(currentCycle().id)?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id));if(!certManagerId)return lines;const ids=S.directReports(state,certManagerId).map(e=>e.id);return lines.filter(p=>ids.includes(p.empId));}
+  function certLines(c){const lines=Number(c.id)===Number(currentCycle().id)?currentResults():state.payslips.filter(p=>Number(p.cycleId)===Number(c.id));if(!certManagerId)return lines;const ids=S.directReports(state,certManagerId).map(e=>e.id);return lines.filter(p=>ids.includes(p.empId)&&E.jobRecords.canViewPayslip(state,certManagerId,p));}
   function certGuard(p){if(certManagerId)S.assertScope(state,currentUserId,p.empId,'mss');else if(!S.profile(state,currentUserId).payroll)throw Error('Payroll Management access is required.');}
   function certManagerToggle(cycleId,payId,checked){
     const c=E.cycleById(cycleId),p=certLines(c).find(p=>String(p.id)===String(payId));if(!p)throw Error('Certification line is unavailable.');certGuard(p);
@@ -120,7 +127,7 @@
   function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
 
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids)=>monthlyAbsenceCalendarHtml(month,ids),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:change=>{if(change?.kind!=='timesheet')calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids,managerId)=>monthlyAbsenceCalendarHtml(month,ids,managerId),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:change=>{if(change?.kind!=='timesheet')calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -283,9 +290,10 @@
     if(action.tab==='payslip'&&action.empId){selectedPayslipEmp=action.empId;renderPayslip();}
     if(action.tab==='certification' && action.cycleId) selectedCertCycleId=String(action.cycleId);
     if(action.tab==='absenceBalance' && action.empId) selectedReportEmp=String(action.empId);
-    if(action.tab==='jobData' && action.empId) selectedJobDataEmp=String(action.empId);
+    if(action.tab==='jobData' && action.empId){selectedJobDataEmp=String(action.empId);selectedJobRecord=Number(action.jobRecord||0);}
     const btn=document.querySelector(`.nav-btn[data-tab="${action.tab}"]`);
     attemptShowTab(action.tab, btn);
+    if(action.tab==='reports'&&action.report==='recovery'&&$('reports')?.classList.contains('active')){reportMode='recovery';selectedRecoveryEmployee=action.empId||'';renderReports();}
     setTimeout(()=>{
       if(action.tab==='absenceBalance' && action.empId){ const select=$('absenceEmp'); if(select){ select.value=String(action.empId); renderAbsenceOutput(); } }
       if(action.tab==='certification'){
@@ -308,10 +316,11 @@
   }
 
   function activePositionRowForEmployee(empId,onDate=todayIso()){
-    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&(!r.endDate||r.endDate>=onDate)&&E.compare(r.effectiveDate,onDate)<=0)
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&r.action!=='Termination'&&!E.isPayControlJobDataRow(r)&&r.effectiveDate&&(!r.endDate||r.endDate>=onDate)&&E.compare(r.effectiveDate,onDate)<=0)
       .slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
   }
   function accessProfileForEmployee(empId,onDate=todayIso()){
+    if(E.jobRecords.multiple(state,empId)){const profile=S.profile(state,empId,onDate),active=E.jobRecords.activeRecords(state,empId,onDate),selected=active.find(r=>{const view=jobView(empId,r.recordNumber),p=S.profile(view,empId,onDate);return profile.payroll?p.payroll:profile.mss?p.mss:true;})||active[0],view=selected?jobView(empId,selected.recordNumber):null,row=view?E.activeJobDataRow(view,view.employees.find(e=>e.id===empId),onDate):null;return {...profile,position:row?positionByNumber(row.positionNumber):null,row};}
     const e=emp(empId); if(!e) return {payroll:false,mss:false,position:null,row:null};
     const row=activePositionRowForEmployee(empId,onDate);
     let position=row&&row.positionNumber?positionByNumber(row.positionNumber):null;
@@ -657,7 +666,7 @@
     if(tab==='certification') renderCertification();
     if(tab==='support')mountSupport('support',{mode:'payroll'});
     if(tab==='payrollTools')renderPayrollTools();
-    if(tab==='reports'){reportMode='';renderReports();}
+    if(tab==='reports'){reportMode='';selectedRecoveryEmployee='';renderReports();}
     if(tab==='payslip') renderPayslip();
     if(tab==='absenceBalance')renderAbsenceBalance();
     resetTabScroll();
@@ -698,7 +707,7 @@
   let operationsView=null;
   function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:change=>{if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');if(change?.kind!=='timesheet')calculateAllForCurrent();renderAlerts();renderDashboard();}});return operationsView;}
   function renderPayrollTools(){
-    h('payrollTools','<h2>Payroll Tools</h2><div class="report-tiles">'+[['probation','Probation Tracking'],['responses','Support Response Templates'],['timesheets','Timesheets']].map(([key,label])=>'<button class="landing-tile" data-ops-tool="'+key+'"><span class="landing-tile-icon">'+(typeof PayrollUI!=='undefined'?PayrollUI.icon(key==='oncall'?'clock':key==='responses'?'support':'report'):'▤')+'</span><span>'+label+'</span></button>').join('')+'</div><div id="payrollToolOutput"></div>');
+    h('payrollTools','<h2>Payroll Tools</h2><div class="report-tiles">'+[['probation','Probation Tracking'],['responses','Support Response Templates'],['timesheets','Timesheets'],['delegations','Manager Delegation']].map(([key,label])=>'<button class="landing-tile" data-ops-tool="'+key+'"><span class="landing-tile-icon">'+(typeof PayrollUI!=='undefined'?PayrollUI.icon(key==='oncall'?'clock':key==='responses'?'support':key==='delegations'?'team':'report'):'▤')+'</span><span>'+label+'</span></button>').join('')+'</div><div id="payrollToolOutput"></div>');
     $('payrollTools').querySelectorAll('[data-ops-tool]').forEach(b=>b.addEventListener('click',()=>{const key=b.dataset.opsTool;h('payrollTools','<button id="opsBackTools" class="secondary">Back to Payroll Tools</button><div id="payrollToolOutput"></div>');$('opsBackTools').addEventListener('click',renderPayrollTools);operationsUI().mount('payrollToolOutput',key);}));
   }
   function renderOperationsDashboard(){
@@ -724,7 +733,7 @@
     h('dashboardChanges',`<header class="dashboard-panel-heading"><div><h3>${glyph('calendar')}Upcoming employee changes</h3><p>Next 30 days · ${E.fmtPay(today)} – ${E.fmtPay(E.addDays(today,30))}</p></div><span class="dashboard-total">${changes.length}</span></header><p class="small-note">Saved employee and Job Data records. Support requests awaiting processing are not included.</p>${changes.length?`<div class="table-wrap dashboard-changes-table"><table><thead><tr><th>Date</th><th>Employee</th><th>Change</th><th>Details</th></tr></thead><tbody>${changes.map((c,i)=>`<tr><td>${E.fmtPay(c.date)}</td><td><button class="dashboard-employee" data-dashboard-change="${i}">${esc(c.name)}<small>${esc(c.empId)}</small></button></td><td><span class="dashboard-change-type">${esc(c.type)}</span></td><td>${esc(c.detail)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="dashboard-empty">No employee changes scheduled in the next 30 days.</p>'}`);
     $('dashboardChanges')?.querySelectorAll('[data-dashboard-change]').forEach(b=>b.addEventListener('click',()=>{
       if(!S.profile(state,currentUserId).payroll)return;const change=changes[Number(b.dataset.dashboardChange)];if(!change||!emp(change.empId))return;
-      selectedJobDataEmp=change.empId;selectedJobDataDraft=null;selectedJobDataRowIndex=Math.max(0,jobDataDisplayRows(change.empId).findIndex(j=>j.id===change.rowId));
+      selectedJobDataEmp=change.empId;selectedJobRecord=Number(state.jobDataRows.find(r=>r.id===change.rowId)?.jobRecord||0);selectedJobDataDraft=null;selectedJobDataRowIndex=Math.max(0,jobDataDisplayRows(change.empId).findIndex(j=>j.id===change.rowId));
       showTab('jobData',document.querySelector('.nav-btn[data-tab="jobData"]'));
     }));
   }
@@ -842,7 +851,7 @@
     addJobEvent(e.id,'Tax Details',taxEffective,'Initial tax details recorded','tax',state.taxDetails[state.taxDetails.length-1].id);
     if(!DataStore.save(state)){state=before;return alert('Unable to save employee. No employee or payment details were added.');} closeModal(); calculateAllForCurrent(); log(`Employee added: ${E.employeeDisplayName(e)}`); renderAll(); toast(`Add Job Data before processing pay for ${E.employeeDisplayName(e)}`, 8000);
   }
-  function addJobEvent(empId,type,effectiveDate,description,refKind,refId){ state.jobEvents.push({ id:uid('job'), empId, type, effectiveDate, description, refKind, refId }); }
+  function addJobEvent(empId,type,effectiveDate,description,refKind,refId){ const record=refKind==='jobData'?(state.jobDataRows||[]).find(r=>r.id===refId):null;state.jobEvents.push({ id:uid('job'), empId,jobRecord:Number(record?.jobRecord||0), type, effectiveDate, description, refKind, refId }); }
 
   function openEditEmployeeDetails(empId){
     const e=emp(empId); if(!e) return;
@@ -869,13 +878,13 @@
   }
   const JOB_REASON_OPTIONS = {
     Commencement: ['New Hire Permanent','New Hire Fixed-Term','New Hire Casual','Rehire Permanent','Rehire Fixed-Term','Rehire Casual','New Fixed Term Contract'],
-    Variation: ['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change'],
+    Variation: ['Work Schedule Adjustment','Permanency Confirmed','Permanency Removed','Position Refresh','Pay Rate Change','Cease Pay','Return from Cease Pay'],
     Movement: ['Acting Same Level','Acting Higher Level','Acting Lower Level','Return from Temp Assignment','Promotion','Regression'],
     Termination: ['Voluntary Resignation','Voluntary Retirement','Appointment Cancelled','Expiry of Fixed Term','Deceased','Misconduct','Abandonment','Redundant','Dismissal','Ill Health']
   };
   function positionByNumber(num){ return (state.positions||[]).find(p=>String(p.positionNumber)===String(num)); }
   function sortedJobDataRows(empId){
-    return (state.jobDataRows||[]).filter(r=>r.empId===empId).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    return (state.jobDataRows||[]).filter(r=>r.empId===empId&&Number(r.jobRecord||0)===selectedJobRecord).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
   }
   function jobDataDisplayRows(empId){
     const rows=sortedJobDataRows(empId).slice();
@@ -887,28 +896,31 @@
     return rows;
   }
   function nextEffectiveSequence(empId, effectiveDate){
-    const matches=(state.jobDataRows||[]).filter(r=>r.empId===empId && r.effectiveDate===effectiveDate);
+    const matches=(state.jobDataRows||[]).filter(r=>r.empId===empId && Number(r.jobRecord||0)===selectedJobRecord && r.effectiveDate===effectiveDate);
     return matches.length ? Math.max(...matches.map(r=>Number(r.effectiveSequence||0)))+1 : 0;
   }
   function renderJobData(){
     if(!selectedJobDataEmp){
       h('jobData', `<h2>Job Data</h2><p class="small-note">Select an employee to view or add effective-dated job rows.</p><div class="controls">${showTerminatedControl('jobDataShowTerminated','jobData')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobDataEmpSelect">${employeeOptions(employeeList(showTerminatedByTab.jobData))}</select></div></div>`);
       bindShowTerminated('jobDataShowTerminated','jobData',renderJobData);
-      $('jobDataEmpSelect').addEventListener('change',()=>{ selectedJobDataEmp=v('jobDataEmpSelect'); selectedJobDataRowIndex=0; selectedJobDataDraft=null; renderJobData(); });
+      $('jobDataEmpSelect').addEventListener('change',()=>{ selectedJobDataEmp=v('jobDataEmpSelect');selectedJobRecord=0; selectedJobDataRowIndex=0; selectedJobDataDraft=null; renderJobData(); });
       return;
     }
-    const e=emp(selectedJobDataEmp); if(!e){ selectedJobDataEmp=''; renderJobData(); return; }
+    if(!E.jobRecords.records(state,selectedJobDataEmp).some(r=>r.recordNumber===selectedJobRecord))selectedJobRecord=0;
+    const e=emp(selectedJobDataEmp)?E.jobRecords.employee(state,selectedJobDataEmp,selectedJobRecord):null; if(!e){ selectedJobDataEmp=''; renderJobData(); return; }
     const rows=jobDataDisplayRows(e.id);
     const totalRows=rows.length;
     if(selectedJobDataRowIndex<0) selectedJobDataRowIndex=0;
     if(totalRows && selectedJobDataRowIndex>=totalRows) selectedJobDataRowIndex=totalRows-1;
     const row = rows[selectedJobDataRowIndex];
-    h('jobData', `<h2>Job Data</h2>${typeof PayrollUI!=='undefined'?PayrollUI.employeeHeader(E,state,e.id):'<p>'+esc(E.employeeDisplayName(e))+'</p>'}<div class="controls"><button id="jobDataChangeEmp" class="secondary">Change Employee</button><button id="jobDataAdd" title="Add row">＋</button><button id="jobDataMinus" class="danger" title="Remove row">−</button><button id="jobDataPrev" class="secondary">←</button><span class="row-indicator">${totalRows?`${selectedJobDataRowIndex+1} of ${totalRows}`:'0 of 0'}</span><button id="jobDataNext" class="secondary">→</button></div><div id="jobDataForm"></div>`);
+    h('jobData', `<h2>Job Data</h2>${typeof PayrollUI!=='undefined'?PayrollUI.employeeHeader(E,state,e.id,E.iso(new Date()),[selectedJobRecord]):'<p>'+esc(E.employeeDisplayName(e))+'</p>'}${E.isPayCeasedOn(jobView(e.id),e.id,todayIso())?'<p class="small-note"><strong>Pay ceased.</strong> Add Return from Cease Pay to resume pay from its effective date.</p>':''}<div class="job-record-selector controls"><label>Job Record<select id="jobRecordSelect">${recordOptions(e.id,selectedJobRecord)}</select></label><button id="addJobRecord" class="secondary">${typeof PayrollUI!=='undefined'?PayrollUI.icon('plus'):''}Add Job Record</button><span class="small-note">Leave balances, bank, super and tax details are shared across this employee’s records.</span></div><div class="job-data-toolbar" aria-label="Job Data row controls"><div class="job-data-row-actions"><button id="jobDataChangeEmp" class="secondary">${typeof PayrollUI!=='undefined'?PayrollUI.icon('person'):''}Change Employee</button><span class="job-data-toolbar-divider" aria-hidden="true"></span><button id="jobDataAdd">${typeof PayrollUI!=='undefined'?PayrollUI.icon('plus'):''}Add Row</button><button id="jobDataMinus" class="secondary job-data-delete" ${row?'':'disabled'}>${typeof PayrollUI!=='undefined'?PayrollUI.icon('trash'):''}Delete Row</button></div><nav class="job-data-pagination" aria-label="Job Data row navigation"><button id="jobDataPrev" class="secondary" aria-label="Previous Job Data row" ${selectedJobDataRowIndex<=0?'disabled':''}>${typeof PayrollUI!=='undefined'?PayrollUI.icon('chevronLeft'):'‹'}</button><div class="job-data-row-count" aria-live="polite"><strong>Row ${totalRows?selectedJobDataRowIndex+1:0} <span>of ${totalRows}</span></strong><small>${row?.saved===false?'Unsaved row':'Newest first'}</small></div><button id="jobDataNext" class="secondary" aria-label="Next Job Data row" ${!totalRows||selectedJobDataRowIndex>=totalRows-1?'disabled':''}>${typeof PayrollUI!=='undefined'?PayrollUI.icon('chevronRight'):'›'}</button></nav></div><div id="jobDataForm"></div>`);
+    $('jobRecordSelect').addEventListener('change',()=>{selectedJobRecord=Number(v('jobRecordSelect'));selectedJobDataDraft=null;selectedJobDataRowIndex=0;renderJobData();});
+    $('addJobRecord').addEventListener('click',()=>{modal('Add Concurrent Job Record','<p>Create another appointment for this employee under the same employee ID. Enter its Commencement, position and roster in Job Data. Shared leave will only pay out when the last ongoing appointment ends.</p>','<button class="secondary" data-close-modal>Cancel</button><button id="confirmNewJobRecord">Create Job Record</button>',true);$('confirmNewJobRecord').addEventListener('click',()=>{const before=DataStore.clone(state);try{const r=E.jobRecords.add(state,currentUserId,e.id);if(!DataStore.save(state))throw Error('Unable to save the new job record.');selectedJobRecord=r.recordNumber;selectedJobDataDraft=null;selectedJobDataRowIndex=0;closeModal();renderJobData();}catch(err){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,before);alert(err.message);}});});
     $('jobDataChangeEmp').addEventListener('click',()=>{ selectedJobDataEmp=''; selectedJobDataDraft=null; selectedJobDataRowIndex=0; renderJobData(); });
     $('jobDataAdd').addEventListener('click',()=>{
       const previous = row || sortedJobDataRows(e.id)[0] || {};
       const draft = JSON.parse(JSON.stringify(previous));
-      draft.id=uid('jobdata'); draft.empId=e.id; draft.effectiveDate=todayIso(); draft.effectiveSequence=nextEffectiveSequence(e.id,draft.effectiveDate); draft.saved=false;
+      draft.id=uid('jobdata'); draft.empId=e.id;draft.jobRecord=selectedJobRecord; draft.effectiveDate=todayIso(); draft.effectiveSequence=nextEffectiveSequence(e.id,draft.effectiveDate); draft.saved=false;
       draft.rateId=''; draft.scheduleId='';
       if(!draft.action) draft.action='Commencement';
       if(!draft.positionClass) draft.positionClass='Permanent';
@@ -938,12 +950,13 @@
     if(!row){ h('jobDataForm','<p class="small-note">No Job Data rows yet. Click the plus button to create the first row.</p>'); return; }
     const action=row.action||'Commencement';
     const reasons=(JOB_REASON_OPTIONS[action]||[]).map(r=>`<option ${row.reason===r?'selected':''}>${esc(r)}</option>`).join('');
-    h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"><p class="small-note">First day this action applies. For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.</p></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div></div><div class="grid form-grid"><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div><div><label>Roster Pattern</label><select id="jdRosterPattern"><option value="1-week" ${(row.rosterPattern||'1-week')==='1-week'?'selected':''}>1 Week (Default)</option><option value="2-week" ${(row.rosterPattern||'1-week')==='2-week'?'selected':''}>2 Week</option></select></div></div><div class="divider"></div><h3>Work Schedule</h3><div id="jdWeek1Schedule"><h4 id="jdWeek1Title">Regular Week</h4>${scheduleInputs('jd')}</div><div id="jdWeek2Schedule"><h4>Week 2 — Pay Close Week</h4>${scheduleInputs('jd2')}</div><p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="cancelJobData" class="secondary">Cancel</button><button id="saveJobData">Save</button></div></div>`);
+    h('jobDataForm', `<div class="job-data-box"><div class="grid form-grid"><div><label>Effective Date</label><input id="jdEffectiveDate" type="date" value="${esc(row.effectiveDate||todayIso())}"><p class="small-note">First day this action applies. For a termination, the last working/payable day is the previous calendar day; for a movement, the previous position ends the day before this date.</p></div><div><label>Effective Sequence</label><input id="jdEffSeq" type="number" step="1" value="${esc(row.effectiveSequence ?? 0)}"></div><div><label>Action</label><select id="jdAction"><option ${action==='Commencement'?'selected':''}>Commencement</option><option ${action==='Variation'?'selected':''}>Variation</option><option ${action==='Movement'?'selected':''}>Movement</option><option ${action==='Termination'?'selected':''}>Termination</option></select></div><div><label>Reason</label><select id="jdReason"><option value="">Select reason</option>${reasons}</select></div></div><div class="divider"></div><div class="grid form-grid"><div><label>Position Number</label><div class="inline-field"><input id="jdPositionNumber" value="${esc(row.positionNumber||'')}"><button id="jdPositionLookup" type="button" class="icon-btn" title="Search positions">🔍</button></div></div><div><label>Position Name</label><input id="jdPositionName" readonly class="readonly" value="${esc(row.positionName||'')}"></div><div><label>Department</label><input id="jdDepartment" readonly class="readonly" value="${esc(row.department||'')}"></div><div><label>Hourly Rate</label><input id="jdHourlyRate" readonly class="readonly" value="${esc(row.hourlyRate||0)}"></div><div><label>Reports To</label><input id="jdReportsTo" readonly class="readonly" value="${esc(row.reportsTo||'')}"><p id="jdReportsToName" class="small-note">${esc(row.reportsToName||'')}</p></div></div><div class="grid form-grid"><div><label>Position Class</label><select id="jdPositionClass"><option ${row.positionClass==='Permanent'?'selected':''}>Permanent</option><option ${row.positionClass==='Fixed-Term'?'selected':''}>Fixed-Term</option><option ${row.positionClass==='Casual'?'selected':''}>Casual</option></select></div><div><label>Roster Pattern</label><select id="jdRosterPattern"><option value="1-week" ${(row.rosterPattern||'1-week')==='1-week'?'selected':''}>1 Week (Default)</option><option value="2-week" ${(row.rosterPattern||'1-week')==='2-week'?'selected':''}>2 Week</option></select></div></div><p id="jdPayControlNote" class="small-note" hidden></p><div class="divider"></div><h3>Work Schedule</h3><div id="jdWeek1Schedule"><h4 id="jdWeek1Title">Regular Week</h4>${scheduleInputs('jd')}</div><div id="jdWeek2Schedule"><h4>Week 2 — Pay Close Week</h4>${scheduleInputs('jd2')}</div><p id="jdWeeklyHours" class="small-note"></p><div class="save-row"><button id="cancelJobData" class="secondary">Cancel</button><button id="saveJobData">Save</button></div></div>`);
     setScheduleInputs('jd', row.positionClass==='Casual'?{}:(row.hoursByDayWeek1||row.hoursByDay||{}));
     setScheduleInputs('jd2', row.positionClass==='Casual'?{}:(row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay||{}));
     updateJobDataScheduleForClass();
     $('jdAction').addEventListener('change',()=>{ const draft=syncJobDataRowFromForm(Object.assign({}, row), false); draft.action=v('jdAction'); draft.reason=''; selectedJobDataDraft=draft; renderJobData(); });
     $('jdReason').addEventListener('change',()=>{ const reason=v('jdReason'); if(/Casual/.test(reason)) setv('jdPositionClass','Casual'); else if(/Fixed-Term|Fixed Term Contract/.test(reason)) setv('jdPositionClass','Fixed-Term'); else if(reason==='Permanency Confirmed' || /Permanent/.test(reason)) setv('jdPositionClass','Permanent'); updateJobDataScheduleForClass(); });
+    $('jdEffectiveDate').addEventListener('change',()=>{if(v('jdAction')==='Variation'&&['Cease Pay','Return from Cease Pay'].includes(v('jdReason')))updateJobDataScheduleForClass();});
     $('jdPositionClass').addEventListener('change',updateJobDataScheduleForClass);
     $('jdRosterPattern').addEventListener('change',updateJobDataScheduleForClass);
     $('jdPositionNumber').addEventListener('change',()=>populateJobDataPosition(v('jdPositionNumber')));
@@ -965,6 +978,8 @@
     }else h('jdWeeklyHours',`Total Weekly Hours: ${w1.toFixed(2)}`);
   }
   function updateJobDataScheduleForClass(){
+    const control=v('jdAction')==='Variation'&&['Cease Pay','Return from Cease Pay'].includes(v('jdReason'));
+    if(control){const schedule=E.activeSchedule(jobView(selectedJobDataEmp),selectedJobDataEmp,v('jdEffectiveDate'));if(schedule){setScheduleInputs('jd',schedule.hoursByDayWeek1||schedule.hoursByDay||{});setScheduleInputs('jd2',schedule.hoursByDayWeek2||schedule.hoursByDayWeek1||schedule.hoursByDay||{});setv('jdRosterPattern',schedule.rosterPattern||'1-week');}}
     const casual=v('jdPositionClass')==='Casual';
     const pattern=casual?'1-week':rosterPatternFromForm();
     if($('jdRosterPattern')){ if(casual) $('jdRosterPattern').value='1-week'; $('jdRosterPattern').disabled=casual; }
@@ -972,6 +987,9 @@
     if($('jdWeek2Schedule')) $('jdWeek2Schedule').style.display=!casual&&pattern==='2-week'?'block':'none';
     if($('jdWeek1Title')) h('jdWeek1Title',pattern==='2-week'?'Week 1 — Pay Week':'Regular Week');
     updateJobDataWeeklyHours();
+    ['jdPositionNumber','jdPositionLookup','jdPositionClass','jdRosterPattern','jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun','jd2Mon','jd2Tue','jd2Wed','jd2Thu','jd2Fri','jd2Sat','jd2Sun'].forEach(id=>{const el=$(id);if(el&&control)el.disabled=true;});
+    if($('jdPositionNumber'))$('jdPositionNumber').disabled=control;if($('jdPositionLookup'))$('jdPositionLookup').disabled=control;if($('jdPositionClass'))$('jdPositionClass').disabled=control;
+    if($('jdPayControlNote')){$('jdPayControlNote').hidden=!control;$('jdPayControlNote').textContent=v('jdReason')==='Cease Pay'?'Pay stops from this effective date. Employment, position and roster remain unchanged.':'Pay resumes from this effective date. A backdated return generates any unpaid arrears from that date; earlier held dates remain unpaid.';}
   }
   function populateJobDataPosition(num){
     const p=positionByNumber(num); if(!p){ setv('jdPositionName',''); setv('jdDepartment',''); setv('jdHourlyRate',''); setv('jdReportsTo',''); h('jdReportsToName',''); return; }
@@ -988,13 +1006,17 @@
     const existing = selectedJobDataDraft || (jobDataDisplayRows(selectedJobDataEmp)[selectedJobDataRowIndex]||{});
     let positionClass=v('jdPositionClass');
     const reason=v('jdReason');
+    if(v('jdAction')==='Variation'&&['Cease Pay','Return from Cease Pay'].includes(reason)){
+      const base=E.activeJobDataRow(jobView(selectedJobDataEmp),E.jobRecords.employee(state,selectedJobDataEmp,selectedJobRecord),v('jdEffectiveDate'))||existing,schedule=E.activeSchedule(jobView(selectedJobDataEmp),selectedJobDataEmp,v('jdEffectiveDate'));
+      return {...base,id:existing.id||uid('jobdata'),empId:selectedJobDataEmp,jobRecord:selectedJobRecord,effectiveDate:v('jdEffectiveDate'),effectiveSequence:Number(v('jdEffSeq')||0),action:'Variation',reason,saved:true,rateId:'',scheduleId:'',...(schedule?{rosterPattern:schedule.rosterPattern||'1-week',hoursByDay:schedule.hoursByDay,hoursByDayWeek1:schedule.hoursByDayWeek1||schedule.hoursByDay,hoursByDayWeek2:schedule.hoursByDayWeek2||schedule.hoursByDayWeek1||schedule.hoursByDay}:{})};
+    }
     if(reason==='Permanency Confirmed') positionClass='Permanent';
     const roster=rosterHoursFromForm(positionClass);
-    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason, positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass, rosterPattern:roster.rosterPattern, hoursByDay:roster.hoursByDay, hoursByDayWeek1:roster.hoursByDayWeek1, hoursByDayWeek2:roster.hoursByDayWeek2, saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
+    return { id:(existing&&existing.id)||uid('jobdata'), empId:selectedJobDataEmp,jobRecord:selectedJobRecord, effectiveDate:v('jdEffectiveDate'), effectiveSequence:Number(v('jdEffSeq')||0), action:v('jdAction'), reason, positionNumber:v('jdPositionNumber'), positionName:pos?pos.positionName:'', department:pos?pos.department:'', hourlyRate:pos?Number(pos.hourlyRate||0):0, reportsTo, reportsToName:reportsTo?((positionByNumber(reportsTo)||{}).positionName||''):'', positionClass, rosterPattern:roster.rosterPattern, hoursByDay:roster.hoursByDay, hoursByDayWeek1:roster.hoursByDayWeek1, hoursByDayWeek2:roster.hoursByDayWeek2, saved:true, rateId: existing.rateId || '', scheduleId: existing.scheduleId || '' };
   }
-  function flagLeaveAfterTermination(empId,terminationEffectiveDate){
+  function flagLeaveAfterTermination(empId,terminationEffectiveDate,jobRecord=0){
     const e=emp(empId); if(!e || !terminationEffectiveDate) return [];
-    const affected=(state.leaveBookings||[]).filter(l=>l.empId===empId && E.compare(l.endDate||l.startDate,terminationEffectiveDate)>=0);
+    const affected=(state.leaveBookings||[]).filter(l=>l.empId===empId && Number(l.jobRecord||0)===Number(jobRecord) && E.compare(l.endDate||l.startDate,terminationEffectiveDate)>=0);
     if(!affected.length) return [];
     affected.forEach(l=>{
       if(l.status!=='Awaiting Manager Approval'){
@@ -1030,27 +1052,35 @@
     const row=confirmedRow?.empId?confirmedRow:readJobDataForm(); const e=emp(row.empId); if(!e) return alert('Select an employee.');
     if(!row.effectiveDate) return alert('Enter an effective date.');
     if(!row.reason) return alert('Select a reason.');
-    if(row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
-    if(row.action!=='Termination' && row.positionClass!=='Casual' && rosterTotalHours(row)<=0) return alert('Enter a work schedule.');
-    if(!confirmedRow?.empId&&row.action!=='Termination'){
-      const comparison=E.operations.rosterComparison(state,row);
+    const payControl=E.isPayControlJobDataRow(row);
+    if(payControl){try{E.validatePayControlRow(jobView(row.empId,row.jobRecord||0),row);}catch(err){return alert(err.message);}}
+    if(!payControl && row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
+    if(!payControl && row.action!=='Termination' && row.positionClass!=='Casual' && rosterTotalHours(row)<=0) return alert('Enter a work schedule.');
+    if(!payControl&&!confirmedRow?.empId&&row.action!=='Termination'){
+      const comparison=E.operations.rosterComparison(jobView(row.empId,row.jobRecord||0),row);
       if(comparison.changed){
         modal('Confirm Roster Change',rosterConfirmationHtml(row,e,comparison),'<button data-close-modal class="secondary">Back to Job Data</button><button id="confirmRosterSave">Confirm and Save</button>',false);
         document.querySelector('#modalRoot .modal')?.classList.add('roster-confirm-modal');
         $('confirmRosterSave').addEventListener('click',()=>{closeModal();saveJobDataRow(row);});return;
       }
     }
-    const existing=(state.jobDataRows||[]).find(r=>r.id===row.id);
-    const appliedRow = existing ? Object.assign(existing,row) : row;
-    if(!existing) state.jobDataRows.push(row);
-    applyJobDataToEmployee(appliedRow);
-    if(appliedRow.action==='Termination') flagLeaveAfterTermination(appliedRow.empId,appliedRow.effectiveDate);
+    const transactional=payControl||E.jobRecords.multiple(state,row.empId),beforePayControl=transactional?DataStore.clone(state):null;
+    try{
+      const existing=(state.jobDataRows||[]).find(r=>r.id===row.id);
+      const appliedRow = existing ? Object.assign(existing,row) : row;
+      if(!existing) state.jobDataRows.push(row);
+      applyJobDataToEmployee(appliedRow);
+      if(appliedRow.action==='Termination') flagLeaveAfterTermination(appliedRow.empId,appliedRow.effectiveDate,appliedRow.jobRecord||0);
+      if(E.jobRecords.multiple(state,row.empId))calculateAllForCurrent();
+      if(transactional&&!DataStore.save(state))throw Error('Unable to save the Job Data row. Changes have been rolled back.');
+    }catch(error){if(!transactional)throw error;Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,beforePayControl);return alert(error.message);}
     selectedJobDataDraft=null;
     selectedJobDataRowIndex=0;
-    save(); calculateAllForCurrent(); log(`Job Data saved for ${E.employeeDisplayName(e)}`); renderAll(); toast('Job Data saved');
+    if(!transactional)save(); calculateAllForCurrent(); log(`Job Data saved for ${E.employeeDisplayName(e)}`); renderAll(); toast('Job Data saved');
   }
   function applyJobDataToEmployee(row){
-    const e=emp(row.empId); if(!e) return;
+    const e=E.jobRecords.multiple(state,row.empId)?E.jobRecords.employee(state,row.empId,row.jobRecord||0):emp(row.empId); if(!e) return;
+    if(E.isPayControlJobDataRow(row)){addJobEvent(e.id,'Job Data',row.effectiveDate,`Variation — ${row.reason}`,'jobData',row.id);return;}
     if(!Array.isArray(e.employmentSegments)) e.employmentSegments=[];
     state.payRates = (state.payRates||[]).filter(r=>!(r.empId===e.id && r.jobDataId===row.id && r.id!==row.rateId));
     state.schedules = (state.schedules||[]).filter(r=>!(r.empId===e.id && r.jobDataId===row.id && r.id!==row.scheduleId));
@@ -1095,28 +1125,45 @@
     // Higher Duties Allowance is the difference between the acting position and the
     // substantive Permanent rate, so storing an acting row as Permanent makes the
     // differential collapse to zero.
-    const isTemporaryActingMovement=E.isActingJobDataRow(state,row);
-    const rateRow={id:rateId,empId:e.id,changeType:isTemporaryActingMovement?'Temporary':'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),effectiveSequence:Number(row.effectiveSequence||0),jobDataId:row.id};
+    const isTemporaryActingMovement=E.isActingJobDataRow(jobView(e.id,row.jobRecord||0),row);
+    const rateRow={id:rateId,empId:e.id,jobRecord:Number(row.jobRecord||0),changeType:isTemporaryActingMovement?'Temporary':'Permanent',effectiveDate:row.effectiveDate,endDate:'',position:row.positionName,hourlyRate:Number(row.hourlyRate||0),effectiveSequence:Number(row.effectiveSequence||0),jobDataId:row.id};
     if(existingRate) Object.assign(existingRate,rateRow); else state.payRates.push(rateRow);
     const schedId=row.scheduleId||uid('schedule'); row.scheduleId=schedId;
     const existingSched=(state.schedules||[]).find(r=>r.id===schedId);
-    const schedRow={id:schedId,empId:e.id,effectiveDate:row.effectiveDate,effectiveSequence:Number(row.effectiveSequence||0),rosterPattern:row.rosterPattern||'1-week',hoursByDay:row.hoursByDay,hoursByDayWeek1:row.hoursByDayWeek1||row.hoursByDay,hoursByDayWeek2:row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay,jobDataId:row.id};
+    const schedRow={id:schedId,empId:e.id,jobRecord:Number(row.jobRecord||0),effectiveDate:row.effectiveDate,effectiveSequence:Number(row.effectiveSequence||0),rosterPattern:row.rosterPattern||'1-week',hoursByDay:row.hoursByDay,hoursByDayWeek1:row.hoursByDayWeek1||row.hoursByDay,hoursByDayWeek2:row.hoursByDayWeek2||row.hoursByDayWeek1||row.hoursByDay,jobDataId:row.id};
     if(existingSched) Object.assign(existingSched,schedRow); else state.schedules.push(schedRow);
     addJobEvent(e.id,'Job Data',row.effectiveDate,`${row.action} — ${row.reason} — ${row.positionName} — ${row.rosterPattern==='2-week'?`${weeklyHours(row.hoursByDayWeek1||row.hoursByDay).toFixed(2)} hours Week 1 / ${weeklyHours(row.hoursByDayWeek2||row.hoursByDay).toFixed(2)} hours Week 2`:`${weeklyHours(row.hoursByDay).toFixed(2)} hours/week`}`,'jobData',row.id);
   }
   function removeJobDataRow(row){
-    if(!row) return;
-    if(row.saved===false || (selectedJobDataDraft && row.id===selectedJobDataDraft.id && !(state.jobDataRows||[]).some(r=>r.id===row.id))){ selectedJobDataDraft=null; selectedJobDataRowIndex=0; renderJobData(); return; }
-    confirmModal('Remove this Job Data row? This may result in pay recalculations.', 'Yes', ()=>{ state.jobDataRows=state.jobDataRows.filter(r=>r.id!==row.id); if(row.rateId) state.payRates=state.payRates.filter(r=>r.id!==row.rateId); if(row.scheduleId) state.schedules=state.schedules.filter(r=>r.id!==row.scheduleId); state.jobEvents=state.jobEvents.filter(j=>j.refId!==row.id); if(selectedJobDataDraft && selectedJobDataDraft.id===row.id) selectedJobDataDraft=null; save(); calculateAllForCurrent(); selectedJobDataRowIndex=0; renderAll(); });
+    if(!row)return;
+    const draft=row.saved===false||!!(selectedJobDataDraft&&row.id===selectedJobDataDraft.id&&!(state.jobDataRows||[]).some(r=>r.id===row.id));
+    const employee=emp(row.empId);
+    modal('Delete Job Data Row',`<p>Are you sure you want to delete this ${draft?'unsaved ':''}Job Data row?</p><dl class="job-data-delete-summary"><div><dt>Employee</dt><dd>${esc(employee?E.employeeDisplayName(employee):row.empId)} (${esc(row.empId)})</dd></div><div><dt>Effective date</dt><dd>${esc(E.fmtPay(row.effectiveDate))} · Sequence ${esc(row.effectiveSequence??0)}</dd></div><div><dt>Action / reason</dt><dd>${esc(row.action||'—')} · ${esc(row.reason||'Not selected')}</dd></div></dl><p class="small-note">${draft?'The unsaved row will be discarded.':'Deleting this row will recalculate pay and may change current earnings or arrears.'}</p>`, '<button class="secondary" data-close-modal>Cancel</button><button id="jobDataDeleteConfirm" class="danger">Delete Row</button>',true);
+    $('jobDataDeleteConfirm').addEventListener('click',()=>{
+      if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');
+      if(draft){selectedJobDataDraft=null;selectedJobDataRowIndex=0;closeModal();renderJobData();return;}
+      if(!(state.jobDataRows||[]).some(r=>r.id===row.id))return alert('This Job Data row no longer exists.');
+      const before=DataStore.clone(state);
+      try{
+        state.jobDataRows=state.jobDataRows.filter(r=>r.id!==row.id);
+        if(row.rateId)state.payRates=state.payRates.filter(r=>r.id!==row.rateId);
+        if(row.scheduleId)state.schedules=state.schedules.filter(r=>r.id!==row.scheduleId);
+        state.jobEvents=state.jobEvents.filter(j=>j.refId!==row.id);
+        calculateAllForCurrent();
+        if(!DataStore.save(state))throw Error('Unable to delete this row. Changes have been rolled back.');
+      }catch(error){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,before);return alert(error.message);}
+      if(selectedJobDataDraft?.id===row.id)selectedJobDataDraft=null;
+      selectedJobDataRowIndex=0;closeModal();renderAll();toast('Job Data row deleted');
+    });
   }
 
   function renderJobSummary(){
     h('jobSummary', `<h2>Job Summary</h2><p class="small-note">Job Summary is read-only. It lists saved Job Data rows.</p><div class="controls">${showTerminatedControl('jobShowTerminated','jobSummary')}</div><div class="grid form-grid"><div><label>Employee</label><select id="jobEmp">${employeeOptions(employeeList(showTerminatedByTab.jobSummary))}</select></div></div><div id="jobOutput"></div>`);
     bindShowTerminated('jobShowTerminated','jobSummary',renderJobSummary); $('jobEmp').addEventListener('change',renderJobOutput); renderJobOutput();
   }
-  function jobSummaryHtml(id){
-    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id&&r.saved!==false).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
-    return rows.length?table(['Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'],rows.map(r=>[E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>';
+  function jobSummaryHtml(id,allowedRecords=null){
+    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id&&r.saved!==false&&(!allowedRecords||allowedRecords.includes(Number(r.jobRecord||0)))).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    return rows.length?table([...(E.jobRecords.records(state,id).length>1?['Job Record']:[]),'Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'],rows.map(r=>[...(E.jobRecords.records(state,id).length>1?[Number(r.jobRecord||0)]:[]),E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>';
   }
   function renderJobOutput(){const id=v('jobEmp');h('jobOutput',id?jobSummaryHtml(id):'<p class="small-note">Select an employee.</p>');}
 
@@ -1130,9 +1177,9 @@
   }
   function additionalCycle(){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const idx=Math.min(currentIndex+1,Math.max(0,currentIndex+additionalPeriodOffset)); return E.PAY_CYCLES[idx] || currentCycle(); }
   function moveAdditionalPeriod(n){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const nextOffset=additionalPeriodOffset+n; const idx=currentIndex+nextOffset; if(idx<0 || idx>currentIndex+1) return; additionalPeriodOffset=nextOffset; loadAdditionalDraft(); }
-  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); if($('addCurrentPeriod')) $('addCurrentPeriod').disabled=c.id===currentCycle().id; const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&!a.sourceTimesheetId&&!a.onCallId&&(!paymentManagerId||S.canManageAdditional(a))).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
+  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); if($('addCurrentPeriod')) $('addCurrentPeriod').disabled=c.id===currentCycle().id; const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&!a.sourceTimesheetId&&!a.onCallId&&(!paymentManagerId||S.canManageAdditional(a)&&E.jobRecords.eligibleForManager(state,paymentManagerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)))).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
   function markAdditionalDirty(){ additionalDirty=true; h('additionalNote','Unsaved changes. Additional earnings will not appear on payslips until saved.'); }
-  function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
+  function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),jobRecord:paymentManagerId?(E.jobRecords.eligibleForManager(state,paymentManagerId,v('addEmp'))[0]?.recordNumber??0):0,cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function casualPositionOptions(a){
     const selected=String((a&&a.positionNumber)||'');
     const positions=(state.positions||[]).filter(p=>p.active!==false || String(p.positionNumber)===selected).slice().sort((x,y)=>String(x.positionName||'').localeCompare(String(y.positionName||'')));
@@ -1153,11 +1200,11 @@
     }
     if(a.earningType==='Higher Duties Allowance'){
       const employee=emp(v('addEmp')||a.empId); if(!employee) return 0;
-      const normal=E.substantivePayRate(state,employee,a.startDate||c.start);
+      const normal=E.substantivePayRate(jobView(employee.id,a.jobRecord||0),employee,a.startDate||c.start);
       const higher=Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
       return E.round2(Number(a.hours||0)*Math.max(0,higher-Number(normal.hourlyRate||0)));
     }
-    const rate=E.activePayRate(state,v('addEmp')||a.empId,a.startDate||c.start);
+    const rate=E.activePayRate(jobView(v('addEmp')||a.empId,a.jobRecord||0),v('addEmp')||a.empId,a.startDate||c.start);
     const multiplier=a.earningType==='Overtime 1.5'?1.5:a.earningType==='Overtime 2.0'?2:1;
     return E.round2(Number(a.hours||0)*Number(rate.hourlyRate||0)*multiplier);
   }
@@ -1183,10 +1230,10 @@
       const options=(paymentManagerId?S.EARNINGS:['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement']).map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
       const positionBased=isCasual||isHigherDuties;
       const positionSelect=`<select data-add-field="${i}|positionNumber" ${positionBased?'':'disabled class="readonly"'}>${positionBased?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
-      const onCallControls=a.earningType==='On-call Allowance'?'<label>Allowance per hour<input type="number" readonly class="readonly" value="'+esc(E.onCallAllowanceRate(state,a).toFixed(2))+'" data-add-field="'+i+'|unitRate"></label>':'';
-      return [`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,onCallControls+`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
+      const jobCell=E.jobRecords.records(state,v('addEmp')).length>1?[`<select data-add-field="${i}|jobRecord" ${frozenCash?'disabled':''}>${recordOptions(v('addEmp'),a.jobRecord||0,paymentManagerId)}</select>`]:[];
+      return [...jobCell,`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
-    h('addRows', table(['Earnings Type','Position','Start Date','End Date','Hours','Amount','Delete'], rows));
+    h('addRows', table([...(E.jobRecords.records(state,v('addEmp')).length>1?['Job Record']:[]),'Earnings Type','Position','Start Date','End Date','Hours','Amount','Delete'], rows));
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
       if(additionalRowsRendering)return;
       const [i,field]=el.dataset.addField.split('|'); const row=additionalDraftRows[Number(i)];
@@ -1223,6 +1270,7 @@
     const c=additionalCycle();
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
+      try{E.jobRecords.record(state,empId,a.jobRecord||0);if(managerId&&!E.jobRecords.eligibleForManager(state,managerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)))throw Error('You do not have access to this job record.');}catch(err){return alert(err.message);}
       if((a.earningType||'') !== 'Overpayment Adjustment' && (!a.startDate || !a.endDate || E.compare(a.startDate,c.start)<0 || E.compare(a.endDate,c.end)>0 || E.compare(a.startDate,a.endDate)>0)) return alert('Additional earning dates must fall within the selected pay period.');
       if((a.earningType||'') === 'Additional Hours' && emp(empId)?.startDate && E.compare(a.startDate, emp(empId).startDate) < 0) return alert("These additional hours are before the employee's start date and cannot be paid.");
       if(['Travel Allowance','Bonus','Reimbursement'].includes(a.earningType||'') && Number(a.amount||0)<0) return alert(`${a.earningType} amount cannot be negative.`);
@@ -1235,7 +1283,7 @@
       if(a.earningType==='Higher Duties Allowance'){
         const pos=positionByNumber(a.positionNumber); if(!pos) return alert('Select a Position for Higher Duties Allowance.');
         if(Number(a.hours||0)<=0) return alert('Enter the hours for Higher Duties Allowance.');
-        const employee=emp(empId); const normal=E.substantivePayRate(state,employee,a.startDate||c.start); const higher=Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
+        const employee=emp(empId); const normal=E.substantivePayRate(jobView(employee.id,a.jobRecord||0),employee,a.startDate||c.start); const higher=Number(E.positionHourlyRate(state,a.positionNumber,a.startDate||c.start)||0);
         if(higher<=Number(normal.hourlyRate||0)) return alert("The selected position rate must be higher than the employee's normal rate.");
       }
     }
@@ -1250,7 +1298,7 @@
         const backup=DataStore.clone(state);
         try{
           const source=stagedRows.map(a=>Object.assign({},a,{empId,cycleId:c.id}));
-          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&S.canManageAdditional(a));
+          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&S.canManageAdditional(a)&&E.jobRecords.eligibleForManager(state,managerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)));
 for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assign({},a,{id:existing.some(old=>old.id===a.id)?a.id:undefined}));a.id=saved.id;}
           const ids=new Set(source.map(a=>a.id));for(const a of existing)if(!ids.has(a.id))S.deleteAdditional(state,managerId,a.id);
           calculateAllForCurrent();
@@ -1291,7 +1339,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     }).join('');
   }
   function renderDeductions(){
-    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="cancelDeductions" class="secondary">Cancel</button><button id="saveDeductionsBtn">Save</button></div>`);
+    h('deductions', `<h2>Deductions</h2><p id="deductionsNote" class="small-note">Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Each deduction applies to its assigned job record and uses that record’s earnings. Existing deductions belong to Job 0. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.</p><div class="controls">${showTerminatedControl('dedShowTerminated','deductions')}</div><div class="grid form-grid"><div><label>Employee</label><select id="dedEmp">${employeeOptions(employeeList(showTerminatedByTab.deductions))}</select></div></div><div class="controls" style="margin-top:14px"><button id="addDeductionBtn">Add New Deduction</button></div><div id="deductionsTable"></div><div class="save-row"><button id="cancelDeductions" class="secondary">Cancel</button><button id="saveDeductionsBtn">Save</button></div>`);
     bindShowTerminated('dedShowTerminated','deductions',renderDeductions);
     if(selectedDeductionEmp && employeeList(showTerminatedByTab.deductions).some(e=>e.id===selectedDeductionEmp)) setv('dedEmp',selectedDeductionEmp);
     $('dedEmp').addEventListener('change',()=>{ selectedDeductionEmp=v('dedEmp'); loadDeductionDraft(); });
@@ -1316,7 +1364,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
   function openDeductionModal(){
     const empId=selectedDeductionEmp || v('dedEmp'); if(!empId) return alert('Select an employee first.');
     const c=currentCycle();
-    modal('Add New Deduction', `<div class="grid form-grid"><div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option><option>Salary Packaging - Pre-Tax</option><option>Salary Packaging - Post-Tax</option><option>Union Fees</option><option>Recovery Deduction</option><option>Urgent Pay</option></select></div><div><label>Amount (fixed repayment per pay for recovery)</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div><div id="dedDebtField" hidden><label>Opening Debt</label><input id="dedOpeningDebt" type="number" step="0.01" min="0"><p class="small-note">Post-tax recovery only. Balance reduces at pay finalisation and stops when repaid.</p></div></div>`, `<button id="stageDeduction">Add to Table</button>`, true);
+    modal('Add New Deduction', `<div class="grid form-grid">${E.jobRecords.records(state,empId).length>1?`<div class="full-line"><label>Job Record</label><select id="dedJobRecord">${recordOptions(empId,0)}</select></div>`:''}<div class="full-line"><label>Effective Date</label><select id="dedStart">${deductionCycleOptions('start', c.start)}</select></div><div class="full-line"><label>End Date</label><select id="dedEnd"><option value="">Leave blank — deduction continues each pay until an end date is added</option>${deductionCycleOptions('end','')}</select><p class="small-note">End date can be left blank to keep deduction continuous.</p></div><div class="full-line"><label>Deduction Type</label><select id="dedType"><option>Pre-tax Super Deduction</option><option>Post-Tax Super Deduction</option><option>Salary Packaging - Pre-Tax</option><option>Salary Packaging - Post-Tax</option><option>Union Fees</option><option>Recovery Deduction</option><option>Urgent Pay</option></select></div><div><label>Amount (fixed repayment per pay for recovery)</label><input id="dedAmount" type="number" step="0.01" min="0"></div><div><label>Percentage</label><input id="dedPercentage" type="number" step="0.01" min="0"></div><div id="dedDebtField" hidden><label>Opening Debt</label><input id="dedOpeningDebt" type="number" step="0.01" min="0"><p class="small-note">Post-tax recovery only. Balance reduces at pay finalisation and stops when repaid.</p></div></div>`, `<button id="stageDeduction">Add to Table</button>`, true);
     const sync=()=>{
       if(v('dedType')==='Urgent Pay'){setv('dedEnd',E.PAY_CYCLES.find(c=>c.start===v('dedStart'))?.end||'');$('dedEnd').disabled=true;}else $('dedEnd').disabled=false;
       $('dedDebtField').hidden=v('dedType')!=='Recovery Deduction';
@@ -1336,7 +1384,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     if(deductionType==='Union Fees' && String(percentage).trim()!=='') return alert('Union Fees cannot be entered as a Percentage.');
     if(amount && percentage) return alert('Enter an Amount OR Percentage, not both.');
     if(!amount && !percentage) return alert('Enter either an Amount or Percentage.');
-    const draft={ id:uid('ded'), empId, startDate:start, endDate:end, deductionType, amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false };
+    const draft={ id:uid('ded'), empId, jobRecord:Number(v('dedJobRecord')||0), startDate:start, endDate:end, deductionType, amount:amount===''?'':Number(amount||0), percentage:percentage===''?'':Number(percentage||0), saved:false, deleted:false };
     if(deductionType==='Recovery Deduction') draft.openingDebt=Number(v('dedOpeningDebt'));
     try{E.urgentPay.validateDeduction(state,draft);E.validateRecoveryDeduction(draft);}catch(err){return alert(err.message);}
     const dateValidation=E.validateDeductionDates(state,draft,true); if(!dateValidation.ok) return alert(dateValidation.message);
@@ -1352,17 +1400,17 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     return !E.isFinalised(state,currentCycle()) && !!startCycle && Number(startCycle.id)===Number(currentCycle().id);
   }
   function renderDeductionsTable(){
-    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.'); return; }
-    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.');
+    const empId=selectedDeductionEmp || v('dedEmp'); if(!$('deductionsTable')) return; if(!empId){ h('deductionsTable','<p class="small-note">Select an employee.</p>'); h('deductionsNote','Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Each deduction applies to its assigned job record and uses that record’s earnings. Existing deductions belong to Job 0. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.'); return; }
+    h('deductionsNote', deductionDirty?'Unsaved changes. Deduction changes will not update Job Summary, payroll calculations or payslips until Save is pressed.':'Use this tab for super deductions, salary packaging, Union Fees, Recovery Deductions and Urgent Pay. Urgent Pay is a one-time post-tax payment advance and locks when its payment file is generated. Salary packaging is separate from super contributions. Each deduction applies to its assigned job record and uses that record’s earnings. Existing deductions belong to Job 0. Multiple deductions may be active at the same time. A blank End Date means the deduction continues until it is end-dated or removed. Deductions can start in the current or a future pay period. Existing deductions can be end-dated in the most recent closed pay period.');
     const rows=(deductionDraftRows||[]).filter(d=>d.empId===empId && d.deleted!==true).sort((a,b)=>E.compare(a.startDate,b.startDate)).map(d=>{
       const endCell=deductionCanEditEnd(d)?`<select data-ded-end="${esc(d.id)}"><option value="" ${!d.endDate?'selected':''}></option>${deductionCycleOptions('end',d.endDate||'')}</select>`:E.fmtPay(d.endDate);
       const editUrgent=d.deductionType==='Urgent Pay'&&!E.urgentPay.locked(state,d)&&deductionCanDelete(d)?'<button data-edit-urgent="'+esc(d.id)+'" class="secondary">Edit Amount</button>':'';
       const amountCell=editUrgent+(d.amount!==''&&d.amount!=null?E.money(d.amount):'<span class="muted">—</span>');
       const percentageCell=d.percentage!==''&&d.percentage!=null?`${Number(d.percentage).toFixed(2)}%`:'<span class="muted">—</span>';
       const recovery=d.deductionType==='Recovery Deduction'?E.recoveryBalance(state,d):null;
-      return [esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,recovery?E.money(recovery.opening):'—',recovery?E.money(recovery.repaid):'—',recovery?E.money(recovery.remaining):'—',deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:(E.urgentPay.locked(state,d)?'<span class="muted">Urgent Pay processed — locked</span>':'<span class="muted">End-date only</span>')];
+      return [...(E.jobRecords.records(state,empId).length>1?[esc(E.jobRecords.options(state,empId,d.jobRecord||0).find(r=>r.selected)?.label||('Job '+(d.jobRecord||0)))]:[]),esc(d.deductionType),E.fmtPay(d.startDate),endCell,amountCell,percentageCell,recovery?E.money(recovery.opening):'—',recovery?E.money(recovery.repaid):'—',recovery?E.money(recovery.remaining):'—',deductionCanDelete(d)?`<button class="danger" data-del-ded="${esc(d.id)}">Delete</button>`:(E.urgentPay.locked(state,d)?'<span class="muted">Urgent Pay processed — locked</span>':'<span class="muted">End-date only</span>')];
     });
-    h('deductionsTable', rows.length?table(['Deduction Type','Start Date','End Date','Amount','Percentage','Opening Debt','Repaid','Remaining','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
+    h('deductionsTable', rows.length?table([...(E.jobRecords.records(state,empId).length>1?['Job Record']:[]),'Deduction Type','Start Date','End Date','Amount','Percentage','Opening Debt','Repaid','Remaining','Delete'],rows):'<p class="small-note">No deductions recorded for this employee.</p>');
     document.querySelectorAll('[data-edit-urgent]').forEach(b=>b.addEventListener('click',()=>{
       const d=deductionDraftRows.find(d=>d.id===b.dataset.editUrgent);if(!d||E.urgentPay.locked(state,d))return alert('This Urgent Pay deduction is locked.');
       modal('Edit Urgent Pay Amount','<label>Amount<input id="editUrgentAmount" type="number" min="0.01" step="0.01" value="'+Number(d.amount||0)+'"></label>','<button id="stageUrgentAmount">Update Draft</button>',true);
@@ -1396,6 +1444,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     try{E.urgentPay.validateDraftSet(state,empId,deductionDraftRows);}catch(err){return alert(err.message);}
     const persistedById=new Map((state.deductions||[]).filter(d=>d.empId===empId).map(d=>[d.id,d]));
     for(const d of deductionDraftRows.filter(x=>x.empId===empId && x.deleted!==true)){
+      if(!E.jobRecords.records(state,empId).some(r=>r.recordNumber===Number(d.jobRecord||0)))return alert('Select a valid job record for each deduction.');
       d.endDate=String(d.endDate||'').trim();
       const persisted=persistedById.get(d.id);
       try{E.validateRecoveryDeduction(d);}catch(err){return alert(err.message);}
@@ -1486,7 +1535,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     const from=leaveFrom===null?E.addYearsClamped(todayIso(),-2):leaveFrom,to=leaveTo;
     const list=state.leaveBookings.filter(l=>leaveFilterEmp&&l.empId===leaveFilterEmp&&(!to||l.startDate<=to)&&(!from||l.endDate>=from)&&(!leaveTypeFilter||l.type===leaveTypeFilter)&&(!leaveStatusFilter||l.status===leaveStatusFilter)).sort((a,b)=>b.startDate.localeCompare(a.startDate));
     const types=[...new Set(state.leaveBookings.map(l=>l.type))].sort(),e=emp(leaveFilterEmp),b=e?E.projectedBalances(state,e,currentCycle(),false):null;
-    h('leave',`<h2>Leave</h2><div class="grid form-grid"><label>Search employees<input id="leaveEmployeeSearch" type="search" placeholder="Name or employee ID"></label><label>Employee<select id="leaveSelectedEmp">${employeeOptions(people)}</select></label><div>${showTerminatedControl('leavePageTerminated','leave')}</div></div>${e?`<div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="secondary">Yearly Absence Calendar</button></div>${leaveBalanceCardsHtml(b)}<div class="grid form-grid"><label>From date<input id="leaveFilterFrom" type="date" value="${esc(from)}"></label><label>To date<input id="leaveFilterTo" type="date" value="${esc(to)}"></label><label>Leave type<select id="leaveFilterType"><option value="">All leave types</option>${types.map(t=>`<option ${t===leaveTypeFilter?'selected':''}>${esc(t)}</option>`).join('')}</select></label><label>Approval status<select id="leaveFilterStatus"><option value="">All statuses</option>${['Approved','Awaiting Manager Approval','Denied'].map(t=>`<option ${t===leaveStatusFilter?'selected':''}>${t}</option>`).join('')}</select></label></div><button id="applyLeaveFilters" class="secondary">Apply Filters</button><div id="leaveList">${table(['Type','Start','End','Hours','Status','Action'],list.map(l=>[esc(l.type==='LWOP'?'Leave Without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours).toFixed(2),leaveStatusButton(l),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`+((l.attachments||[]).length?'<button data-leave-files="'+esc(l.id)+'">Documents ('+l.attachments.length+')</button>':'')]))}</div><div id="leaveCalendar"></div>`:'<p>Select an employee to view and book leave.</p>'}`);
+    h('leave',`<h2>Leave</h2><div class="grid form-grid"><label>Search employees<input id="leaveEmployeeSearch" type="search" placeholder="Name or employee ID"></label><label>Employee<select id="leaveSelectedEmp">${employeeOptions(people)}</select></label><div>${showTerminatedControl('leavePageTerminated','leave')}</div></div>${e?`<div class="controls"><button id="bookLeaveBtn">Book Leave</button><button id="absenceCalendarBtn" class="secondary">Yearly Absence Calendar</button></div>${leaveBalanceCardsHtml(b)}<div class="grid form-grid"><label>From date<input id="leaveFilterFrom" type="date" value="${esc(from)}"></label><label>To date<input id="leaveFilterTo" type="date" value="${esc(to)}"></label><label>Leave type<select id="leaveFilterType"><option value="">All leave types</option>${types.map(t=>`<option ${t===leaveTypeFilter?'selected':''}>${esc(t)}</option>`).join('')}</select></label><label>Approval status<select id="leaveFilterStatus"><option value="">All statuses</option>${['Approved','Awaiting Manager Approval','Denied'].map(t=>`<option ${t===leaveStatusFilter?'selected':''}>${t}</option>`).join('')}</select></label></div><button id="applyLeaveFilters" class="secondary">Apply Filters</button><div id="leaveList">${table([...(E.jobRecords.records(state,e.id).length>1?['Job Record']:[]),'Type','Start','End','Hours','Status','Action'],list.map(l=>[...(E.jobRecords.records(state,e.id).length>1?[Number(l.jobRecord||0)]:[]),esc(l.type==='LWOP'?'Leave Without Pay':l.type),E.fmtPay(l.startDate),E.fmtPay(l.endDate),Number(l.hours).toFixed(2),leaveStatusButton(l),`<button class="danger" data-del-leave="${esc(l.id)}">Delete</button>`+((l.attachments||[]).length?'<button data-leave-files="'+esc(l.id)+'">Documents ('+l.attachments.length+')</button>':'')]))}</div><div id="leaveCalendar"></div>`:'<p>Select an employee to view and book leave.</p>'}`);
     setv('leaveSelectedEmp',leaveFilterEmp);$('leaveSelectedEmp').addEventListener('change',()=>{leaveFilterEmp=v('leaveSelectedEmp');renderLeave();});
     $('leaveEmployeeSearch').addEventListener('input',()=>{const q=v('leaveEmployeeSearch').toLowerCase();h('leaveSelectedEmp',employeeOptions(people.filter(e=>(E.employeeDisplayName(e)+' '+E.employeeName(e)+' '+e.id).toLowerCase().includes(q))));setv('leaveSelectedEmp',leaveFilterEmp);});
     bindShowTerminated('leavePageTerminated','leave',renderLeave);if(!e)return;
@@ -1500,7 +1549,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     document.querySelectorAll('[data-del-leave]').forEach(b=>b.addEventListener('click',()=>confirmModal('Delete this leave entry?','Yes',()=>deleteLeaveEntry(b.dataset.delLeave))));document.querySelectorAll('[data-leave-status]').forEach(el=>el.addEventListener('change',()=>setLeaveStatus(el.dataset.leaveStatus,el.value)));
   }
   function openLeaveModal(){
-    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Workers Compensation Leave</option><option>Suspension with Pay</option><option>Suspension without Pay</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option><option>Absent Without Leave</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><label>Supporting documents<input id="leaveAttachments" type="file" multiple></label><p class="small-note">Up to five files, 1 MB each and 2 MB total. Attachments are optional and do not replace the Evidence Provided selection.</p><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
+    modal('Book Leave', `<div class="leave-booking-form"><div class="full-line">${showTerminatedControl('leaveBookShowTerminated','leave')}</div><div class="full-line"><label>Employee</label><select id="leaveEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select></div><div id="leaveJobPicker" class="full-line"></div><div class="full-line"><label>Leave Type</label><select id="leaveType"><option>Annual Leave</option><option>Personal Leave</option><option>Long Service Leave</option><option>Workers Compensation Leave</option><option>Suspension with Pay</option><option>Suspension without Pay</option><option>Bereavement Leave</option><option>Family and Domestic Violence Leave</option><option>Parental Leave - Paid</option><option>Parental Leave - Unpaid</option><option>Parental Leave - Unpaid Extension</option><option value="LWOP">Leave Without Pay</option><option>Absent Without Leave</option></select><p id="leaveBalanceNote" class="small-note"></p></div><div id="parentalPayOptionRow" class="full-line" style="display:none"><label>Paid Parental Leave Option</label><select id="parentalPayOption"><option>Full Pay</option><option>Half Pay</option></select></div><div class="form-spacer"></div><div class="grid form-grid"><div><label>Start Date</label><input id="leaveStart" type="date"></div><div><label>End Date</label><input id="leaveEnd" type="date"></div></div><div class="full-line"><label>Absence Duration (Hours)</label><input id="leaveDuration" type="number" step="0.01" readonly value="0.00"></div><p id="annualForecastNote" class="small-note" style="display:none"></p><div id="personalEvidenceRow" class="full-line" style="display:none"><label><input id="leaveEvidenceProvided" type="checkbox"> Evidence Provided?</label></div><p id="fdvPrivacyNote" class="small-note" style="display:none">This is a confidential leave type. The balance is shown here only for authorised booking purposes and will not appear on the payslip or Absence Balance.</p></div><label>Supporting documents<input id="leaveAttachments" type="file" multiple></label><p class="small-note">Up to five files, 1 MB each and 2 MB total. Attachments are optional and do not replace the Evidence Provided selection.</p><p id="leaveDurationNote" class="small-note">Only scheduled work days deduct leave credits. Public holidays and non-rostered days count as 0 hours.</p>`, `<button id="saveLeave">Book Leave</button>`, true);
     ['leaveEmp','leaveType','leaveStart','parentalPayOption'].forEach(id=>{
       $(id).addEventListener('change',()=>{
         if(E.isParentalLeaveType(v('leaveType'))){
@@ -1516,8 +1565,10 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
   }
   function updateLeaveDuration(resetValue=true){
     if(!$('leaveDuration')) return;
+    const selectedId=v('leaveEmp'),old=$('leaveJobRecord');if(selectedId&&E.jobRecords.records(state,selectedId).length>1&&(!old||old.dataset.employee!==selectedId)){h('leaveJobPicker',`<label>Job Record<select id="leaveJobRecord" data-employee="${esc(selectedId)}">${recordOptions(selectedId,0)}</select></label>`);$('leaveJobRecord').addEventListener('change',()=>updateLeaveDuration());}else if(!selectedId||E.jobRecords.records(state,selectedId).length<=1)h('leaveJobPicker','');
+    const leaveView=selectedId?jobView(selectedId,Number(v('leaveJobRecord')||0)):state;
     const evidence=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
-    const basic=E.validateLeaveBooking(state,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence,payOption:v('parentalPayOption')||'Full Pay'});
+    const basic=E.validateLeaveBooking(leaveView,v('leaveEmp'),v('leaveType'),v('leaveStart'),v('leaveEnd'),undefined,undefined,{evidenceProvided:evidence,payOption:v('parentalPayOption')||'Full Pay'});
     const duration=$('leaveDuration');
     const single=v('leaveStart') && v('leaveStart')===v('leaveEnd');
     const editable=single && ['Annual Leave','Personal Leave','LWOP','Absent Without Leave','Family and Domestic Violence Leave','Workers Compensation Leave','Suspension with Pay','Suspension without Pay'].includes(v('leaveType')) && basic.partialAllowed;
@@ -1576,9 +1627,9 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     const evidenceProvided=!!($('leaveEvidenceProvided')&&$('leaveEvidenceProvided').checked);
     const payOption=v('leaveType')==='Parental Leave - Paid'?(v('parentalPayOption')||'Full Pay'):'';
     let result;
-    try{result=S.validateRequest(state,{empId:v('leaveEmp'),type:v('leaveType'),startDate:v('leaveStart'),endDate:v('leaveEnd'),requestedHours:requested,evidenceProvided,payOption});}catch(err){return alert(err.message);}
+    try{result=S.validateRequest(state,{empId:v('leaveEmp'),jobRecord:Number(v('leaveJobRecord')||0),type:v('leaveType'),startDate:v('leaveStart'),endDate:v('leaveEnd'),requestedHours:requested,evidenceProvided,payOption});}catch(err){return alert(err.message);}
     const leaveBackup=DataStore.clone(state);
-    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), attachments, hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved',source:'Payroll Management',submittedBy:currentUserId,approverId:'payroll',approverName:'Payroll', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
+    state.leaveBookings.push({ id:uid('leave'), empId:v('leaveEmp'),jobRecord:Number(v('leaveJobRecord')||0), type:v('leaveType'), startDate:v('leaveStart'), endDate:v('leaveEnd'), attachments, hours:result.hours, requestedHours:requested, workingDays:result.workingDays, evidenceProvided, payOption, confidential:v('leaveType')==='Family and Domestic Violence Leave', forecastApproved:v('leaveType')==='Annual Leave'&&result.forecastApproved===true, forecastBalanceBefore:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.availableBefore:'', forecastBalanceAfter:v('leaveType')==='Annual Leave'&&result.forecast?result.forecast.balanceAfter:'', forecastApprovedAtCycleId:v('leaveType')==='Annual Leave'&&result.forecastApproved===true?currentCycle().id:'', status:'Approved',source:'Payroll Management',submittedBy:currentUserId,approverId:'payroll',approverName:'Payroll', statusHistory:[{status:'Approved',changedAt:(new Date()).toISOString(),source:'Payroll Management booking'}] });
     if(!DataStore.save(state)){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,leaveBackup);return alert('Unable to save leave and documents. Please try again.');} closeModal(); calculateAllForCurrent(); log(`${v('leaveType')==='LWOP'?'Leave Without Pay':v('leaveType')} booked`); renderAll();
   }
   function openLeaveFilter(){ modal('Filter Leave', `${showTerminatedControl('leaveFilterShowTerminated','leave')}<label>Employee</label><select id="filterEmp">${employeeOptions(employeeList(showTerminatedByTab.leave))}</select>`, `<button id="applyFilter" class="teal">Apply Filter</button><button id="clearFilter" class="secondary">Clear Filter</button>`, true); bindShowTerminated('leaveFilterShowTerminated','leave',openLeaveFilter); $('applyFilter').addEventListener('click',()=>{ leaveFilterEmp=v('filterEmp'); closeModal(); renderLeave(); }); $('clearFilter').addEventListener('click',()=>{ leaveFilterEmp=''; closeModal(); renderLeave(); }); }
@@ -1592,7 +1643,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
       for(let i=0;i<first.getDay();i++) body+='<div class="cal-day blank"></div>';
       for(let day=1;day<=last.getDate();day++){
         const d=E.iso(new Date(year,m,day));
-        const status=E.absenceCalendarStatus(state,e,d);
+        const status=calendarStatusForJobs(e,d);
         body+=`<div class="cal-day ${status.cssClass}" title="${esc(status.title)}"><strong>${day}</strong></div>`;
       }
       body+='</div></div>';
@@ -1752,7 +1803,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
   function renderPayslipList(){
     if(!selectedPayslipEmp){h('payslipList','<p class="ss-payslip-empty">Select an employee to view payslips.</p>');return;}
     const list=filterPayslipsByDateRange(allPayslipsForEmployee(selectedPayslipEmp),payslipDateFrom,payslipDateTo,payslipDefaultRecent,10);
-    const rows=list.map(p=>`<tr data-payroll-slip-row="${esc(p.key)}"><td><button class="ss-slip-link" data-open-payslip="${esc(p.key)}" aria-label="Open payslip for ${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}, ${esc(p.position||'')}">${E.fmtPay(p.cycle.paymentDate||p.cycle.end)}</button></td><td>${esc(p.position||'Casual Earnings')}</td><td>${Number(p.segmentIndex||1)}</td><td class="ss-money">${E.money(p.gross||0)}</td><td class="ss-money">${E.money(p.tax||0)}</td><td class="ss-money">${E.money(p.net||0)}</td><td><span class="ss-slip-state ${p.finalised?'':'is-open'}">${p.finalised?'Finalised':'Open'}</span></td><td aria-hidden="true">›</td></tr>`).join('');
+    const rows=list.map(p=>`<tr data-payroll-slip-row="${esc(p.key)}"><td><button class="ss-slip-link" data-open-payslip="${esc(p.key)}" aria-label="Open payslip for ${esc(E.fmtPay(p.cycle.paymentDate||p.cycle.end))}, ${esc(p.position||'')}">${E.fmtPay(p.cycle.paymentDate||p.cycle.end)}</button></td><td>${esc(p.position||'Casual Earnings')}${p.jobRecordIds?.length?'<small class="payslip-job-records">Job '+p.jobRecordIds.join(', ')+'</small>':''}</td><td>${Number(p.segmentIndex||1)}</td><td class="ss-money">${E.money(p.gross||0)}</td><td class="ss-money">${E.money(p.tax||0)}</td><td class="ss-money">${E.money(p.net||0)}</td><td><span class="ss-slip-state ${p.finalised?'':'is-open'}">${p.finalised?'Finalised':'Open'}</span></td><td aria-hidden="true">›</td></tr>`).join('');
     h('payslipList',`<div class="ss-payslip-list"><table><thead><tr><th>Pay Date</th><th>Position</th><th>Segment</th><th class="ss-money">Gross</th><th class="ss-money">Tax</th><th class="ss-money">Net</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="8"><div class="ss-payslip-empty">No payslips found. Choose a wider date range to see earlier payslips.</div></td></tr>'}</tbody></table></div><p class="ss-payslip-count">${payslipDefaultRecent?'Most recent 10 payslips':'Selected date range'} · ${list.length} payslip${list.length===1?'':'s'}</p>`);
     $('payslipList')?.querySelectorAll('[data-open-payslip]').forEach(b=>b.addEventListener('click',()=>togglePayslip(b.dataset.openPayslip)));
     $('payslipList')?.querySelectorAll('[data-payroll-slip-row]').forEach(row=>row.addEventListener('click',event=>{if(!event.target.closest('button'))togglePayslip(row.dataset.payrollSlipRow);}));
@@ -1851,7 +1902,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
     const country=esc(e.country||'');
     const employeeBlock = `<div class="payslip-address"><strong>${esc(E.employeeName(e))}</strong><br>${addressLine}<br>${locality}<br>${country}</div>`;
     const detailRows = [
-      ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(p.department!==undefined?p.department:(e.department||''))], ['Position', esc(p.position||'')], ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
+      ['Employee Name', esc(E.employeeName(e))], ['Employee ID number', esc(p.empId)], ['Department', esc(p.department!==undefined?p.department:(e.department||''))], ['Position', esc(p.position||'')],...(p.jobRecordIds?.length?[['Job Record(s)',esc(p.jobRecordIds.join(', '))]]:[]), ['Pay Period', `${E.fmtPay(p.cycle.start)} - ${E.fmtPay(p.cycle.end)}`], ['Payment Date', E.fmtPay(p.cycle.paymentDate)]
     ].map(r=>`<div><strong>${r[0]}:</strong> ${r[1]}</div>`).join('');
     const displayRows=consolidatePayslipDisplayRows(p.rows||[]);
     const rows=displayRows.map(r=>{ const amountOnly=isAmountOnlyPayslipRow(r); const description=payslipDisplayDescription(r,p.cycle&&p.cycle.paymentDate); return `<tr><td>${esc(description)}</td><td class="right">${amountOnly?'':Number(r.units||0).toFixed(2)}</td><td class="right">${amountOnly?'':(r.rate!==undefined&&r.rate!==null&&Number(r.rate)!==0?E.money(r.rate):'')}</td><td class="right">${Number(r.amount||0).toFixed(2)}</td><td>${E.fmtPay(r.startDate)}</td><td>${E.fmtPay(r.endDate)}</td></tr>`; }).join('');
@@ -1973,11 +2024,6 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const d=E.parseDate(dateIso); if(!d) return '';
     try{return new Intl.DateTimeFormat('en-AU',{day:'numeric',month:'long',year:'numeric'}).format(d);}catch(err){return E.fmtLong(dateIso);}
   }
-  function statementJobNumberMap(rows){
-    const keys=[];
-    rows.forEach(r=>{ const key=String(r.positionNumber||r.positionName||r.position||'Job'); if(!keys.includes(key)) keys.push(key); });
-    const map=new Map(); keys.forEach((key,i)=>map.set(key,i+1)); return map;
-  }
   function statementRowsForEmployee(e,asAt){
     let rows=(state.jobDataRows||[]).filter(r=>r.empId===e.id&&r.saved!==false&&r.effectiveDate&&!/position\s*refresh/i.test(String(r.reason||'')+' '+String(r.action||''))&&E.compare(r.effectiveDate,asAt)<=0)
       .slice().sort((a,b)=>E.compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
@@ -1986,19 +2032,16 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
       rows=[{effectiveDate:e.startDate,positionNumber:'1',positionName:(rate&&rate.position)||e.position||'',department:e.department||'',hoursByDay:(schedule&&schedule.hoursByDay)||{},reason:'New Hire'}];
       if(e.terminationDate&&E.compare(e.terminationDate,asAt)<=0) rows.push({effectiveDate:e.terminationDate,positionNumber:'1',positionName:(rate&&rate.position)||e.position||'',department:e.department||'',hoursByDay:(schedule&&schedule.hoursByDay)||{},reason:e.terminationReason||'Termination'});
     }
-    const jobMap=statementJobNumberMap(rows);
     return rows.map(r=>{
-      const sched=(r.hoursByDay&&Object.values(r.hoursByDay).some(x=>Number(x)>0))?r:{hoursByDay:(E.activeSchedule(state,e.id,r.effectiveDate)||{}).hoursByDay||{}};
+      const sched=(r.hoursByDay&&Object.values(r.hoursByDay).some(x=>Number(x)>0))?r:{hoursByDay:(E.activeSchedule(jobView(e.id,r.jobRecord||0),e.id,r.effectiveDate)||{}).hoursByDay||{}};
       const weekly=Object.values(sched.hoursByDay||{}).reduce((sum,x)=>sum+Number(x||0),0);
       const fte=weekly>0?weekly/E.STANDARD_WEEKLY_HOURS:0;
-      const key=String(r.positionNumber||r.positionName||r.position||'Job');
-      return { job:jobMap.get(key)||1, date:r.effectiveDate, position:r.positionName||r.position||((E.activePayRate(state,e.id,r.effectiveDate)||{}).position)||e.position||'', location:r.location||r.department||e.department||'', fte, action:r.reason||r.action||'' };
+      return { job:Number(r.jobRecord||0),jobRecord:Number(r.jobRecord||0), date:r.effectiveDate, position:r.positionName||r.position||((E.activePayRate(state,e.id,r.effectiveDate)||{}).position)||e.position||'', location:r.location||r.department||e.department||'', fte, action:r.reason||r.action||'' };
     });
   }
   function statementLeaveWithoutPayRows(e,asAt,serviceRows){
     return (state.leaveBookings||[]).filter(l=>l.empId===e.id&&['LWOP','Absent Without Leave'].includes(l.type)&&l.startDate&&E.compare(l.startDate,asAt)<=0).map(l=>{
-      const prior=[...serviceRows].filter(r=>E.compare(r.date,l.startDate)<=0).sort((a,b)=>E.compare(b.date,a.date))[0];
-      return {job:(prior&&prior.job)||1,begin:l.startDate,end:E.compare(l.endDate,asAt)>0?asAt:l.endDate};
+      return {job:Number(l.jobRecord||0),begin:l.startDate,end:E.compare(l.endDate,asAt)>0?asAt:l.endDate};
     });
   }
   function statementOfServiceHtml(empId,asAt,options={}){
@@ -2015,7 +2058,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const contact=(options.contact||'HR@mcdonaldscf.com').trim();
     const serviceBody=serviceRows.length?serviceRows.map(r=>`<tr><td>${esc(r.job)}</td><td>${esc(E.fmtPay(r.date))}</td><td>${esc(r.position)}</td><td>${esc(r.location)}</td><td>${Number(r.fte||0).toFixed(2)}</td><td>${esc(r.action)}</td></tr>`).join(''):'<tr><td colspan="6">No service history was available as at the selected date.</td></tr>';
     const lwopBody=lwopRows.length?lwopRows.map(r=>`<tr><td>${esc(r.job)}</td><td>${esc(E.fmtPay(r.begin))}</td><td>${esc(E.fmtPay(r.end))}</td></tr>`).join(''):'<tr><td colspan="3">No Leave Without Pay recorded.</td></tr>';
-    return `<article class="statement-service"><header class="statement-header"><div class="statement-brand"><div class="statement-dept">McDonald&#39;s California Franchise</div></div><div class="statement-reference">${esc(reference)}</div></header><div class="statement-address"><strong>${esc(E.employeeName(e))}</strong><br>${esc(String(personal.addressLine||'').toUpperCase())}<br>${esc(String(locality||'').toUpperCase())}<br>${esc(String(personal.country||'').toUpperCase())}</div><h1>STATEMENT OF SERVICE</h1><p>${esc(E.employeeName(e))} commenced service with McDonald&#39;s California Franchise on ${esc(reportLongDate(commencement))}. Employment is full time equivalent (FTE) and continuous unless otherwise stated.</p><p>Job number indicates employment in different roles within the company. Multiple jobs may be active concurrently.</p><h2>Service History:</h2><table class="statement-table"><thead><tr><th>Job</th><th>Date</th><th>Position</th><th>Location</th><th>FTE</th><th>Action</th></tr></thead><tbody>${serviceBody}</tbody></table><h2>Leave Without Pay Taken:</h2><table class="statement-table statement-lwop"><thead><tr><th>Job</th><th>Begin Date</th><th>End Date</th></tr></thead><tbody>${lwopBody}</tbody></table><p>This statement is a true indication of service as at ${esc(reportLongDate(asAt))}.</p><p>Please contact the Human Resources Department on ${esc(contact)}, if you have any enquiries relating to this matter.</p><div class="statement-signature"><p>Yours sincerely</p><div class="signature-space"></div><p><strong>${esc(String(signatory||'').toUpperCase())}</strong><br><strong>${esc(String(signatoryPosition||'').toUpperCase())}</strong><br>${esc(reportLongDate(todayIso()))}</p></div><footer class="statement-footer"><span>McDonald&#39;s California Franchise</span><span class="statement-page-number">Page</span></footer></article>`;
+    return `<article class="statement-service"><header class="statement-header"><div class="statement-brand"><div class="statement-dept">McDonald&#39;s California Franchise</div></div><div class="statement-reference">${esc(reference)}</div></header><div class="statement-address"><strong>${esc(E.employeeName(e))}</strong><br>${esc(String(personal.addressLine||'').toUpperCase())}<br>${esc(String(locality||'').toUpperCase())}<br>${esc(String(personal.country||'').toUpperCase())}</div><h1>STATEMENT OF SERVICE</h1><p>${esc(E.employeeName(e))} commenced service with McDonald&#39;s California Franchise on ${esc(reportLongDate(commencement))}. Employment is full time equivalent (FTE) and continuous unless otherwise stated.</p><p>Job number matches the employee’s job record number. Multiple job records may be active concurrently.</p><h2>Service History:</h2><table class="statement-table"><thead><tr><th>Job</th><th>Date</th><th>Position</th><th>Location</th><th>FTE</th><th>Action</th></tr></thead><tbody>${serviceBody}</tbody></table><h2>Leave Without Pay Taken:</h2><table class="statement-table statement-lwop"><thead><tr><th>Job</th><th>Begin Date</th><th>End Date</th></tr></thead><tbody>${lwopBody}</tbody></table><p>This statement is a true indication of service as at ${esc(reportLongDate(asAt))}.</p><p>Please contact the Human Resources Department on ${esc(contact)}, if you have any enquiries relating to this matter.</p><div class="statement-signature"><p>Yours sincerely</p><div class="signature-space"></div><p><strong>${esc(String(signatory||'').toUpperCase())}</strong><br><strong>${esc(String(signatoryPosition||'').toUpperCase())}</strong><br>${esc(reportLongDate(todayIso()))}</p></div><footer class="statement-footer"><span>McDonald&#39;s California Franchise</span><span class="statement-page-number">Page</span></footer></article>`;
   }
   function monthStartIso(value){ const d=E.parseDate(value||currentCycle().start); return E.iso(new Date(d.getFullYear(),d.getMonth(),1)); }
   function shiftMonthIso(value,delta){ const d=E.parseDate(monthStartIso(value)); return E.iso(new Date(d.getFullYear(),d.getMonth()+delta,1)); }
@@ -2024,13 +2067,18 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     for(let i=1;i<=days;i++){ const date=E.iso(new Date(year,month,i)); if(E.isEmployedOn(e,date) && employmentTypeFor(e,date)!=='Casual') return true; }
     return false;
   }
-  function monthlyAbsenceCalendarHtml(monthIso,employeeIds=null){
+  function calendarStatusForJobs(e,date,managerId=''){
+    if(!E.jobRecords.multiple(state,e.id))return E.absenceCalendarStatus(state,e,date);
+    const records=managerId?E.jobRecords.eligibleForManager(state,managerId,e.id):E.jobRecords.records(state,e.id),statuses=records.map(r=>{const view=jobView(e.id,r.recordNumber);return E.absenceCalendarStatus(view,view.employees.find(x=>x.id===e.id),date);}),leave=statuses.filter(x=>x.leaveType),chosen=leave[0]||statuses.find(x=>x.employed&&x.hours>0)||statuses[0];
+    if(!chosen)return {cssClass:'nonrostered',title:'No rostered work',label:'',hours:0,employed:false};return {...chosen,title:leave.length>1?leave.map(x=>x.title).join(' / '):chosen.title};
+  }
+  function monthlyAbsenceCalendarHtml(monthIso,employeeIds=null,managerId=''){
     const first=E.parseDate(monthStartIso(monthIso)); const year=first.getFullYear(); const month=first.getMonth(); const last=new Date(year,month+1,0); const days=last.getDate();
     const monthLabel=first.toLocaleDateString('en-AU',{month:'long',year:'numeric'});
     const employees=(state.employees||[]).filter(e=>(!employeeIds||employeeIds.includes(e.id))&&employeeVisibleInMonthlyAbsence(e,monthIso)).slice().sort((a,b)=>E.employeeDisplayName(a).localeCompare(E.employeeDisplayName(b)));
     const headers=Array.from({length:days},(_,i)=>{ const d=new Date(year,month,i+1); return `<th class="monthly-day-head"><strong>${i+1}</strong><small>${d.toLocaleDateString('en-AU',{weekday:'short'}).slice(0,1)}</small></th>`; }).join('');
     const rows=employees.map(e=>{
-      const cells=Array.from({length:days},(_,i)=>{ const date=E.iso(new Date(year,month,i+1)); const st=E.absenceCalendarStatus(state,e,date); return `<td class="monthly-absence-cell ${st.cssClass}${st.pending?' pending':''}" title="${esc(st.title)}"><span>${esc(st.label||'')}</span></td>`; }).join('');
+      const cells=Array.from({length:days},(_,i)=>{ const date=E.iso(new Date(year,month,i+1)); const st=calendarStatusForJobs(e,date,managerId); return `<td class="monthly-absence-cell ${st.cssClass}${st.pending?' pending':''}" title="${esc(st.title)}"><span>${esc(st.label||'')}</span></td>`; }).join('');
       return `<tr><th class="monthly-employee">${esc(E.employeeDisplayName(e))}</th>${cells}</tr>`;
     }).join('');
     return `<article class="monthly-absence-report"><div class="monthly-absence-title"><h1>Monthly Absence Calendar</h1><strong>${esc(monthLabel)}</strong></div>${absenceLegendHtml()}<div class="monthly-absence-wrap"><table class="monthly-absence-table"><thead><tr><th class="monthly-employee">Employee</th>${headers}</tr></thead><tbody>${rows||`<tr><td colspan="${days+1}">No employees found.</td></tr>`}</tbody></table></div><p class="small-note monthly-pending-note">* indicates a leave booking that is not yet Approved, where applicable.</p></article>`;
@@ -2062,7 +2110,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function renderReports(ready=false){
     if(reportMode&&!ready&&$('reports')?.classList.contains('active')&&typeof PayrollUI!=='undefined'&&PayrollUI.generateReport){const mode=reportMode;return reportLoading('reports',()=>renderReports(true),'Generating report…',()=>reportMode===mode&&$('reports')?.classList.contains('active'));}
     if(!reportMode){const reports=[['service','Statement of Service','report'],['earnings','Statement of Earnings','money'],['calendar','Monthly Absence Calendar','calendar'],['positions','Position Structure Report','team'],['errors','Pay Errors','warning'],['excess','Excess Leave Report','report'],['establishment','FTE Establishment Report','team'],['recovery','Recovery Statements','money']];h('reports',`<h2>Reports</h2><div class="report-tiles">${reports.map(([key,label,icon])=>`<button class="landing-tile" data-report-tile="${key}"><span class="landing-tile-icon">${typeof PayrollUI!=='undefined'?PayrollUI.icon(icon):'▤'}</span><span>${label}</span></button>`).join('')}</div>`);document.querySelectorAll('[data-report-tile]').forEach(b=>b.addEventListener('click',()=>{reportMode=b.dataset.reportTile;renderReports();}));return;}
-    if(['excess','establishment','recovery'].includes(reportMode)){h('reports','<div id="operationsReport"></div>');operationsUI().mount('operationsReport',reportMode);}
+    if(['excess','establishment','recovery'].includes(reportMode)){h('reports','<div id="operationsReport"></div>');operationsUI().mount('operationsReport',reportMode,'payroll',reportMode==='recovery'?selectedRecoveryEmployee:'');}
     else if(reportMode==='earnings')renderEarningsReport();
     else if(reportMode==='errors'){h('reports','<h2>Pay Errors</h2><div class="controls no-print"><button id="refreshPayErrors">Run Checks</button><button id="downloadPayErrors" class="secondary">Download PDF</button><button id="printPayErrors" class="secondary">Print / Save PDF</button></div><div id="payErrorsOutput"></div>');$('refreshPayErrors').addEventListener('click',()=>reportLoading('payErrorsOutput',()=>checkForErrors(true),'Checking pay errors…'));$('downloadPayErrors').addEventListener('click',downloadPayErrors);$('printPayErrors').addEventListener('click',printPayErrors);checkForErrors(true);}
     else {renderReportContents();const index={service:0,calendar:1,positions:2}[reportMode];document.querySelectorAll('#reports .report-controls').forEach((el,i)=>el.hidden=i!==index);['reportPreview','monthlyAbsencePreview','positionStructurePreview'].forEach((id,i)=>{if($(id))$(id).hidden=i!==index;});}
@@ -2191,8 +2239,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   function employeesAssignedToPosition(positionNumber){
     return activeEmployees().filter(e=>{
-      const latest=(state.jobDataRows||[]).filter(r=>r.empId===e.id && r.action!=='Termination' && E.compare(r.effectiveDate,todayIso())<=0).sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
-      return latest && String(latest.positionNumber)===String(positionNumber);
+      return S.assignments(state,e.id,todayIso()).some(row=>String(row.positionNumber)===String(positionNumber));
     });
   }
   function savePosition(id,isCreate){
@@ -2233,6 +2280,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
     const results=currentResults();
     rows.push(...E.paymentDetailErrors(state,c,results,true));
     rows.push(...S.errors(state,todayIso(),true));
+    rows.push(...E.payControlErrors(state,c));
     (state.deductions||[]).filter(d=>d.saved!==false&&!d.deleted&&d.deductionType==='Recovery Deduction').forEach(d=>{try{E.validateRecoveryDeduction(d);}catch(err){add(d.empId,err.message);}});
     E.urgentPay.pending(state,c.id).forEach(d=>add(d.empId,'Urgent Pay has not been processed. Run the urgent pay cycle in Settings before finalising.'));
     state.employees.forEach(e=>{
@@ -2253,7 +2301,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
       if(isFixed && !hasTermRow) add(e.id,'Fixed-term employee does not have a Termination row in Job Data.');
     });
     (state.additionalEarnings||[]).filter(a=>a.saved===false).forEach(a=>add(a.empId,'Unsaved Additional Earnings.'));
-    results.forEach(p=>{ if(Number(p.net||0)<0) add(p.empId,`Negative net pay on ${E.ppeLabel(p.cycle)} (${E.money(p.net)}).`); });
+    rows.push(...E.operations.negativeNetErrors(state,results));
     (state.leaveBookings||[]).forEach(l=>{
       const window=leaveErrorValidationWindow(l); if(!window) return;
       const e=emp(l.empId); if(!e) return;
@@ -2285,6 +2333,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {"version": "v1.2.11", "notes": ["Added concurrent job records with independent Job Data, rosters, rates, managers, leave attribution and Additional Earnings. Shared leave balances and accounts retain one employee identity.", "Deductions apply to the assigned record; combined tax is calculated once. Final non-casual termination pays eligible leave even if casual records remain active. Statement of Service Job Number matches the record number.", "Added Cease Pay / Return from Cease Pay, held-period Pay Errors, negative leave termination recovery, Manager Delegation, negative net checks and recovery-completion notifications.", "Improved support search and employee submission, labelled Job Data controls and deletion confirmation; removed the on-call hourly-rate input."]},
     {version:'v1.2.10',notes:['Timesheets now default to the current pay period, exclude future periods and new weekend entries, and show a single Flex Balance. Leaving unsaved changes offers Save, Leave Without Saving or Keep Editing.','On non-rostered days, only work above 7.5 hours earns flex. Approved leave and missing-day warnings appear against each day. Timesheets remain separate from pay.','Added configurable extended-absence Dashboard and manager return reminders, plus preferred names with legal names retained on payslips and formal statements.','Removed the On-call Allowance Super Eligible option. New/open entries exclude super; the $22.50 hourly rate and finalised history are preserved.','Added shared status colours, Save/Cancel placement, compact employee headers and searchable long employee/position dropdowns. Certification ticks retain scroll and focus.','Dates use four-digit years, reports show loading placeholders, and data tables have hover highlights and selected-row outlines.']},
     {version:'v1.2.9',notes:['Timesheets now record daily On/Off times, breaks, remarks and flex only. Saves and approvals never change pay; managers enter any payment separately in Additional Earnings.','Approved flex carries forward up to 37.5 hours; excess is shown separately. Only explicit Flex Time Taken reduces the balance, and additional days earn flex.','On-call Allowance is fixed at $22.50 per hour for new entries, preserving finalised history.','Roster confirmation now uses Current and Proposed daily grids, separate weeks, highlighted changes and weekly totals.','Earlier unfinalised timesheet-generated earnings are archived; finalised payslips are preserved. Legacy hours-only sheets require actual times before resubmission.']},
     {version:'v1.2.8',notes:['Added leave attachments, Excess Leave/FTE Establishment/Recovery reports, roster comparison, timesheets and manager approval.','Added acting/contract-expiry Dashboard registers, probation tracking and shared support replies.','On-call Allowance is entered in Additional Earnings; Urgent Pay is a one-time post-tax deduction with Settings CSV batches and processed-entry locks.','New employees require Super and Bank details; payslip LSL dates use DD/MM/YYYY; added Payroll-only paid/unpaid suspension.','Fixed same-day fixed-term termination followed by casual rehire: normal final leave payouts are preserved while casual employment and earnings stay active.']},
@@ -2557,7 +2606,10 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function checkOvernightProcessing(manual){ const today=todayIso(); if(manual && state.lastOvernightDate===today) return alert('Overnight processing has already been checked today.'); if(manual && !confirm('If overnight processing should have run, do you want to run it now?')) return; state.lastOvernightDate=today; calculateAllForCurrent(); save(); if(manual) showProcessing('Overnight Processing in Progress',()=>{ log('Overnight processing checked/run. Pay was calculated but not finalised.'); renderAll(); }); }
   function openFinalisePay(){
     const c=currentCycle();
-    confirmModal(`Are you sure you want to finalise the pay for ${E.ppeLabel(c)}?`, 'Yes', ()=>showProcessing('Pay Finalisation in Progress',()=>{
+    calculateAllForCurrent();
+    const negative=E.operations.negativeNetErrors(state,currentResults());
+    const warning=negative.length?' Warning: '+negative.length+' payslip(s) have negative net pay. '+negative.map(r=>r.employeeName+' ('+r.empId+'): '+r.message).join(' '):'';
+    confirmModal(`Are you sure you want to finalise the pay for ${E.ppeLabel(c)}?${warning}`, 'Yes', ()=>showProcessing('Pay Finalisation in Progress',()=>{
       try{
         const result=E.finaliseCurrentPay(state); save(); calculateAllForCurrent(); log(`Pay finalised for ${E.ppeLabel(result.finalisedCycle)}. Next pay opened: ${E.ppeLabel(result.nextCycle)}`); renderAll();
       }catch(err){ alert(err && err.message ? err.message : 'Pay finalisation failed.'); }

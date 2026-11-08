@@ -7,10 +7,10 @@ function create(E,S){
  function notify(s,ids,message,t,page){if(!ids.length)return;list(s,'alerts').unshift({id:uid(),type:'Timesheet',message,recipientIds:[...new Set(ids)],readBy:[],read:false,createdAt:stamp(),action:{area:page==='approvals'?'mss':'ess',page:page==='approvals'?'approvals':'leave',timesheetId:t.id}});}
  function cycle(id){const c=E.PAY_CYCLES.find(c=>c.id===Number(id));if(!c)throw Error('Select a valid fortnight.');return c;}
  function payroll(s,id,d=today()){if(!S.profile(s,id,d).payroll)throw Error('Payroll Management access is required.');}
- function timesheets(s,id,area='ess',d=today()){
+ function timesheets(s,id,area='ess',d=today(),approvalOnly=false){
   if(area==='payroll'){payroll(s,id,d);return list(s,'timesheets');}
   S.assertScope(s,id,id,'ess',d);
-  const ids=area==='mss'?S.directReports(s,id,d).map(e=>e.id):[id];return list(s,'timesheets').filter(t=>ids.includes(t.empId));
+  const ids=area==='mss'?(approvalOnly?S.approvalReports(s,id,d):S.directReports(s,id,d)).map(e=>e.id):[id];return list(s,'timesheets').filter(t=>ids.includes(t.empId)&&(!approvalOnly||t.status==='Awaiting Manager Approval'));
  }
  function minute(time){if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time||''))throw Error('Enter times as HH:MM.');return Number(time.slice(0,2))*60+Number(time.slice(3));}
  function normalise(s,empId,cycleId,days=[],strict=false,snapshots=false){
@@ -90,7 +90,7 @@ function create(E,S){
   const checked=normalise(s,id,c.id,input.days||[],submit),remarks=String(input.remarks||'');
   if(remarks.length>20000)throw Error('Remarks must be at most 20,000 characters.');
   if(submit&&!checked.hasRecord&&!remarks.trim())throw Error('Enter work times, flex taken or remarks before submitting.');
-  const manager=S.managerFor(s,id,d);if(submit&&!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error('A valid Reports To manager is required.');
+  const manager=S.approvalManagerFor(s,id,d);if(submit&&!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error('A valid Reports To manager is required.');
   if(submit)validateTimes(s,id,old?.id,checked);
   if(submit)applyFlex(carriedForward(s,id,c.id),checked.days,true);
   const at=stamp(),next={...(old||{id:uid(),empId:id,createdAt:at}),schemaVersion:2,revision:(old?.revision||0)+1,cycleId:c.id,days:checked.days,remarks,status:submit?'Awaiting Manager Approval':'Draft',submittedAt:submit?at:'',updatedAt:at,approverIds:manager.managerIds||[],comment:'',decidedBy:'',decidedAt:'',needsTimeDetails:false,history:[...(old?.history||[]),{status:submit?'Awaiting Manager Approval':'Draft',at,actorId:id}]};
@@ -101,7 +101,7 @@ function create(E,S){
  }
  function approveTimesheet(s,id,recordId,status,comment='',d=today()){
   const t=list(s,'timesheets').find(t=>t.id===recordId);if(!t||t.schemaVersion!==2||t.status!=='Awaiting Manager Approval')throw Error('This time record is no longer awaiting approval.');
-  S.assertScope(s,id,t.empId,'mss',d);if(!S.managerFor(s,t.empId,d).managerIds.includes(id))throw Error('You are not a current approver.');
+  S.assertApprovalScope(s,id,t.empId,d);
   if(!['Approved','Denied'].includes(status))throw Error('Select Approve or Deny.');if(status==='Denied'&&!String(comment).trim())throw Error('Enter a reason for denial.');
   if(String(comment).length>20000)throw Error('Comment is too long.');
   const checked=normalise(s,t.empId,t.cycleId,t.days,true,true),days=checked.days;if(status==='Approved')validateTimes(s,t.empId,t.id,checked);if(status==='Approved')validateLedger(s,t.empId,{...t,days,status});

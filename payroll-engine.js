@@ -166,7 +166,7 @@
   function employeeDisplayName(e){const preferred=String(e.preferredName||'').trim();return preferred?`${preferred} ${e.lastName||''}`.trim():employeeName(e);}
   function employeeName(e){ return `${e.firstName||''} ${e.lastName||''}`.trim() || e.name || e.id; }
   function hasSavedJobDataAsAt(state, empId, onDate){
-    return (state.jobDataRows||[]).some(r=>r.empId===empId && r.saved!==false && compare(r.effectiveDate,onDate)<=0);
+    return (state.jobDataRows||[]).some(r=>r.empId===empId && r.saved!==false && !isPayControlJobDataRow(r) && compare(r.effectiveDate,onDate)<=0);
   }
   function rosterWeekForDate(dateIso){
     // The original pay-cycle anchor defines the fortnight pattern used by Job Data.
@@ -189,6 +189,8 @@
     return schedule.hoursByDay||{};
   }
   function activeSchedule(state, empId, onDate, excludeId){
+    if(state._serviceRoot)return api.jobRecords.combinedSchedule(state._serviceRoot,empId,onDate);
+    if(api.jobRecords?.multiple(state,empId))return api.jobRecords.combinedSchedule(state,empId,onDate);
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
     const rows = (state.schedules||[]).map((s,i)=>Object.assign({_sourceIndex:i},s))
       .filter(s=>s.empId===empId && s.id!==excludeId && compare(s.effectiveDate,onDate)<=0 && (!jobDataSource || !!s.jobDataId))
@@ -201,7 +203,7 @@
   function activePayRate(state, empId, onDate, excludeId){
     const jobDataSource = hasSavedJobDataAsAt(state, empId, onDate);
     const rows = (state.payRates||[]).map((p,i)=>Object.assign({_sourceIndex:i},p))
-      .filter(p=>p.empId===empId && p.id!==excludeId && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && (p.changeType==='Permanent' || !p.endDate || compare(onDate,p.endDate)<=0))
+      .filter(p=>p.empId===empId && p.id!==excludeId && (state._jobRecordScope!==undefined||Number(p.jobRecord||0)===0) && compare(p.effectiveDate,onDate)<=0 && (!jobDataSource || !!p.jobDataId) && (p.changeType==='Permanent' || !p.endDate || compare(onDate,p.endDate)<=0))
       .sort((a,b)=>compare(b.effectiveDate,a.effectiveDate) || Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0) || ((b.changeType==='Temporary')-(a.changeType==='Temporary')) || b._sourceIndex-a._sourceIndex);
     const e = (state.employees||[]).find(x=>x.id===empId) || {};
     return rows[0] || { id:'base', position:e.position||'', hourlyRate:Number(e.hourlyRate||0), changeType:'Permanent' };
@@ -214,9 +216,42 @@
     if(/^fixed term$/i.test(text)) return 'Fixed Term';
     return text;
   }
+  function isPayControlJobDataRow(row){return !!row&&row.action==='Variation'&&['Cease Pay','Return from Cease Pay'].includes(row.reason);}
+  function payControlAsAt(state,empId,onDate,sequence=Infinity,excludeId=''){
+    const rows=(state.jobDataRows||[]).filter(r=>r&&r.id!==excludeId&&r.empId===empId&&r.saved!==false&&r.effectiveDate&&(isPayControlJobDataRow(r)||r.action==='Commencement'&&/^(New Hire|Rehire)\b/.test(r.reason||''))&&(r.effectiveDate<onDate||r.effectiveDate===onDate&&Number(r.effectiveSequence||0)<=sequence)).slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    const row=rows[0]||null;return {ceased:row?.reason==='Cease Pay',row};
+  }
+  function isPayCeasedOn(state,empId,onDate){if(api.jobRecords?.multiple(state,empId)){const active=api.jobRecords.activeRecords(state,empId,onDate);return active.length>0&&active.every(r=>isPayCeasedOn(api.jobRecords.scope(state,empId,r.recordNumber),empId,onDate));}return payControlAsAt(state,empId,onDate).ceased;}
+  function payEnabledInCycle(state,empId,c){return daysBetween(c.start,c.end).some(d=>!isPayCeasedOn(state,empId,d));}
+  function payEnabledRange(state,empId,start,end=start){return !daysBetween(start,end).some(d=>isPayCeasedOn(state,empId,d));}
+  function validatePayControlRow(state,row){
+    if(api.jobRecords?.multiple(state,row.empId))return validatePayControlRow(api.jobRecords.scope(state,row.empId,row.jobRecord||0),row);
+    if(!isPayControlJobDataRow(row))return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(row.effectiveDate||'')||iso(parseDate(row.effectiveDate))!==row.effectiveDate)throw Error('Enter a valid effective date.');
+    if(!Number.isSafeInteger(Number(row.effectiveSequence))||Number(row.effectiveSequence)<0)throw Error('Effective Sequence must be a non-negative whole number.');
+    if((state.jobDataRows||[]).some(r=>r.empId===row.empId&&r.id!==row.id&&r.saved!==false&&r.effectiveDate===row.effectiveDate&&Number(r.effectiveSequence||0)===Number(row.effectiveSequence)))throw Error('This effective date and sequence already exists for this employee.');
+    if(row.reason==='Return from Cease Pay'&&!payControlAsAt(state,row.empId,row.effectiveDate,Number(row.effectiveSequence)-1,row.id).ceased)throw Error('Return from Cease Pay must follow a Cease Pay row. Use a higher sequence to return on the same date.');
+  }
+  function payControlErrors(state,c){
+    const concurrent=(state.employees||[]).filter(e=>api.jobRecords?.multiple(state,e.id));
+    if(concurrent.length){const ids=new Set(concurrent.map(e=>e.id)),plain={...state,employees:state.employees.filter(e=>!ids.has(e.id)),additionalEarnings:(state.additionalEarnings||[]).filter(a=>!ids.has(a.empId))},rows=payControlErrors(plain,c);for(const e of concurrent)for(const r of api.jobRecords.records(state,e.id)){const view=api.jobRecords.scope(state,e.id,r.recordNumber);view.employees=view.employees.filter(x=>x.id===e.id);view.additionalEarnings=view.additionalEarnings.filter(a=>a.empId===e.id);const x=view.employees[0];reconcileEmploymentFromJobData(view,x);const end=employmentEnd(x);for(const error of payControlErrors(view,c)){if(error.message.startsWith('Termination final pay')&&api.jobRecords.activeRecords(state,e.id,end,false).some(other=>other.recordNumber!==r.recordNumber))continue;rows.push({...error,jobRecord:r.recordNumber,message:error.message+' (Job '+r.recordNumber+')'});}}return rows;}
+    const out=[],add=(empId,message)=>{const e=(state.employees||[]).find(e=>e.id===empId);out.push({empId,employeeName:e?employeeDisplayName(e):empId,message});};
+    for(const e of state.employees||[]){
+      const held=daysBetween(c.start,c.end).filter(d=>(isEmployedOn(e,d)||api.selfService.isActiveEmployee(state,e,d))&&isPayCeasedOn(state,e.id,d));
+      if(held.length){const ranges=mergeDateRanges(held.map(d=>({start:d,end:d}))).map(r=>r.start===r.end?fmtPay(r.start):fmtPay(r.start)+' - '+fmtPay(r.end)).join('; ');add(e.id,'Cease Pay applies during the current pay period: '+ranges+'. No earnings are generated for these held dates.');}
+      const final=terminationPayoutEmployee(state,e,c),end=employmentEnd(final),date=end?(hasInclusiveEmploymentEnd(final)?end:addDays(end,-1)):'';
+      if(date&&!isCasualOnly(state,e,date)&&between(date,c.start,c.end)&&isPayCeasedOn(state,e.id,date))add(e.id,'Termination final pay falls within Cease Pay. Enter Return from Cease Pay covering the final payable date before finalising this period.');
+    }
+    for(const a of state.additionalEarnings||[]){
+      if(!a||a.saved===false||a.deleted)continue;const start=a.startDate||c.start,end=a.earningType==='Casual Earnings'?start:a.endDate||start;
+      if(end<c.start||start>c.end||payEnabledRange(state,a.empId,start,end))continue;
+      if(daysBetween(start,end).some(d=>!isPayCeasedOn(state,a.empId,d)))add(a.empId,'Additional Earnings entry spans paid and Cease Pay dates ('+fmtPay(start)+' - '+fmtPay(end)+'). Split the entry at the pay-control boundary; this entry is withheld until all its dates are payable.');
+    }return out;
+  }
   function activeEmploymentType(state,e,onDate){
+    if(api.jobRecords?.multiple(state,e?.id)){const list=api.jobRecords.activeRecords(state,e.id,onDate);return list.some(r=>{const v=api.jobRecords.scope(state,e.id,r.recordNumber);return activeEmploymentType(v,v.employees.find(x=>x.id===e.id),onDate)!=='Casual';})?'Permanent':list.length?'Casual':e.type||'';}
     if(!e) return '';
-    const rows=(state&&state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,onDate)<=0)
+    const rows=(state&&state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&!isPayControlJobDataRow(r)&&(state._jobRecordScope!==undefined||Number(r.jobRecord||0)===0)&&r.effectiveDate&&compare(r.effectiveDate,onDate)<=0)
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
     return normaliseEmploymentType((rows[0]&&rows[0].positionClass)||e.type||'');
   }
@@ -230,7 +265,7 @@
   const HIGHER_DUTIES_TRANSITION_DATE = '2026-07-01';
   function activeJobDataRow(state,e,onDate){
     if(!state||!e||!onDate) return null;
-    return (state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,onDate)<=0)
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&!isPayControlJobDataRow(r)&&(state._jobRecordScope!==undefined||Number(r.jobRecord||0)===0)&&r.effectiveDate&&compare(r.effectiveDate,onDate)<=0)
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
   }
   function activeDepartment(state,e,onDate){
@@ -240,16 +275,16 @@
     return String((e&&e.department)||'');
   }
   const ACTING_REASONS = ['Acting Higher Level','Acting Lower Level','Acting Same Level'];
-  function assignmentEvent(state,empId,onDate,sequence=Infinity){
-    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
+  function assignmentEvent(state,empId,onDate,sequence=Infinity,jobRecord=null){
+    return (state.jobDataRows||[]).filter(r=>r&&r.empId===empId&&r.saved!==false&&(jobRecord===null||Number(r.jobRecord||0)===Number(jobRecord))&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
       (compare(r.effectiveDate,onDate)<0 || (compare(r.effectiveDate,onDate)===0&&Number(r.effectiveSequence||0)<=sequence)))
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
   }
   function isActingJobDataRow(state,row){
-    if(!row || row.saved===false) return false;
+    if(!row || row.saved===false || isPayControlJobDataRow(row)) return false;
     if(row.action==='Movement') return ACTING_REASONS.includes(String(row.reason||''));
     if(row.action!=='Variation') return false;
-    const movement=assignmentEvent(state,row.empId,row.effectiveDate,Number(row.effectiveSequence||0));
+    const movement=assignmentEvent(state,row.empId,row.effectiveDate,Number(row.effectiveSequence||0),row.jobRecord||0);
     return !!(movement&&movement.action==='Movement'&&ACTING_REASONS.includes(String(movement.reason||''))&&
       (row.positionNumber ? String(row.positionNumber)===String(movement.positionNumber) : row.positionName===movement.positionName));
   }
@@ -264,7 +299,7 @@
     if(rows.length) return rows[0];
     // Saved Job Data retains the substantive rate even when a legacy import has
     // lost its derived pay-rate row. The employee snapshot may already be acting.
-    const job=(state.jobDataRows||[]).filter(j=>j&&j.empId===empId&&j.saved!==false&&j.action!=='Termination'&&j.effectiveDate&&compare(j.effectiveDate,onDate)<=0&&!isActingJobDataRow(state,j))
+    const job=(state.jobDataRows||[]).filter(j=>j&&j.empId===empId&&j.saved!==false&&j.action!=='Termination'&&!isPayControlJobDataRow(j)&&j.effectiveDate&&compare(j.effectiveDate,onDate)<=0&&!isActingJobDataRow(state,j))
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
     if(job) return {id:job.rateId||'job-base',position:job.positionName||'',hourlyRate:Number(job.hourlyRate||0),effectiveDate:job.effectiveDate,changeType:'Permanent',jobDataId:job.id};
     const e=(state.employees||[]).find(x=>x.id===empId)||{};
@@ -301,7 +336,7 @@
     return { position:(rate&&rate.position)||e.position||'', hourlyRate:Number((rate&&rate.hourlyRate)||e.hourlyRate||0), acting:null };
   }
   function lslEligibleStart(state,e,asOf){
-    const rows=(state&&state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,asOf)<=0)
+    const rows=(state&&state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&!isPayControlJobDataRow(r)&&r.effectiveDate&&compare(r.effectiveDate,asOf)<=0)
       .slice().sort((a,b)=>compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
     if(!rows.length) return normaliseEmploymentType(e.type)==='Casual'?'':(e.lslServiceDate||e.startDate||'');
     const current=normaliseEmploymentType(rows[rows.length-1].positionClass||e.type);
@@ -331,8 +366,9 @@
   }
   function weeklyHoursFromSchedule(s){ if(s&&String(s.rosterPattern||'1-week')==='2-week'){ const w1=Object.values(s.hoursByDayWeek1||s.hoursByDay||{}).reduce((sum,h)=>sum+Number(h||0),0); const w2=Object.values(s.hoursByDayWeek2||s.hoursByDayWeek1||s.hoursByDay||{}).reduce((sum,h)=>sum+Number(h||0),0); return (w1+w2)/2; } return Object.values((s&&s.hoursByDay)||{}).reduce((sum,h)=>sum+Number(h||0),0); }
   function reconcileEmploymentFromJobData(state,e){
+    if(api.jobRecords?.multiple(state,e?.id))return api.jobRecords.reconcile(state,e,reconcileEmploymentFromJobData);
     if(!state || !e || !Array.isArray(state.jobDataRows)) return e;
-    const rows=state.jobDataRows.filter(r=>r && r.empId===e.id && r.saved!==false && r.effectiveDate)
+    const rows=state.jobDataRows.filter(r=>r && r.empId===e.id && r.saved!==false && !isPayControlJobDataRow(r) && r.effectiveDate)
       .slice().sort((a,b)=>compare(a.effectiveDate,b.effectiveDate)||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0));
     if(!rows.length) return e;
     const commencementRows=rows.filter(r=>r.action==='Commencement' && /^(New Hire|Rehire)\b/.test(String(r.reason||'')));
@@ -569,6 +605,7 @@
     return target;
   }
   function lslServiceProfile(state,e,asOf,options={}){
+    if(api.jobRecords?.multiple(state,e?.id)){const view=api.jobRecords.serviceView(state,e,asOf);return lslServiceProfile(view,view.employees.find(x=>x.id===e.id),asOf,options);}
     if(!e) return {continuityStart:'',completed:[],cycleStart:'',nextEntitlementDate:'',contributoryDays:0,cycleCalendarDays:0};
     if(isCasualOnly(state,e,asOf)) return {continuityStart:'',completed:[],cycleStart:'',nextEntitlementDate:'',contributoryDays:0,cycleCalendarDays:0,serviceAsOf:asOf,shortBreaks:[],lastResetBreakDays:0};
     const info=lslContinuityInfo(state,e,asOf);
@@ -613,8 +650,8 @@
       (p.rows||[]).forEach(r=>{
         const desc=String(r.description||'').replace(/ Retro$/,'');
         if(r.kind==='retro' && desc==='Long Service Leave') accruedUsed+=Number(r.balanceUnits||0);
-        else if(['Long Service Leave','Long Service Leave Cash Out','Long Service Leave Cash Out Recovery','Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Payout Recovery'].includes(desc)) accruedUsed+=Number(r.units||0);
-        else if(['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery'].includes(desc)) proRataPaid+=Number(r.units||0);
+        else if(['Long Service Leave','Long Service Leave Cash Out','Long Service Leave Cash Out Recovery','Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Payout Recovery','Long Service Leave Overuse Recovery'].includes(desc)) accruedUsed+=Number(r.units||0);
+        else if(['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery','Pro-rata LSL Overuse Recovery'].includes(desc)) proRataPaid+=Number(r.units||0);
       });
     });
     return {accruedUsed:round4(accruedUsed),proRataPaid:round4(proRataPaid)};
@@ -641,6 +678,8 @@
     return round4(Math.max(0,base-usage.proRataPaid+Number(manual.currentProRata||0)));
   }
   function lslBalances(state,e,asOf,options={}){
+    if(state._sharedLeaveState){const shared=state._sharedLeaveState,person=shared.employees.find(x=>x.id===e.id);return lslBalances(shared,person,asOf,options);}
+    if(api.jobRecords?.multiple(state,e.id)){const view=api.jobRecords.serviceView(state,e,asOf);return lslBalances(view,view.employees.find(x=>x.id===e.id),asOf,options);}
     if(isCasualOnly(state,e,asOf)) return {accrued:0,proRata:0,entitlementDate:'',completedEntitlements:[],continuityStart:''};
     const profile=lslServiceProfile(state,e,asOf,{ignoreDateAdjustment:!!options.ignoreDateAdjustment});
     if(!profile.continuityStart) return {accrued:round4(Number(e.lslAccruedBalance||0)),proRata:round4(Number(e.lslProRataOverride||0)),entitlementDate:e.lslEntitlementDateOverride||'',completedEntitlements:[],continuityStart:''};
@@ -649,8 +688,8 @@
     const manual=options.ignoreManual?{accrued:0,currentProRata:0,convertedProRata:0}:lslManualAdjustmentsFromEvents(state,e,asOf,profile);
     const weekly=weeklyHoursFromSchedule(activeSchedule(state,e.id,asOf)) || STANDARD_WEEKLY_HOURS;
     const basePro=(weekly*LSL_ENTITLEMENT_WEEKS)*(profile.contributoryDays/profile.cycleCalendarDays);
-    const accrued=round4(Math.max(0,earned-usage.accruedUsed+Number(manual.accrued||0)+Number(manual.convertedProRata||0)));
-    const proRata=round4(Math.max(0,basePro-usage.proRataPaid+Number(manual.currentProRata||0)));
+    const rawAccrued=earned-usage.accruedUsed+Number(manual.accrued||0)+Number(manual.convertedProRata||0),accrued=round4(options.includeDeficits?rawAccrued:Math.max(0,rawAccrued));
+    const rawProRata=basePro-usage.proRataPaid+Number(manual.currentProRata||0),proRata=round4(options.includeDeficits?rawProRata:Math.max(0,rawProRata));
     return {accrued,proRata,entitlementDate:profile.nextEntitlementDate,completedEntitlements:profile.completed,continuityStart:profile.continuityStart};
   }
   function breakDaysBeforeRehire(e,rehireDate){
@@ -746,6 +785,7 @@
     return { start:iso(anniversary), end:addDays(iso(new Date(anniversary.getFullYear()+1,anniversary.getMonth(),anniversary.getDate())),-1) };
   }
   function ensureContractExpiryNotifications(state,todayIsoValue){
+    const concurrent=(state.employees||[]).filter(e=>api.jobRecords?.multiple(state,e.id));if(concurrent.length){const ids=new Set(concurrent.map(e=>e.id));let changed=ensureContractExpiryNotifications({...state,employees:state.employees.filter(e=>!ids.has(e.id))},todayIsoValue);for(const e of concurrent)for(const r of api.jobRecords.records(state,e.id)){const view=api.jobRecords.scope(state,e.id,r.recordNumber);view.employees=view.employees.filter(x=>x.id===e.id);changed=ensureContractExpiryNotifications(view,todayIsoValue)||changed;}return changed;}
     const today=todayIsoValue||iso(new Date());
     state.alerts=state.alerts||[];
     reconcileAllEmploymentFromJobData(state);
@@ -754,8 +794,8 @@
       const currentEnd=(e.type==='Fixed Term'&&e.contractEndDate)?e.contractEndDate:'';
       // Remove unread obsolete expiry alerts if Job Data has since extended the contract.
       (state.alerts||[]).forEach(a=>{
-        if(!a||a.read===true||!String(a.key||'').startsWith(`contract-expiry-${e.id}-`)) return;
-        if(currentEnd && a.key===`contract-expiry-${e.id}-${currentEnd}`) return;
+        if(!a||a.read===true||Number(a.jobRecord||0)!==Number(state._jobRecordScope||0)||!String(a.key||'').startsWith(`contract-expiry-${e.id}-`)) return;
+        if(currentEnd && a.key===`contract-expiry-${e.id}-${Number(state._jobRecordScope||0)>0?'job'+state._jobRecordScope+'-':''}${currentEnd}`) return;
         a.read=true; a.readAt=new Date().toISOString(); a.obsolete=true; changed=true;
       });
       if(!currentEnd) return;
@@ -764,10 +804,10 @@
       // The alert becomes eligible the day after the previous pay period closes and
       // remains a current-period alert through the target pay period end.
       if(compare(today,prev.closeDate)<=0 || compare(today,target.end)>0) return;
-      const key=`contract-expiry-${e.id}-${currentEnd}`;
+      const key=`contract-expiry-${e.id}-${Number(state._jobRecordScope||0)>0?'job'+state._jobRecordScope+'-':''}${currentEnd}`;
       if(state.alerts.some(a=>a&&a.key===key)) return;
       const first=String(e.firstName||employeeName(e).split(' ')[0]||'Employee');
-      state.alerts.unshift({id:uid('alert'),key,type:'warning',message:`${employeeName(e)}'s contract is expiring on ${fmtPay(currentEnd)}. Please complete the exit checklist or extend ${first}'s contract in Job Data.`,action:{tab:'jobData',empId:e.id},read:false,createdAt:new Date().toISOString()});
+      state.alerts.unshift({id:uid('alert'),key,type:'warning',jobRecord:Number(state._jobRecordScope||0),message:`${employeeName(e)}${Number(state._jobRecordScope||0)>0?' (Job '+state._jobRecordScope+')':''}'s contract is expiring on ${fmtPay(currentEnd)}. Please complete the exit checklist or extend ${first}'s contract in Job Data.`,action:{tab:'jobData',empId:e.id,jobRecord:Number(state._jobRecordScope||0)},read:false,createdAt:new Date().toISOString()});
       changed=true;
     });
     return changed;
@@ -1061,6 +1101,7 @@
   }
 
   function annualLeaveForecast(state,e,startDate,endDate,requestedHours=0,excludeLeaveId){
+    if(api.jobRecords?.multiple(state,e.id)){const view={...state,leaveBookings:(state.leaveBookings||[]).filter(l=>l.id!==excludeLeaveId)},out=api.jobRecords.forecast(view,e,endDate);return {...out,balanceAfter:round4(out.availableBefore-Number(requestedHours||0))};}
     if(!state || !e || !startDate || !endDate) return {availableBefore:0,balanceAfter:0,currentBalance:0,accrual:0,used:0};
     reconcileEmploymentFromJobData(state,e);
     const current=currentCycle(state);
@@ -1097,6 +1138,7 @@
   }
 
   function validateLeaveBooking(state, empId, leaveType, startDate, endDate, requestedHours, excludeLeaveId, bookingOptions={}){
+    if(api.jobRecords?.multiple(state,empId))return validateLeaveBooking(api.jobRecords.scope(state,empId,bookingOptions.jobRecord||0),empId,leaveType,startDate,endDate,requestedHours,excludeLeaveId,bookingOptions);
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e || !startDate || !endDate) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Complete leave fields.' };
     reconcileEmploymentFromJobData(state,e);
@@ -1189,7 +1231,7 @@
   function mergeRows(rows){
     const out = [];
     rows.forEach(row=>{
-      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||'',row.payslipPosition||'',row.payslipPositionNumber||'',row.payslipDepartment||'',row.casualEarnings?row.positionNumber||'':'',['leave','leaveLoading'].includes(row.kind)?row.leaveBookingId||'':''].join('|');
+      const key = [row.description,row.rate,row.position,row.kind,row.ote===false?'nonote':'ote',row.retroSegmentKey||'',row.payslipPosition||'',row.payslipPositionNumber||'',row.payslipDepartment||'',row.casualEarnings?row.positionNumber||'':'',['leave','leaveLoading'].includes(row.kind)?row.leaveBookingId||'':'',row.sourceCashOutId||'',row.jobRecord??''].join('|');
       const canCombineAnywhere = row.description === 'Regular Pay' && row.kind === 'regular';
       let target = canCombineAnywhere ? out.find(x=>x._key===key) : out[out.length-1];
       if(target && target._key === key && (canCombineAnywhere || addDays(target.endDate,1) === row.startDate)){
@@ -1228,7 +1270,7 @@
         output.push({description:desc,units:round4(-Number(r.units||0)),amount:round2(-Number(r.amount||0)),startDate:extensionDate,endDate:extensionDate,rate:Number(r.rate||0),baseRate:Number(r.baseRate||r.rate||0),position:r.position||p.position||e.position,kind:'payoutCorrection',ote:false,lateFixedTermRecovery:true,lateFixedTermRecoveryKey:key,sourcePayoutDescription:r.description,sourcePayslipId:p.id||''});
       });
     });
-    return output;
+    return output.filter(r=>payEnabledRange(state,e.id,r.startDate,r.endDate));
   }
 
   function terminationPayoutEmployee(state,e,c){
@@ -1262,7 +1304,7 @@
     // Ordinary/leave/public-holiday earnings require active employment in the cycle,
     // but legitimate Additional Earnings and corrections can still be payable after termination.
     if(employedInCycle) daysBetween(c.start,c.end).forEach(d=>{
-      if(!isEmployedOn(e,d)) return;
+      if(!isEmployedOn(e,d)||isPayCeasedOn(state,e.id,d)) return;
       const sched = activeSchedule(state,e.id,d);
       const hours = Number((sched && sched.hoursByDay && sched.hoursByDay[parseDate(d).getDay()]) || 0);
       if(hours <= 0) return;
@@ -1316,6 +1358,7 @@
     if(includeAdditional){
       (state.additionalEarnings||[]).filter(a=>{
         if(a?.sourceTimesheetId&&!isFinalised(state,c))return false;
+        if(a&&!payEnabledRange(state,e.id,a.startDate||c.start,a.earningType==='Casual Earnings'?(a.startDate||c.start):(a.endDate||a.startDate||c.start)))return false;
         if(!a || a.empId!==e.id || a.saved===false || a.legacyCashOutId || ['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType)) return false;
         // Source dates are authoritative for Additional Earnings. This is especially
         // important for a late Casual Earnings entry: older saved data can carry the
@@ -1329,7 +1372,7 @@
         const earningType = a.earningType || 'Additional Hours';
         const baseRate = activePayRate(state,e.id,a.startDate || c.start);
         if(earningType === 'Overpayment Adjustment'){
-          rows.push({ description:'Overpayment Adjustment', units:0, amount:round2(Number(a.amount||0)), startDate:c.start, endDate:c.end, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0, amountOnly:true, nonTaxable:true });
+          rows.push({ description:'Overpayment Adjustment', units:0, amount:round2(Number(a.amount||0)), startDate:a.startDate||c.start, endDate:a.endDate||a.startDate||c.start, rate:0, baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:false, accruesLeave:false, serviceHours:0, amountOnly:true, nonTaxable:true });
           return;
         }
         if(earningType==='On-call Allowance'){
@@ -1380,14 +1423,23 @@
         rows.push({ description:earningType, units:Number(a.hours||0), amount:round2(amount), startDate:a.startDate, endDate:a.endDate || a.startDate, rate:round2(Number(baseRate.hourlyRate||0)*multiplier), baseRate:Number(baseRate.hourlyRate||0), position:baseRate.position||e.position, kind:'additional', ote:isOte });
       });
     }
-    (state.cashOutRequests||[]).filter(cash=>cash.empId===e.id && Number(cash.cycleId)===Number(c.id) && cash.saved !== false && cash.deleted !== true).forEach(cash=>{
-      const rate = activePayRate(state,e.id,cash.effectiveDate || c.start);
+    const paidCashOutIds=new Set((state.payslips||[]).filter(p=>p.empId===e.id&&p.finalised&&Number(p.cycleId)<Number(c.id)).flatMap(p=>p.rows||[]).filter(r=>r.kind==='payout').map(r=>r.sourceCashOutId).filter(Boolean));
+    (state.cashOutRequests||[]).filter(cash=>{
+      if(cash.empId!==e.id||cash.saved===false||cash.deleted===true)return false;
+      const source=cycleById(cash.cycleId),date=cash.effectiveDate||source.start;if(isPayCeasedOn(state,e.id,date))return false;
+      if(Number(cash.cycleId)===Number(c.id))return true;
+      return Number(cash.cycleId)<Number(c.id)&&isFinalised(state,source)&&(state.finalisedCycles[String(source.id)].payControlHeldDates?.[e.id]||[]).includes(date)&&!paidCashOutIds.has(cash.id);
+    }).forEach(cash=>{
+      const rate = activePayRate(state,e.id,cash.effectiveDate || cycleById(cash.cycleId).start);
       const desc = cash.leaveType === 'Long Service Leave' ? 'Long Service Leave Cash Out' : 'Annual Leave Cash Out';
-      rows.push({ description:desc, units:Number(cash.hours||0), amount:round2(Number(cash.hours||0)*Number(rate.hourlyRate||0)), startDate:cash.effectiveDate || c.start, endDate:cash.effectiveDate || c.start, rate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', leaveType:cash.leaveType, ote:false });
+      rows.push({ description:desc, units:Number(cash.hours||0), amount:round2(Number(cash.hours||0)*Number(rate.hourlyRate||0)), startDate:cash.effectiveDate || cycleById(cash.cycleId).start, endDate:cash.effectiveDate || cycleById(cash.cycleId).start, rate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', leaveType:cash.leaveType, ote:false,sourceCashOutId:cash.id,deferredFromCycleId:Number(cash.cycleId)!==Number(c.id)?Number(cash.cycleId):undefined });
     });
 
     (state.cashOutRequests||[]).filter(cash=>cash.empId===e.id && cash.deleted===true && Number(cash.deletedAtCycleId)===Number(c.id)).forEach(cash=>{
-      const originalCycle=cycleById(cash.cycleId); const rate=activePayRate(state,e.id,cash.effectiveDate||originalCycle.start);
+      const originalCycle=cycleById(cash.cycleId),sourceDate=cash.effectiveDate||originalCycle.start;
+      const heldAtFinalisation=(state.finalisedCycles[String(originalCycle.id)]?.payControlHeldDates?.[e.id]||[]).includes(sourceDate);
+      if(heldAtFinalisation&&!paidCashOutIds.has(cash.id))return;
+      const rate=activePayRate(state,e.id,sourceDate);
       const desc=cash.leaveType==='Long Service Leave'?'Long Service Leave Cash Out Recovery':'Annual Leave Cash Out Recovery';
       rows.push({ description:desc, units:-Number(cash.hours||0), amount:round2(-Number(cash.hours||0)*Number(rate.hourlyRate||0)), startDate:cash.effectiveDate||originalCycle.start, endDate:cash.effectiveDate||originalCycle.start, rate:Number(rate.hourlyRate||0), baseRate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', leaveType:cash.leaveType, ote:false });
     });
@@ -1396,7 +1448,7 @@
       const payoutEmployee=terminationPayoutEmployee(state,e,c);
       const end = employmentEnd(payoutEmployee);
       const payoutDate=end ? (hasInclusiveEmploymentEnd(payoutEmployee)?end:addDays(end,-1)) : '';
-      if(payoutDate && between(payoutDate,c.start,c.end) && !isCasualOnly(state,e,payoutDate)){
+      if(payoutDate && !isPayCeasedOn(state,e.id,payoutDate) && between(payoutDate,c.start,c.end) && !isCasualOnly(state,e,payoutDate)){
         const rate = activePayRate(state,e.id,payoutDate);
         // For a final pay, calculate leave payouts from the final projected balance
         // after all current-pay balance-affecting corrections (including retro rows)
@@ -1406,7 +1458,7 @@
           : rows.filter(r=>!(r.kind==='payout'));
         const payoutCycle=payoutEmployee===e?c:Object.assign({},c,{end:payoutDate});
         const balanceRows=payoutEmployee===e?payoutBaseRows:payoutBaseRows.filter(r=>!r.startDate||compare(r.startDate,payoutDate)<=0);
-        const balances = projectedBalances(state,payoutEmployee,payoutCycle,true,balanceRows);
+        const balances = projectedBalances(state,payoutEmployee,payoutCycle,true,balanceRows,{includeDeficits:true});
         if(balances.annual > 0) rows.push({ description:'Annual Leave Payout', units:balances.annual, amount:round2(balances.annual*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/resign/i.test(String(payoutEmployee.terminationReason||'')) && balances.annual < -0.0001){
           // Recover the employee's actual outstanding Annual Leave deficit on resignation.
@@ -1415,6 +1467,17 @@
           // accruals/usage, so the recovery is capped to the true remaining deficit.
           const recoveryHours=round4(Math.abs(Number(balances.annual||0)));
           if(recoveryHours>0) rows.push({ description:'Annual Leave Overuse Recovery', units:-recoveryHours, amount:round2(-recoveryHours*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payoutCorrection', baseRate:Number(rate.hourlyRate||0), ote:false, annualLeaveDeficitRecovery:true });
+        }
+        // Apply the configured recovery rule to Personal Leave and each distinct LSL bucket.
+        // Closed periods reuse only their saved recoveries; new rules never rewrite old final pays.
+        if(isFinalised(state,c)){
+          (state.payslips||[]).filter(p=>p.empId===e.id&&p.finalised&&Number(p.cycleId)===Number(c.id)).flatMap(p=>p.rows||[]).filter(r=>r.personalLeaveDeficitRecovery||r.lslDeficitRecovery).forEach(r=>rows.push(Object.assign({},r)));
+        }else{
+          for(const [key,description,leaveType] of [['personal','Personal Leave Overuse Recovery','Personal Leave'],['lslAccrued','Long Service Leave Overuse Recovery','Long Service Leave'],['lslProRata','Pro-rata LSL Overuse Recovery','Long Service Leave']]){
+            const deficit=round4(Math.max(0,-Number(balances[key]||0)));if(deficit<=0.0001)continue;
+            const hourlyRate=Number(rate.hourlyRate||0);if(!Number.isFinite(hourlyRate)||hourlyRate<=0)throw Error('A positive hourly rate is required to recover negative leave for '+employeeName(e)+'.');
+            rows.push({description,units:-deficit,amount:round2(-deficit*hourlyRate),startDate:payoutDate,endDate:payoutDate,rate:hourlyRate,position:rate.position||e.position,kind:'payoutCorrection',baseRate:hourlyRate,ote:false,accruesLeave:false,serviceHours:0,leaveType,personalLeaveDeficitRecovery:key==='personal',lslDeficitRecovery:key==='personal'?'':key});
+          }
         }
         if(balances.lslAccrued > 0) rows.push({ description:'Long Service Leave Payout', units:balances.lslAccrued, amount:round2(balances.lslAccrued*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
         if(/retire/i.test(String(payoutEmployee.terminationReason||'')) && balances.lslProRata > 0) rows.push({ description:'Pro-rata LSL Payout', units:balances.lslProRata, amount:round2(balances.lslProRata*Number(rate.hourlyRate||0)), startDate:payoutDate, endDate:payoutDate, rate:Number(rate.hourlyRate||0), position:rate.position||e.position, kind:'payout', baseRate:Number(rate.hourlyRate||0), ote:false });
@@ -1434,7 +1497,7 @@
         row.payslipDepartment=activeDepartment(state,e,row.startDate||c.start);
       }
     });
-    return mergeRows(rows);
+    return mergeRows(rows.filter(r=>payEnabledRange(state,e.id,r.startDate||c.start,r.endDate||r.startDate||c.start)));
   }
   function isOTE(row){
     if(row.ote === false) return false;
@@ -1459,29 +1522,36 @@
     return { annual:round4(hours * ANNUAL_LEAVE_WEEKS_PER_YEAR / 52), personal:round4(hours * PERSONAL_LEAVE_WEEKS_PER_YEAR / 52) };
   }
   function leaveAccrualForRows(state,e,c,rows){
-    const eligible=(rows||[]).filter(r=>activeEmploymentType(state,e,r.startDate||c.end)!=='Casual');
+    const eligible=(rows||[]).filter(r=>(r.jobEmploymentType||activeEmploymentType(state,e,r.startDate||c.end))!=='Casual');
     return leaveAccrualForOrdinaryHours(Object.assign({},e,{type:'Permanent'}),ordinaryHours(eligible));
   }
-  function projectedBalances(state,e,c,includeCurrent=true,overrideRows=null){
+  function projectedBalances(state,e,c,includeCurrent=true,overrideRows=null,options={}){
+    if(api.jobRecords?.multiple(state,e.id)&&includeCurrent&&!overrideRows)return api.jobRecords.projected(state,e,c,includeCurrent);
     let annual = Number(e.annualLeaveBalance||0);
     let personal = Number(e.personalLeaveBalance||0);
-    const lslInfo = lslBalances(state,e,c.end);
+    const lslInfo = lslBalances(state,e,c.end,{includeDeficits:!!options.includeDeficits});
     let lslAccrued = Number(lslInfo.accrued||0);
     let lslProRata = Number(lslInfo.proRata||0);
     if(includeCurrent){
       const rows = overrideRows || earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true});
+      if(rows.some(r=>r.lslDeficitRecovery)){
+        // Start from the signed ledger balance so an overuse recovery clears the
+        // deficit rather than creating a new positive entitlement from a clamped zero.
+        const ledgerState=isFinalised(state,c)?Object.assign({},state,{payslips:(state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id))}):state;
+        const raw=lslBalances(ledgerState,e,c.end,{includeDeficits:true});lslAccrued=Number(raw.accrued||0);lslProRata=Number(raw.proRata||0);
+      }
       const ordinary = ordinaryHours(rows);
       const accrual = leaveAccrualForRows(state,e,c,rows);
       annual += accrual.annual;
       personal += accrual.personal;
       annual -= rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
-      personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
+      personal -= rows.filter(r=>['Personal Leave','Personal Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       lslAccrued -= rows.filter(r=>r.description==='Long Service Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Long Service Leave');
       annual -= rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
-      lslAccrued -= rows.filter(r=>['Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Payout Recovery','Long Service Leave Cash Out'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
-      lslProRata -= rows.filter(r=>['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
+      lslAccrued -= rows.filter(r=>['Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Payout Recovery','Long Service Leave Cash Out','Long Service Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
+      lslProRata -= rows.filter(r=>['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery','Pro-rata LSL Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
     }
-    return { annual:round4(annual), personal:round4(personal), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(Math.max(0,lslProRata)), lslEntitlementDate:lslInfo.entitlementDate };
+    return { annual:round4(annual), personal:round4(personal), lslAccrued:round4(options.includeDeficits?lslAccrued:Math.max(0,lslAccrued)), lslProRata:round4(options.includeDeficits?lslProRata:Math.max(0,lslProRata)), lslEntitlementDate:lslInfo.entitlementDate };
   }
   function expectedGross(state,e,c){
     const rows = earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:true});
@@ -1671,6 +1741,7 @@
     return retroRowsFromComparison(expected,paid);
   }
   function retroRows(state,e,c){
+    if(!payEnabledInCycle(state,e.id,c))return [];
     const rows = [];
     const segmentStart=currentEmploymentStart(e,c.end)||e.startDate||'';
     function historicalPayout(row){
@@ -1716,7 +1787,7 @@
       const priorRows = [];
       const retroStart = compare(commencementStart,RETRO_PROCESSING_START)<0 ? RETRO_PROCESSING_START : commencementStart;
       daysBetween(retroStart,priorEnd).forEach(d=>{
-        if(!isEmployedOn(e,d) || isCasualOnly(state,e,d)) return;
+        if(!isEmployedOn(e,d) || isCasualOnly(state,e,d) || isPayCeasedOn(state,e.id,d)) return;
         const sched = activeSchedule(state,e.id,d);
         const hours = Number((sched && sched.hoursByDay && sched.hoursByDay[parseDate(d).getDay()]) || 0);
         if(hours <= 0) return;
@@ -1736,7 +1807,7 @@
     retro.forEach(r=>{
       const originalCycle = cycleForDate(r.startDate || r.endDate || ANCHOR_CYCLE.start) || { id:'unknown' };
       const segmentKey=r.amountOnly?'amount':`${r.position||''}|${round4(Number(r.rate||r.baseRate||0))}|${isCasualEarningsRow(r)?r.positionNumber||'':''}`;
-      const key = [originalCycle.id,r.description||'',r.ote===false?'nonote':'ote',r.nonTaxable===true?'nontax':'tax',segmentKey,r.retroSegmentKey||''].join('|');
+      const key = [r.jobRecord??'',originalCycle.id,r.description||'',r.ote===false?'nonote':'ote',r.nonTaxable===true?'nontax':'tax',segmentKey,r.retroSegmentKey||''].join('|');
       let existing = map.get(key);
       if(!existing){
         existing=Object.assign({},r,{units:0,amount:0,balanceUnits:0,accrualUnits:0,startDate:r.startDate,endDate:r.endDate,_displayRate:Number(r.rate||0),_mixedDisplayRate:false});
@@ -1774,15 +1845,37 @@
     }
     return result;
   }
-  function allocateDeductionLines(lines,weights){
+  function allocateDeductionLines(lines,weights,groups){
     const perGroup=weights.map(()=>[]);
     (lines||[]).forEach(line=>{
-      const amounts=allocateRounded(Number(line.amount||0),weights);
+      const eligible=weights.map((w,i)=>!groups||line.jobRecord===undefined||groups[i].rows.some(r=>Number(r.jobRecord||0)===Number(line.jobRecord))?w:0);
+      if(groups&&line.jobRecord!==undefined&&!eligible.some(w=>w>0))return;
+      const indices=eligible.map((w,i)=>w>0?i:-1).filter(i=>i>=0);
+      const parts=allocateRounded(Number(line.amount||0),indices.map(i=>eligible[i]));
+      const amounts=groups&&line.jobRecord!==undefined?weights.map((_,i)=>indices.includes(i)?parts[indices.indexOf(i)]:0):allocateRounded(Number(line.amount||0),weights);
       amounts.forEach((amount,i)=>{ if(Math.abs(amount)>0.004) perGroup[i].push(Object.assign({},line,{amount})); });
     });
     return perGroup;
   }
   function wholePayFinancials(state,e,c,rows){
+    if(api.jobRecords?.multiple(state,e.id)){
+      const contexts=api.jobRecords.records(state,e.id).map(record=>{
+        const n=record.recordNumber, localRows=rows.filter(r=>Number(r.jobRecord||0)===n),gross=round2(localRows.reduce((sum,r)=>sum+Number(r.amount||0),0)),base=round2(localRows.filter(r=>r.nonTaxable!==true).reduce((sum,r)=>sum+Number(r.amount||0),0));
+        const view={...state,deductions:(state.deductions||[]).filter(d=>d.empId!==e.id||Number(d.jobRecord||0)===n)};
+        // A held or unpaid record must not charge another record's pay.
+        if(gross<=0.004)view.deductions=view.deductions.filter(d=>d.empId!==e.id);
+        return {n,view,gross,base,first:calculateDeductions(view,e,c,base,null)};
+      });
+      const preTaxTotal=round2(contexts.reduce((sum,x)=>sum+x.first.preTaxTotal,0)),taxParts=calculateTaxComponents(state,e,rows,c,preTaxTotal);
+      const tax=allocateRounded(taxParts.totalTax,contexts.map(x=>Math.max(0,x.gross)));
+      const deductions={preTaxDeductions:[],postTaxDeductions:[],preTaxTotal:0,postTaxTotal:0};
+      contexts.forEach((x,i)=>{
+        const d=calculateDeductions(x.view,e,c,x.base,round2(x.base-tax[i]-x.first.preTaxTotal),round2(x.gross-tax[i]-x.first.preTaxTotal));
+        for(const key of ['preTaxDeductions','postTaxDeductions'])deductions[key].push(...d[key].map(line=>({...line,jobRecord:x.n})));
+        deductions.preTaxTotal=round2(deductions.preTaxTotal+d.preTaxTotal);deductions.postTaxTotal=round2(deductions.postTaxTotal+d.postTaxTotal);
+      });
+      return {gross:round2(contexts.reduce((sum,x)=>sum+x.gross,0)),taxParts,deductions};
+    }
     const gross=round2((rows||[]).reduce((s,r)=>s+Number(r.amount||0),0));
     const deductionBaseGross=round2((rows||[]).filter(r=>r.nonTaxable!==true).reduce((s,r)=>s+Number(r.amount||0),0));
     const firstPass=calculateDeductions(state,e,c,deductionBaseGross,null);
@@ -1796,7 +1889,7 @@
     (rows||[]).forEach(row=>{
       if(!String(row.description||'').startsWith('Higher Duties Allowance')){ output.push(Object.assign({},row)); return; }
       const cycle=cycleForDate(row.startDate||row.endDate||'');
-      const key=[row.description,row.kind,row.rate,row.baseRate,row.payslipPosition||row.higherDutiesPosition||row.position||'',row.payslipPositionNumber||row.higherDutiesPositionNumber||'',row.ote===false?'nonote':'ote',row.kind==='retro'?(cycle&&cycle.id)||'':'' ].join('|');
+      const key=[row.jobRecord??'',row.description,row.kind,row.rate,row.baseRate,row.payslipPosition||row.higherDutiesPosition||row.position||'',row.payslipPositionNumber||row.higherDutiesPositionNumber||'',row.ote===false?'nonote':'ote',row.kind==='retro'?(cycle&&cycle.id)||'':'' ].join('|');
       let target=grouped.get(key);
       if(!target){ target=Object.assign({},row); grouped.set(key,target); output.push(target); return; }
       target.units=round4(Number(target.units||0)+Number(row.units||0));
@@ -1843,23 +1936,25 @@
     const retro=rows.filter(r=>r.kind==='retro');
     const effectiveEmploymentType=activeEmploymentType(state,e,c.end);
     const casualOnly=effectiveEmploymentType==='Casual'&&daysBetween(c.start,c.end).every(date=>!isEmployedOn(e,date)||activeEmploymentType(state,e,date)==='Casual');
+    const concurrent=api.jobRecords?.multiple(state,e.id);
     const currentJobRow=(state.jobDataRows||[]).filter(r=>r&&r.empId===e.id&&r.saved!==false&&r.action!=='Termination'&&r.effectiveDate&&compare(r.effectiveDate,c.end)<=0)
       .slice().sort((a,b)=>compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0]||null;
     const effectivePosition=effectiveEmploymentType==='Casual'?'Casual':((currentJobRow&&currentJobRow.positionName)||activePayRate(state,e.id,c.end).position||e.position||'');
     const groups=[];
     function groupFor(row){
       const casual=isCasualEarningsRow(row);
-      const position=casualOnly?'Casual':casual?(row.position||effectivePosition):(row.payslipPosition||row.position||effectivePosition);
+      const position=casualOnly||concurrent&&casual?'Casual':casual?(row.position||effectivePosition):(row.payslipPosition||row.position||effectivePosition);
       const number=casualOnly?'':casual?(row.positionNumber||''):(row.payslipPositionNumber||'');
+      if(concurrent&&row.kind==='retro'&&!casual){const existing=groups.find(g=>!g.casual&&g.position===position&&g.rows.some(r=>Number(r.jobRecord||0)===Number(row.jobRecord||0)));if(existing){existing.rows.push(row);return existing;}}
       // A position has one payslip even if its rate changes during the period.
-      const key=casualOnly?'casual-only':number?`number:${number}`:`name:${position}`;
+      const key=concurrent?(casual?'casual-only':`record:${row.jobRecord||0}:`+(number?`number:${number}`:`name:${position}`)):casualOnly?'casual-only':number?`number:${number}`:`name:${position}`;
       let group=groups.find(g=>g.key===key);
       if(!group){ group={key,position,positionNumber:number,rate:Number(row.baseRate||row.rate||0),rows:[],casual}; groups.push(group); }
       group.rows.push(row); return group;
     }
     mainRows.forEach(groupFor);
     retro.forEach(row=>{
-      if(isCasualEarningsRow(row)){ groupFor(row); return; }
+      if(concurrent||isCasualEarningsRow(row)){ groupFor(row); return; }
       const target=row.higherDutiesPosition||row.position||'';
       let group=groups.find(g=>g.position===target);
       if(!group) group=groups[0];
@@ -1874,19 +1969,22 @@
     const allocatedTaxFields={};
     taxFieldNames.forEach(name=>{ allocatedTaxFields[name]=allocateRounded(Number(whole.taxParts[name]||0),weights); });
     const totalTaxAlloc=allocateRounded(Number(whole.taxParts.totalTax||0),weights);
-    const preTaxLines=allocateDeductionLines(whole.deductions.preTaxDeductions,weights);
-    const postTaxLines=allocateDeductionLines(whole.deductions.postTaxDeductions.filter(d=>d.description!=='Recovery Deduction'),weights);
+    const preTaxLines=allocateDeductionLines(whole.deductions.preTaxDeductions,weights,concurrent?groups:null);
+    const postTaxLines=allocateDeductionLines(whole.deductions.postTaxDeductions.filter(d=>d.description!=='Recovery Deduction'),weights,concurrent?groups:null);
     // Allocate recoveries against each position's available net, never below zero.
     const recoveryBudgets=groupGrosses.map((gross,i)=>round2(Math.max(0,gross-totalTaxAlloc[i]-preTaxLines[i].reduce((s,d)=>s+d.amount,0)-postTaxLines[i].reduce((s,d)=>s+d.amount,0))));
     whole.deductions.postTaxDeductions.filter(d=>d.description==='Recovery Deduction').forEach(line=>{
       let remaining=round2(line.amount);
-      const allocations=allocateRounded(remaining,recoveryBudgets);
+      const eligibleBudget=recoveryBudgets.map((b,i)=>!concurrent||line.jobRecord===undefined||groups[i].rows.some(r=>Number(r.jobRecord||0)===Number(line.jobRecord))?b:0);
+      if(!eligibleBudget.some(b=>b>0))return;
+      const allocations=allocateRounded(remaining,eligibleBudget);
       allocations.forEach((value,i)=>{
-        const amount=round2(Math.min(remaining,recoveryBudgets[i],Math.max(0,value)));
+        const amount=round2(Math.min(remaining,eligibleBudget[i],Math.max(0,value)));
         if(amount>0){postTaxLines[i].push(Object.assign({},line,{amount}));recoveryBudgets[i]=round2(recoveryBudgets[i]-amount);remaining=round2(remaining-amount);}
       });
       // Redistribute rounding residue only to a position that can afford it.
       for(let i=0;i<groups.length&&remaining>0;i++){
+        if(concurrent&&line.jobRecord!==undefined&&!groups[i].rows.some(r=>Number(r.jobRecord||0)===Number(line.jobRecord)))continue;
         const amount=round2(Math.min(remaining,recoveryBudgets[i]));
         if(amount>0){const prior=postTaxLines[i].find(d=>d.id===line.id);if(prior)prior.amount=round2(prior.amount+amount);else postTaxLines[i].push(Object.assign({},line,{amount}));recoveryBudgets[i]=round2(recoveryBudgets[i]-amount);remaining=round2(remaining-amount);}
       }
@@ -1900,16 +1998,18 @@
       payslip.casualOnly=casualOnly;
       if(casualOnly) payslip.employmentType='Casual';
       if(g.casual&&g.rows.every(isCasualEarningsRow)) payslip.employmentType='Casual';
-      if(!g.casual&&!casualOnly){const source=g.rows.find(r=>r.kind!=='retro'&&r.startDate)||g.rows[0];if(source?.startDate)payslip.employmentType=activeEmploymentType(state,e,source.startDate);}
+      if(!g.casual&&!casualOnly){const source=g.rows.find(r=>r.kind!=='retro'&&r.startDate)||g.rows[0];if(source?.startDate)payslip.employmentType=source.jobEmploymentType||activeEmploymentType(state,e,source.startDate);}
 
       return payslip;
-    }).filter(p=>Math.abs(p.gross)>0.004||p.rows.some(r=>r.kind==='retro'&&(Math.abs(Number(r.units||0))>0.0001||Math.abs(Number(r.amount||0))>0.004)));
+    }).filter(p=>Math.abs(p.gross)>0.004||p.rows.some(r=>r.personalLeaveDeficitRecovery||r.lslDeficitRecovery||r.annualLeaveDeficitRecovery)||p.rows.some(r=>r.kind==='retro'&&(Math.abs(Number(r.units||0))>0.0001||Math.abs(Number(r.amount||0))>0.004)));
   }
   function calculateEmployee(state, empId, cycleId, finalised=false){
+    if(api.jobRecords?.multiple(state,empId)){const e=state.employees.find(e=>e.id===empId);reconcileEmploymentFromJobData(state,e);return api.jobRecords.calculate(state,e,cycleById(cycleId||state.currentCycleId||1),finalised||isFinalised(state,cycleById(cycleId||state.currentCycleId||1)));}
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e) return [];
     reconcileEmploymentFromJobData(state,e);
     const c = cycleById(cycleId || state.currentCycleId || 1);
+    if(!payEnabledInCycle(state,e.id,c))return [];
     const currentWithoutTerminationPayouts=earningRowsForCycle(state,e,c,{includeAdditional:true,includePayouts:false});
     const retro=retroRows(state,e,c);
     const prePayoutRows=[...currentWithoutTerminationPayouts,...lateFixedTermPayoutRecoveryRows(state,e,c),...retro];
@@ -1923,7 +2023,7 @@
     reconcileAllEmploymentFromJobData(state);
     autoProcessContractExpiries(state,c.end);
     ensureLslEntitlementNotifications(state,c.end);
-    const results=(state.employees||[]).flatMap(e=>calculateEmployee(state,e.id,c.id,finalised)).filter(p=>Math.abs(p.gross)>0.004 || (p.rows||[]).some(r=>r.kind==='retro' && (Math.abs(Number(r.units||0))>0.0001 || Math.abs(Number(r.amount||0))>0.004)));
+    const results=(state.employees||[]).flatMap(e=>calculateEmployee(state,e.id,c.id,finalised)).filter(p=>Math.abs(p.gross)>0.004 || (p.rows||[]).some(r=>r.personalLeaveDeficitRecovery||r.lslDeficitRecovery||r.annualLeaveDeficitRecovery) || (p.rows||[]).some(r=>r.kind==='retro' && (Math.abs(Number(r.units||0))>0.0001 || Math.abs(Number(r.amount||0))>0.004)));
     ensureHigherDutiesReclassificationNotifications(state,c,results);
     return results;
   }
@@ -1957,11 +2057,12 @@
       e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) + accrual.annual);
       e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) + accrual.personal);
       const annualUsed = rows.filter(r=>r.description==='Annual Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Annual Leave');
-      const personalUsed = rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
+      const personalUsed = rows.filter(r=>['Personal Leave','Personal Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0) + retroBalanceUnits(rows,'Personal Leave');
       e.annualLeaveBalance = round4(Number(e.annualLeaveBalance||0) - annualUsed - rows.filter(r=>['Annual Leave Payout','Annual Leave Payout Recovery','Annual Leave Cash Out','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0));
       e.personalLeaveBalance = round4(Number(e.personalLeaveBalance||0) - personalUsed);
       // LSL is service-history based in v1.1.26. Finalised payslip rows become the
       // authoritative usage/payout history; cache the resulting accrued figure for export compatibility.
+      if(!lslServiceProfile(state,e,c.end).continuityStart){e.lslAccruedBalance=round4(Number(e.lslAccruedBalance||0)-rows.filter(r=>r.description==='Long Service Leave Overuse Recovery').reduce((sum,r)=>sum+Number(r.units||0),0));if(e.lslProRataOverride!==''&&e.lslProRataOverride!=null)e.lslProRataOverride=round4(Number(e.lslProRataOverride||0)-rows.filter(r=>r.description==='Pro-rata LSL Overuse Recovery').reduce((sum,r)=>sum+Number(r.units||0),0));}
       const lslCommitted=lslBalances(state,e,c.end);
       e.lslAccruedBalance=round4(lslCommitted.accrued);
       e.lslProRataOverride='';
@@ -1973,6 +2074,11 @@
     const c = currentCycle(state);
     if(isFinalised(state,c)) throw new Error(`${ppeLabel(c)} has already been finalised.`);
     api.urgentPay.finalisationCheck(state,c);
+    if((state.jobDataRows||[]).some(isPayControlJobDataRow)){
+      const checked=JSON.parse(JSON.stringify(state));reconcileAllEmploymentFromJobData(checked);autoProcessContractExpiries(checked,c.end);
+      const blocked=payControlErrors(checked,c).find(r=>r.message.startsWith('Termination final pay'));
+      if(blocked)throw Error(blocked.employeeName+' ('+blocked.empId+'): '+blocked.message);
+    }
     // Freeze the configured rate on source entries when this period is finalised.
     for(const a of state.additionalEarnings||[])if(a.earningType==='On-call Allowance'&&a.saved!==false&&a.startDate>=c.start&&a.startDate<=c.end){
       a.unitRate=ON_CALL_ALLOWANCE_RATE;a.amount=round2(Number(a.hours||0)*a.unitRate);a.ote=false;
@@ -1980,8 +2086,12 @@
     }
     const payslips = calculateAll(state,c.id,true).map(p=>Object.assign({},p,{finalised:true,finalisedAt:(new Date()).toISOString().slice(0,10)}));
     state.payslips = (state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id)).concat(payslips);
-    state.finalisedCycles[String(c.id)] = { id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c) };
-    Payment.commitRecoveryRepayments(state,c,payslips);
+    const heldDates={};
+    for(const e of state.employees||[]){const dates=daysBetween(c.start,c.end).filter(d=>isPayCeasedOn(state,e.id,d));if(dates.length)heldDates[e.id]=dates;}
+    const jobHeld={};for(const e of state.employees||[]){if(!api.jobRecords.multiple(state,e.id))continue;jobHeld[e.id]={};for(const r of api.jobRecords.records(state,e.id)){const view=api.jobRecords.scope(state,e.id,r.recordNumber);jobHeld[e.id][String(r.recordNumber)]=daysBetween(c.start,c.end).filter(d=>isPayCeasedOn(view,e.id,d));}}
+    state.finalisedCycles[String(c.id)] = { ...(Object.keys(jobHeld).length?{jobRecordHeldDates:jobHeld}:{}),id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c),...(Object.keys(heldDates).length?{payControlHeldDates:heldDates}:{}) };
+    const completedRecoveries=Payment.commitRecoveryRepayments(state,c,payslips);
+    api.operations.notifyRecoveryCompletions(state,c,completedRecoveries);
     commitBalancesOnFinalise(state,c,payslips);
     state.currentCycleId = c.id + 1;
     state.payResults[String(state.currentCycleId)] = calculateAll(state,state.currentCycleId,false);
@@ -2002,7 +2112,7 @@
         personal += accrual.personal;
       }
       annual -= rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout','Annual Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
-      personal -= rows.filter(r=>r.description==='Personal Leave').reduce((s,r)=>s+Number(r.units||0),0);
+      personal -= rows.filter(r=>['Personal Leave','Personal Leave Overuse Recovery'].includes(r.description)).reduce((s,r)=>s+Number(r.units||0),0);
     });
     const lslInfo = lslBalances(state,e,asOf);
     let lslAccrued = Number(lslInfo.accrued||0);
@@ -2013,8 +2123,8 @@
     PAY_CYCLES.filter(c=>c.id<=cycleEndId && compare(c.start,asOf)<=0 && !isFinalised(state,c)).forEach(c=>{
       const clipped=Object.assign({},c,{end:compare(c.end,asOf)>0?asOf:c.end});
       const rows=earningRowsForCycle(state,e,clipped,{includeAdditional:true,includePayouts:true});
-      lslAccrued -= rows.filter(r=>['Long Service Leave','Long Service Leave Cash Out','Accrued LSL Payout','Long Service Leave Payout'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
-      lslProRata -= rows.filter(r=>['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
+      lslAccrued -= rows.filter(r=>['Long Service Leave','Long Service Leave Cash Out','Accrued LSL Payout','Long Service Leave Payout','Long Service Leave Overuse Recovery'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
+      lslProRata -= rows.filter(r=>['Pro-rata LSL Payout','Pro-rata LSL Payout Recovery','Pro-rata LSL Overuse Recovery'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
     });
     return { annual:round4(annual), personal:round4(personal), lslAccrued:round4(Math.max(0,lslAccrued)), lslProRata:round4(Math.max(0,lslProRata)), lslEntitlementDate:lslInfo.entitlementDate };
   }
@@ -2044,7 +2154,7 @@
         const pays=(state.payslips||[]).filter(p=>p.empId===e.id && p.finalised && Number(p.cycleId)===cycleId);
         const rows=pays.flatMap(p=>p.rows||[]);
         balance+=pays.reduce((sum,p)=>sum+Number(p.personalAccrual||0),0);
-        balance-=rows.filter(r=>r.kind!=='retro' && r.description==='Personal Leave').reduce((sum,r)=>sum+Number(r.units||0),0);
+        balance-=rows.filter(r=>r.kind!=='retro' && ['Personal Leave','Personal Leave Overuse Recovery'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
         balance-=retroBalanceUnits(rows,'Personal Leave');
       });
       balance=round4(balance+personalLeaveManualAdjustmentsFromEvents(state,e,resetStart));
@@ -2088,7 +2198,7 @@
         if(!cyclePays.length) continue;
         const rows=cyclePays.flatMap(p=>p.rows||[]);
         const accrual=Number((cyclePays.find(p=>Number.isFinite(Number(p.personalAccrual)))||{}).personalAccrual||0);
-        const used=rows.filter(r=>r.kind!=='retro' && r.description==='Personal Leave').reduce((sum,r)=>sum+Number(r.units||0),0);
+        const used=rows.filter(r=>r.kind!=='retro' && ['Personal Leave','Personal Leave Overuse Recovery'].includes(r.description)).reduce((sum,r)=>sum+Number(r.units||0),0);
         // v1.1.21 doubled balanceUnits/accrualUnits on the first consolidated retro row.
         // For a genuine retro Personal Leave booking/reversal, the displayed normal-rate
         // units represent the leave hours added/removed. Rate-only leave retros have
@@ -2111,11 +2221,12 @@
 
   function uid(prefix){ return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 
-  const api = { ON_CALL_ALLOWANCE_RATE, onCallAllowanceRate, STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, employeeDisplayName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
+  const api = { splitIntoPayslips,isPayControlJobDataRow,payControlAsAt,isPayCeasedOn,payEnabledInCycle,payEnabledRange,validatePayControlRow,payControlErrors,ON_CALL_ALLOWANCE_RATE, onCallAllowanceRate, STANDARD_WEEKLY_HOURS, LSL_CYCLE_YEARS, LSL_ENTITLEMENT_WEEKS, LSL_BREAK_RESET_DAYS, LSL_LWOP_NONCONTRIBUTORY_THRESHOLD_DAYS, ANCHOR_CYCLE, RETRO_PROCESSING_START, SUPER_RATE, ANNUAL_LEAVE_WEEKS_PER_YEAR, PERSONAL_LEAVE_WEEKS_PER_YEAR, ANNUAL_LEAVE_LOADING_RATE, FDV_LEAVE_DAYS_PER_YEAR, FDV_LEAVE_TYPE, BEREAVEMENT_LEAVE_TYPE, PARENTAL_PAID_LEAVE_TYPE, PARENTAL_UNPAID_LEAVE_TYPE, PARENTAL_UNPAID_EXTENSION_TYPE, PARENTAL_FULL_PAY_WEEKS, PARENTAL_HALF_PAY_WEEKS, PARENTAL_UNPAID_FULL_PAY_WEEKS, PARENTAL_UNPAID_HALF_PAY_WEEKS, PAY_CYCLES, PUBLIC_HOLIDAYS_WA, parseDate, iso, addDays, addYearsClamped, dateDiffDays, compare, between, daysBetween, fmtPay, fmtLong, money, round2, round4, ppeLabel, cycleDisplay, cycleById, currentCycle, cycleForDate, isFinalised, isPublicHoliday, publicHolidayName, absenceCalendarStatus, employeeName, employeeDisplayName, leaveBookingIsApproved, rosterWeekForDate, scheduleHoursByDayForDate, activeSchedule, activePayRate, activeEmploymentType, isCasualOnly, positionByNumber, positionHourlyRate, activeJobDataRow, activeDepartment, isActingJobDataRow, activePermanentPayRate, activeActingAssignment, substantivePayRate, activePersonalDetails, activeTaxDetails, hasTfn, normaliseLeaveDescription, residentAnnualTax, stslAnnualRepayment, lookupFortnightlyPAYG, lookupFortnightlySTSL, taxForGross, signedTaxForGross, stslForGross, signedStslForGross, calculateTaxComponents, validateDeductionDates, activeDeductions, calculateDeductions, weeklyHoursFromSchedule, reconcileEmploymentFromJobData, reconcileAllEmploymentFromJobData, employmentSegments, activeEmploymentSegment, currentEmploymentStart, employmentEnd, hasInclusiveEmploymentEnd, isTerminatedOn, isEmployedOn, isEmployedInCycle, segmentLastEmployedDay, breakDaysBetweenSegments, breakDaysBeforeRehire, lslServiceProgressEnd, lslContinuityInfo, lslNonContributoryRanges, lslServiceProfile, lslEntitlementDate, lslEntitlementHours, lslProRataHours, lslBalances, reconcileLslSevenYearMigration, ensureLslEntitlementNotifications, ensureContractExpiryNotifications, ensureHigherDutiesReclassificationNotifications, fdvEntitlementWindow, fdvUsedDays, fdvRemainingDays, calendarDaysInclusive, parentalLeaveUsage, parentalLeaveEndDate, isParentalLeaveType, bookingWorkingDayFractions, leaveNegativeLimitHours, annualLeaveBookingHoursAtCurrentSchedule, forecastApprovedAnnualLeaveHoursUsed, annualLeaveForecast, validateLeaveBooking, lateFixedTermPayoutRecoveryRows, earningRowsForCycle, consolidateHigherDutiesRows, orderPayslipRows, ordinaryHours, leaveAccrualForOrdinaryHours, projectedBalances, recalculateBalances, reconcilePersonalLeaveBreakRules, repairPersonalLeaveBalances, expectedGross, retroRows, calculateEmployee, calculateAll, autoProcessContractExpiries, finaliseCurrentPay };
   Object.assign(api,Payment);
   const SelfServiceModule=typeof module!=='undefined'?require('./self-service.js'):global.SelfService;
   api.selfService=SelfServiceModule.create(api);
   api.createSelfServiceUI=SelfServiceModule.createUI;
+  api.jobRecords=(typeof module!=='undefined'?require('./job-records.js'):global.JobRecords).create(api);
   const OperationsModule=typeof module!=='undefined'?require('./payroll-operations.js'):global.PayrollOperations;
   const TimeModule=typeof module!=='undefined'?require('./time-records.js'):global.TimeRecords;
   api.timeRecords=TimeModule.create(api,api.selfService);

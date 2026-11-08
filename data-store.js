@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.10';
+  const APP_VERSION = '1.2.11';
   const STORAGE_KEY = 'payrollAppData';
 
   function emptyState(){
@@ -19,6 +19,8 @@
       superDetails: [],
       bankDetails: [],
       recoveryRepayments: [],
+      managerDelegations: [],
+      jobRecords: [],
       positions: [],
       jobDataRows: [],
       cashOutRequests: [],
@@ -69,7 +71,7 @@
     const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','managerDelegations','jobRecords','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['flexOpeningBalances','payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     state.currentCycleId = Number(state.currentCycleId || 1);
     // Preserve trustworthy pending-status timestamps; unknown legacy ages start now.
@@ -97,7 +99,7 @@
       if(!j||j.saved===false) return false;
       if(j.action==='Movement') return actingReasons.includes(String(j.reason||''));
       if(j.action!=='Variation') return false;
-      const event=state.jobDataRows.filter(r=>r&&r.empId===j.empId&&r.saved!==false&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
+      const event=state.jobDataRows.filter(r=>r&&r.empId===j.empId&&Number(r.jobRecord||0)===Number(j.jobRecord||0)&&r.saved!==false&&['Commencement','Movement','Termination'].includes(r.action)&&r.effectiveDate&&
         (String(r.effectiveDate)<String(j.effectiveDate)||(r.effectiveDate===j.effectiveDate&&Number(r.effectiveSequence||0)<=Number(j.effectiveSequence||0))))
         .slice().sort((a,b)=>String(b.effectiveDate).localeCompare(String(a.effectiveDate))||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
       return !!(event&&event.action==='Movement'&&actingReasons.includes(String(event.reason||''))&&
@@ -241,12 +243,13 @@
     // stale Fixed-Term class. Permanency remains effective until an explicit later
     // employment-type transition is recorded.
     state.employees.forEach(e=>{
-      let permanentActive=false;
+      const permanentByRecord=new Map();
       (state.jobDataRows||[]).filter(j=>j.empId===e.id&&j.saved!==false).slice().sort((a,b)=>String(a.effectiveDate||'').localeCompare(String(b.effectiveDate||''))||Number(a.effectiveSequence||0)-Number(b.effectiveSequence||0)).forEach(j=>{
-        if(j.action==='Variation'&&j.reason==='Permanency Confirmed'){ j.positionClass='Permanent'; permanentActive=true; return; }
+        const record=Number(j.jobRecord||0);let permanentActive=permanentByRecord.get(record)||false;
+        if(j.action==='Variation'&&j.reason==='Permanency Confirmed'){ j.positionClass='Permanent'; permanentByRecord.set(record,true); return; }
         const explicitFixed=/Fixed-Term|Fixed Term Contract/.test(String(j.reason||'')) || j.reason==='Permanency Removed';
         const explicitCasual=/Casual/.test(String(j.reason||''));
-        if(explicitFixed||explicitCasual){ permanentActive=false; return; }
+        if(explicitFixed||explicitCasual){ permanentByRecord.set(record,false); return; }
         if(permanentActive&&j.action!=='Termination') j.positionClass='Permanent';
       });
     });

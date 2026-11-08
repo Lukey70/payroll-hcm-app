@@ -38,8 +38,8 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(html.includes('id="loginButton"'), 'index.html must include the login button');
   assert(html.includes('id="loginUser"'), 'login screen must include an active-employee user selector');
   assert(app.includes("const DEFAULT_PASSWORD = '1234'"), 'default login password must be 1234');
-  assert(html.includes('v1.2.10'), 'sidebar/version label must show v1.2.10');
-  assert(data.includes("APP_VERSION = '1.2.10'"), 'data-store version must be 1.2.10');
+  assert(html.includes('v1.2.11'), 'sidebar/version label must show v1.2.11');
+  assert(data.includes("APP_VERSION = '1.2.11'"), 'data-store version must be 1.2.11');
 })();
 
 (function testAnchorPayCycle(){
@@ -519,7 +519,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
 (function testV119JobDataUiAndReasons(){
   const app = fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
   assert(app.includes("'Expiry of Fixed Term'"), 'Termination reasons should include Expiry of Fixed Term');
-  assert(app.includes('class="danger" title="Remove row"'), 'Job Data remove/minus button should be red/danger style');
+  assert(app.includes('id="jobDataMinus" class="secondary job-data-delete"'), 'Job Data should expose the distinct labelled delete action');
   assert(app.includes('function sortedJobDataRows') && app.includes('E.compare(b.effectiveDate,a.effectiveDate)'), 'Job Data should sort newest to oldest by effective date');
   assert(app.indexOf('<label>Position Number</label>') < app.indexOf('<label>Position Name</label>'), 'Position Number should appear on the same position-details line before Position Name');
   assert(app.indexOf('<label>Position Class</label>') > app.indexOf('<label>Reports To</label>'), 'Position Class should be moved below the position details row');
@@ -1024,7 +1024,7 @@ function totalAmountByDesc(payslips, desc){ return payslips.flatMap(p=>p.rows).f
   assert(output.includes('15/9/2023')&&output.includes('LUKE MCGUINESS')&&output.includes('PAYROLL OFFICER'),'Generated report must include LWOP and signatory details');
   assert(output.includes("McDonald&#39;s California Franchise"),'Generated report must use McDonald\'s California Franchise branding');
   assert(output.includes("commenced service with McDonald&#39;s California Franchise"),'Commencement wording must use the requested company name');
-  assert(output.includes('different roles within the company'),'Job-number explanation must refer to the company');
+  assert(output.includes('Job number matches the employee’s job record number'),'Job-number explanation must match the job record number');
   assert(output.includes('Please contact the Human Resources Department on HR@mcdonaldscf.com'),'Contact wording must use the requested HR email');
   assert(!output.includes('Government of Western Australia')&&!output.includes('Department of Education')&&!output.includes('151 Royal Street'),'Government, Department of Education and company-address branding must be absent from the generated report');
 })();

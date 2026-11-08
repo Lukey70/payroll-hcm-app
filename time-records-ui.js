@@ -85,12 +85,12 @@ function createUI(o){
   if(editable())$(container).querySelectorAll('.tr-record-sheet input,.tr-record-sheet textarea').forEach(input=>input.addEventListener('input',refreshMetrics));
  }
  function print(){
-  collect();const t=recordForPreview();if(!T.timesheets(s(),u(),area).some(x=>x.id===activeRecord?.id)&&!(area==='ess'&&!activeRecord))throw Error('This time record is no longer in your scope.');
+  collect();const t=recordForPreview();if(!T.timesheets(s(),u(),area,undefined,page==='approvals').some(x=>x.id===activeRecord?.id)&&!(area==='ess'&&!activeRecord))throw Error('This time record is no longer in your scope.');
   const c=E.cycleById(Number(period)),data=summary(),oldAll=allWeeks;allWeeks=true;let html='<article class="tr-print"><h1>Time and Flex Record</h1>'+sheetHtml(t,c,data,false)+(t.decidedBy?'<p>Reviewed by '+esc(E.employeeDisplayName(employee(t.decidedBy)||{}))+' · '+esc(t.decidedAt)+' · '+esc(t.comment||'')+'</p>':'')+'</article>';allWeeks=oldAll;
   html=html.replace(/id="[^"]*"/g,'');const target=$('printArea');target.innerHTML=html;target.querySelectorAll('button,select,.tr-sheet-toolbar .controls').forEach(el=>el.remove());(o.window||g).print();
  }
  function render(){
-  const all=T.timesheets(s(),u(),area),own=area==='ess',pending=page==='approvals';
+  const all=T.timesheets(s(),u(),area,undefined,page==='approvals'),own=area==='ess',pending=page==='approvals';
   if(!own){
    const records=pending?all.filter(t=>t.status==='Awaiting Manager Approval'):all,t=records.find(t=>t.id===editing);
    put('<h2>'+(pending?'Timesheet Approvals':'Timesheet Manager')+'</h2><p>Time and flex records do not process payments.</p>'+table(['Employee','Period','Hours Worked','Status','Action'],records.map(t=>[esc(E.employeeDisplayName(employee(t.empId)||{})),esc(E.cycleDisplay(E.cycleById(t.cycleId))),n(T.summary(s(),t).worked),statusHtml(t),'<button data-ops-sheet="'+esc(t.id)+'">View Record</button>']))+'<div id="trReview"></div>');bind('data-ops-sheet',id=>{editing=id;loadKey='';render();});

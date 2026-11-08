@@ -98,7 +98,13 @@
     function commitRecoveryRepayments(s,c,pays){
       const totals=new Map();
       pays.forEach(p=>(p.postTaxDeductions||[]).filter(d=>d.description==='Recovery Deduction').forEach(d=>totals.set(d.id,round2((totals.get(d.id)||0)+Number(d.amount||0)))));
-      totals.forEach((amount,id)=>{if(amount>0&&!list(s,'recoveryRepayments').some(x=>x.deductionId===id&&Number(x.cycleId)===c.id))s.recoveryRepayments.push({id:uid('repayment'),deductionId:id,cycleId:c.id,amount});});
+      const completed=[];
+      totals.forEach((amount,id)=>{
+        if(amount<=0||list(s,'recoveryRepayments').some(x=>x.deductionId===id&&Number(x.cycleId)===c.id))return;
+        const d=list(s,'deductions').find(x=>x.id===id),before=d?recoveryBalance(s,d).remaining:0;
+        const repayment={id:uid('repayment'),deductionId:id,cycleId:c.id,amount};s.recoveryRepayments.push(repayment);
+        if(d&&before>0&&recoveryBalance(s,d).remaining===0)completed.push({deductionId:id,repaymentId:repayment.id});
+      });return completed;
     }
     function ensurePendingLeaveNotifications(s,now=new Date()){
       const stamp=new Date(now).toISOString(),nowMs=Date.parse(stamp);let added=0;

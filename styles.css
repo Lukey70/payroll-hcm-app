@@ -574,3 +574,24 @@ table.ui-data-table tbody tr.is-row-selected>td { background:#eaf2ff; }
 table.ui-data-table tbody tr.ui-data-row:focus-within { outline:2px solid #2563eb;outline-offset:-2px; }
 @media(prefers-reduced-motion:reduce) { .report-skeleton-heading,.report-skeleton-row { animation:none; } }
 @media print { .report-loading { display:none!important; } table.ui-data-table tbody tr { outline:none!important; } table.ui-data-table tbody tr.ui-data-row>td { box-shadow:none!important;background:transparent!important; } }
+
+/* Job Data: row actions and navigation */
+.job-data-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 16px;margin:16px 0;background:#f8fafc;border:1px solid #dce4ef;border-radius:12px}
+.job-data-row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.job-data-toolbar button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;white-space:nowrap}
+.job-data-toolbar .ui-icon{width:18px;height:18px;flex:none}
+.job-data-toolbar-divider{width:1px;height:24px;background:#d8e1ed;margin:0 2px}
+.job-data-toolbar .job-data-delete{background:#fff;color:#b42332;border:1px solid #efc4cb}
+.job-data-toolbar .job-data-delete:hover:not(:disabled){background:#fff1f2;border-color:#d98c98}
+.job-data-pagination{display:flex;align-items:center;gap:10px;margin-left:auto}
+.job-data-pagination button{width:40px;padding:0;background:#fff;border:1px solid #d2dce9;color:#334155}
+.job-data-row-count{min-width:92px;text-align:center;line-height:1.3;font-variant-numeric:tabular-nums}
+.job-data-row-count strong{display:block;font-size:14px;color:#172033}.job-data-row-count strong span{font-weight:400;color:#64748b}
+.job-data-row-count small{display:block;font-size:11px;color:#64748b;margin-top:2px}
+.job-data-delete-summary{padding:12px 14px;margin:16px 0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px}
+.job-data-delete-summary div{display:grid;grid-template-columns:125px 1fr;gap:12px;padding:6px 0}.job-data-delete-summary dt{color:#64748b;font-size:13px}.job-data-delete-summary dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+@media(max-width:600px){.job-data-toolbar{padding:12px;gap:14px}.job-data-row-actions{width:100%;gap:8px}.job-data-row-actions #jobDataChangeEmp{width:100%}.job-data-toolbar-divider{display:none}.job-data-row-actions #jobDataAdd,.job-data-row-actions #jobDataMinus{flex:1}.job-data-pagination{width:100%;margin-left:0;justify-content:center;border-top:1px solid #e2e8f0;padding-top:12px}.job-data-delete-summary div{grid-template-columns:1fr;gap:4px}}
+
+.job-record-selector{padding:12px 14px;background:#eff6ff;border:1px solid #d3e2fa;border-radius:10px;margin:14px 0}.job-record-selector label{min-width:240px;flex:1}.job-record-selector .small-note{flex-basis:100%;margin:0}.job-record-selector button{display:inline-flex;align-items:center;gap:6px}.job-record-selector .ui-icon{width:18px;height:18px}@media(max-width:600px){.job-record-selector label,.job-record-selector button{width:100%;min-width:0}}
+
+.payslip-job-records{display:block;margin-top:3px;color:#64748b;font-size:11px}

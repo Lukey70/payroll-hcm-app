@@ -1,6 +1,6 @@
 {
-  "version": "1.2.10",
+  "version": "1.2.11",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Timesheet and flex corrections, extended absences and return reminders, preferred names, searchable lists, certification scroll fix and shared UI improvements",
-  "releaseNotes": "RELEASE-NOTES-v1.2.10.md"
+  "notes": "Concurrent job records, record deductions, shared leave and final payouts, Cease Pay, manager delegation, support fixes and payroll checks",
+  "releaseNotes": "RELEASE-NOTES-v1.2.11.md"
 }
