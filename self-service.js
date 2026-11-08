@@ -309,7 +309,7 @@
     const {E,getState,getUser,payslipHtml,onChange,home,logout,esc}=o,S=E.selfService;
     const $=id=>document.getElementById(id),v=id=>$ (id)?.value||'',put=(id,html)=>{if($(id))$(id).innerHTML=html;};
     const statusHtml=value=>global.PayrollUI?.statusHtml(value)||esc(value);
-    const employeeHeader=id=>global.PayrollUI?.employeeHeader(E,getState(),id,E.iso(new Date()),area==='mss'?E.jobRecords.eligibleForManager(getState(),getUser(),id).map(r=>r.recordNumber):null)||'';
+    const employeeHeader=id=>id&&(global.PayrollUI?.employeeHeader(E,getState(),id,E.iso(new Date()),area==='mss'?E.jobRecords.eligibleForManager(getState(),getUser(),id).map(r=>r.recordNumber):null))||'';
     const table=(heads,rows)=>`<div class="table-wrap"><table><thead><tr>${heads.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
     const reportError=o.reportError||alert;
     const click=(id,fn)=>$(id)?.addEventListener('click',()=>{try{const result=fn();if(result?.catch)result.catch(e=>reportError(e.message));}catch(e){reportError(e.message);}});
@@ -348,10 +348,11 @@
       renderLeave();
     }
     function nav(items){if(!section)section=items[0][0];put('ssSidebar',items.map(([id,label])=>`<button data-ss-section="${id}" class="${section===id?'':'secondary'}">${label}</button>`).join(''));buttons('data-ss-section',id=>{section=id;target='';earnId='';render();});}
-    function selector(){
-      const people=area==='ess'?[state().employees.find(e=>e.id===user())]:S.directReports(state(),user());
+    function selector(leaveBooking=false){
+      let people=area==='ess'?[state().employees.find(e=>e.id===user())]:S.directReports(state(),user());
+      if(leaveBooking&&area==='mss')people=people.filter(e=>E.jobRecords.leaveRecords(state(),e.id).some(r=>E.jobRecords.eligibleForManager(state(),user(),e.id).some(a=>a.recordNumber===r.recordNumber)));
       if(!people.some(e=>e.id===target))target=people[0]?.id||'';
-      return area==='ess'?employeeHeader(user()):`<label>Employee<select id="ssEmployee">${people.map(e=>`<option value="${esc(e.id)}" ${e.id===target?'selected':''}>${esc(E.employeeDisplayName(e))} (${esc(e.id)})</option>`).join('')}</select></label>${people.length?'':'<p>No direct reports.</p>'}${employeeHeader(target)}`;
+      return area==='ess'?employeeHeader(user()):`<label>Employee<select id="ssEmployee">${people.map(e=>`<option value="${esc(e.id)}" ${e.id===target?'selected':''}>${esc(E.employeeDisplayName(e))} (${esc(e.id)})</option>`).join('')}</select></label>${people.length?'':leaveBooking?'<p>No direct reports eligible for leave.</p>':'<p>No direct reports.</p>'}${employeeHeader(target)}`;
     }
     function bindSelector(){change('ssEmployee',()=>{target=v('ssEmployee');earnId='';render();});}
     function selected(){if(!target&&area==='ess')target=user();if(!target)return null;return S.assertScope(state(),user(),target,area);}
@@ -423,14 +424,14 @@
         bindLeaveFiles();buttons('data-ss-delete',id=>{if(!confirm('Delete this leave request?'))return;mutate(s=>S.deleteRequest(s,user(),id,area));render();});return;
       }
       if(section==='calendar')return calendar();
-      const picker=selector(),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
+      const picker=selector(section==='request'),e=selected();if(!e){put('ssMain',picker);bindSelector();return;}
       if(section==='balances'){
         const b=E.projectedBalances(state(),e,E.currentCycle(state()),false),pending=state().leaveBookings.filter(l=>l.empId===e.id&&l.status==='Awaiting Manager Approval');
         const reserved=type=>E.round4(pending.filter(l=>l.type===type).reduce((a,l)=>a+Number(l.hours||0),0));
         const casual=E.isCasualOnly(state(),e,E.currentCycle(state()).end);put('ssMain',`${picker}<h2>Absence Balances</h2>${casual?'<p class="small-note"><strong>Casual-only employee.</strong> Annual Leave, Personal Leave and Long Service Leave balances/entitlement dates do not apply while the employee remains casual-only.</p>':S.absenceBalanceCardsHtml(b,{annual:reserved('Annual Leave'),personal:reserved('Personal Leave'),lslAccrued:reserved('Long Service Leave')})+'<p class="small-note">Pending requests reserve availability for validation; they do not deduct actual balances or enter payroll until approved and processed.</p>'}`);bindSelector();return;
       }
       const types=area==='ess'?S.EMPLOYEE_LEAVE:S.MANAGER_LEAVE;
-      const allowedJobs=area==='mss'?E.jobRecords.eligibleForManager(state(),user(),e.id).map(r=>r.recordNumber):E.jobRecords.records(state(),e.id).map(r=>r.recordNumber);if(!allowedJobs.includes(leaveJobRecord))leaveJobRecord=allowedJobs[0]??0;
+      const bookable=E.jobRecords.leaveRecords(state(),e.id).map(r=>r.recordNumber),allowedJobs=(area==='mss'?E.jobRecords.eligibleForManager(state(),user(),e.id).map(r=>r.recordNumber):bookable).filter(n=>bookable.includes(n));if(!allowedJobs.length){put('ssMain',`${picker}<p>Leave cannot be booked against a casual job record.</p>`);bindSelector();return;}if(!allowedJobs.includes(leaveJobRecord))leaveJobRecord=allowedJobs[0]??0;
       const jobScope=E.jobRecords.scope(state(),e.id,leaveJobRecord),manager=S.approvalManagerFor(jobScope,e.id);
       const jobPicker=E.jobRecords.records(state(),e.id).length>1?`<label>Job Record<select id="ssLeaveJobRecord">${E.jobRecords.options(state(),e.id,leaveJobRecord,allowedJobs).map(r=>`<option value="${r.value}" ${r.selected?'selected':''}>${esc(r.label)}</option>`).join('')}</select></label>`:'';
       put('ssMain',`${picker}<h2>${area==='ess'?'Absence Request':'Request Absence'}</h2>${jobPicker}<p>Approver: ${esc(manager.automatic?'Automatically Approved':manager.managerName||manager.message)}</p><div class="ss-leave-form"><div><label>Leave Type<select id="ssLeaveType">${types.map(t=>`<option value="${t}">${t==='LWOP'?'Leave without Pay':t}</option>`).join('')}</select></label></div><div><label>Start Date<input id="ssLeaveStart" type="date"></label></div><div><label>End Date<input id="ssLeaveEnd" type="date"></label></div><div><label>Hours<input id="ssLeaveHours" type="number" min="0" step="0.01"></label></div><div><label class="inline-check"><input id="ssEvidence" type="checkbox"> Evidence Provided</label></div></div><label>Supporting documents<input id="ssLeaveFiles" type="file" multiple></label><p class="small-note">Optional: up to five files, 1 MB each and 2 MB total.</p><div class="ss-leave-actions form-actions"><button id="ssLeaveCancel" class="secondary">Cancel</button><button id="ssLeaveSubmit" ${manager.automatic||manager.managerIds.length&&!manager.message?'':'disabled'}>${area==='ess'?'Submit Request':'Book Approved Leave'}</button></div><p class="small-note">${area==='ess'?'Requests await manager approval.':'Bookings on behalf of direct reports are automatically approved.'} Schedule, entitlement, pending balance and overlap rules apply.</p>`);bindSelector();

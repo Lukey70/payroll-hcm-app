@@ -1,0 +1,10 @@
+# v1.2.12 — 8 November 2026
+
+- Exclude casual-only employees and casual job records from Book Leave in Payroll, ESS and MSS. Leave validation rejects all leave types against casual dates, including unpaid leave and ranges crossing into casual employment. Existing leave history is retained.
+- Absence calendars use only employed non-casual records. Casual rosters and historical casual bookings do not change work hours, leave colours or non-rostered days. Employees with contract records display those records’ schedules and leave; managers who supervise only the casual record do not see them on the leave calendar. Casual-only yearly views show no calendar grid.
+- Clearer commencement, variation, movement and termination request sections. Submitted dates, including dates of birth and return dates, use DD/MM/YYYY. Position names accompany position/reporting numbers where available; TFNs remain masked.
+- Optional Preferred Name in new-employee commencement requests, retained separately from legal names. Existing-employee requests continue to use automatic identity.
+- Permanent/Temporary Work Schedule Adjustment requests. Temporary changes require a later return effective date and a one- or two-week return roster. Submitted requests show both rosters and totals. These remain instructions for Payroll; requests do not automatically update Job Data.
+- Seven editable starter Payroll replies: Request received, Further information required, Processing update, Commencement processed, Employment change processed, Work schedule adjustment processed and Pay enquiry reviewed. Defaults install once without replacing custom matching names or edited/inactive replies. Inserting a reply creates editable message text and does not send it automatically.
+
+Deploy the complete matching file set. Existing browser-local data, credentials and finalised payslips are retained. Stored ISO dates are unchanged. This remains a browser-local prototype without server-side authentication or shared cross-device state. Bank-specific Urgent Pay CSV acceptance remains unverified. See TEST-RESULTS-v1.2.12.md and IMPLEMENTATION-NOTES-v1.2.12.md.

@@ -47,4 +47,22 @@ test('new onboarding preserves leading zeros, explicit tax choices and authorita
 test('submitting onboarding stores request details without changing employee, job, tax, super or bank records',()=>{
  const s=state(),keys=['employees','jobDataRows','taxDetails','superDetails','superFunds','bankDetails','schedules','payRates'],before=JSON.stringify(keys.map(k=>s[k]));const c=T.submit(s,'manager',{raisedFor:'new-employee',requestType:'Commencement',template:templates.Commencement},'mss',DATE);assert.equal(c.template.personalDetails.firstName,'New');assert.equal(c.template.bankDetails.accountNumber,'0012345678');assert.equal(JSON.stringify(keys.map(k=>s[k])),before);assert(!JSON.stringify(s.alerts).includes('123456789'));assert(!JSON.stringify(s.auditLog).includes('0012345678'));assert.deepStrictEqual(D.importJson(D.exportJson(s)).supportRequests,s.supportRequests);
 });
+test('new-employee preferred name is optional, trimmed and retained without changing legal names',()=>{
+ const s=state(),data=JSON.parse(JSON.stringify(templates.Commencement));data.personalDetails.preferredName='  Alex  ';
+ const result=F.validateTemplate('Commencement',data,'new-employee',s);assert.equal(result.personalDetails.preferredName,'Alex');assert.equal(result.personalDetails.firstName,'New');assert.equal(result.personalDetails.lastName,'Employee');
+ data.personalDetails.preferredName=' ';assert(!Object.hasOwn(F.validateTemplate('Commencement',data,'new-employee',s).personalDetails,'preferredName'));
+ data.personalDetails.preferredName={name:'bad'};assert.throws(()=>F.validateTemplate('Commencement',data,'new-employee',s),/preferred name/);
+ data.personalDetails.preferredName='A'.repeat(256);assert.throws(()=>F.validateTemplate('Commencement',data,'new-employee',s),/too long/);
+ assert(!Object.hasOwn(F.validateTemplate('Commencement',data,'worker',s),'personalDetails'));
+});
+test('temporary work schedule requests retain both rosters and the return date without changing Job Data',()=>{
+ const s=state(),before=JSON.stringify(s.jobDataRows),input={...templates.Variation,scheduleDuration:'Temporary',returnEffectiveDate:'2026-12-01',returnRoster:{rosterPattern:'2-week',hoursByDayWeek1:week,hoursByDayWeek2:{...week,1:4}}};
+ const c=T.submit(s,'manager',{raisedFor:'worker',requestType:'Variation',template:input},'mss',DATE);assert.equal(c.template.returnEffectiveDate,'2026-12-01');assert.equal(c.template.returnRoster.hoursByDayWeek2[1],4);assert.equal(c.template.hoursByDayWeek1[1],7.5);assert.equal(JSON.stringify(s.jobDataRows),before);assert.deepStrictEqual(D.importJson(D.exportJson(s)).supportRequests,s.supportRequests);
+});
+test('temporary schedule return requires a later valid date and complete valid roster',()=>{
+ const s=state(),input={...templates.Variation,scheduleDuration:'Temporary',returnEffectiveDate:'2026-12-01',returnRoster:{rosterPattern:'1-week',hoursByDayWeek1:week}};
+ for(const date of [undefined,'','2026-02-30','2026-11-01','2026-10-31'])assert.throws(()=>F.validateTemplate('Variation',{...input,returnEffectiveDate:date},'worker',s),/return effective date/i);
+ for(const roster of [undefined,{}, {rosterPattern:'text'}, {rosterPattern:'1-week',hoursByDayWeek1:{...week,1:-1}},{rosterPattern:'1-week',hoursByDayWeek1:{...week,1:''}},{rosterPattern:'1-week',hoursByDayWeek1:Object.fromEntries(Object.keys(week).map(d=>[d,0]))},{rosterPattern:'2-week',hoursByDayWeek1:week}])assert.throws(()=>F.validateTemplate('Variation',{...input,returnRoster:roster},'worker',s),/return|hours/);
+ const permanent=F.validateTemplate('Variation',{...input,scheduleDuration:'Permanent'},'worker',s);assert(!Object.hasOwn(permanent,'returnEffectiveDate'));assert(!Object.hasOwn(permanent,'returnRoster'));assert.equal(permanent.scheduleDuration,'Permanent');assert.doesNotThrow(()=>F.validateTemplate('Variation',templates.Variation,'worker',s));
+});
 console.log(`PASS: ${count} simplified request template rule groups.`);

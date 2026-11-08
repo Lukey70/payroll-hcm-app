@@ -595,3 +595,19 @@ table.ui-data-table tbody tr.ui-data-row:focus-within { outline:2px solid #2563e
 .job-record-selector{padding:12px 14px;background:#eff6ff;border:1px solid #d3e2fa;border-radius:10px;margin:14px 0}.job-record-selector label{min-width:240px;flex:1}.job-record-selector .small-note{flex-basis:100%;margin:0}.job-record-selector button{display:inline-flex;align-items:center;gap:6px}.job-record-selector .ui-icon{width:18px;height:18px}@media(max-width:600px){.job-record-selector label,.job-record-selector button{width:100%;min-width:0}}
 
 .payslip-job-records{display:block;margin-top:3px;color:#64748b;font-size:11px}
+
+/* Readable submitted Job Data support requests. */
+.support-request-summary{display:grid;gap:18px;min-width:0}
+.support-request-section{padding:18px;border:1px solid #dce5ef;border-radius:10px;background:#f8fafc;min-width:0}
+.support-request-section h4{margin:0 0 16px;color:#173e66;font-size:14px;font-weight:650}
+.support-request-summary .support-template-values{column-gap:24px;row-gap:16px}
+.support-request-summary .support-template-values>div{min-width:0}
+.support-request-summary .support-template-values dt{font-size:12px;font-weight:600;color:#526579}
+.support-request-summary .support-template-values dd{font-size:14px;line-height:1.6;color:#172b40;margin-top:5px}
+.support-request-wide{grid-column:1/-1}
+.support-request-summary .support-onboarding-section,.support-request-summary .support-roster{margin:0}
+.support-request-summary .support-comments{margin-top:0;padding:18px;border:1px solid #dce5ef;border-radius:10px;background:#fff}
+.support-request-summary .support-comments h4{font-size:14px;color:#173e66}
+@container support (max-width:520px){.support-request-section{padding:14px}.support-request-summary{gap:14px}}
+
+.support-schedule-return{margin:20px 0;padding:18px;border:1px solid #c9d9ed;border-radius:10px;background:#f4f8fd;min-width:0}.support-schedule-return>h4{margin:0 0 16px;color:#173e66}.support-schedule-return>.support-roster{margin-bottom:0}.support-schedule-return[hidden]{display:none}

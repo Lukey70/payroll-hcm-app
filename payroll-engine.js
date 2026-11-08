@@ -142,11 +142,12 @@
   function publicHolidayName(dateIso){ return (PUBLIC_HOLIDAYS_WA.find(p=>p[0]===dateIso)||[])[1] || 'Public Holiday'; }
 
   function absenceCalendarStatus(state,e,dateIso){
+    if(api.jobRecords?.multiple(state,e?.id))return api.jobRecords.calendarStatus(state,e,dateIso);
     const employed=!!(e&&isEmployedOn(e,dateIso));
     // Casual-only service is intentionally excluded from leave calendars. If an
     // employee transitions from Casual to Permanent/Fixed Term during a month,
     // their earlier casual dates remain blank while later non-casual dates render.
-    if(employed && isCasualOnly(state,e,dateIso)) return {cssClass:'',title:'',label:'',hours:0,employed:true,leaveType:'',status:'',pending:false,casual:true};
+    if(e && isCasualOnly(state,e,dateIso)) return {cssClass:'',title:'',label:'',hours:0,employed,leaveType:'',status:'',pending:false,casual:true};
     const sched=employed?activeSchedule(state,e.id,dateIso):null;
     const hrs=employed?Number((sched&&sched.hoursByDay&&sched.hoursByDay[parseDate(dateIso).getDay()])||0):0;
     const leave=employed?(state.leaveBookings||[]).find(l=>l.empId===e.id&&String(l.status||'Approved')!=='Denied'&&between(dateIso,l.startDate,l.endDate)):null;
@@ -1142,8 +1143,8 @@
     const e = (state.employees||[]).find(x=>x.id===empId);
     if(!e || !startDate || !endDate) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Complete leave fields.' };
     reconcileEmploymentFromJobData(state,e);
-    if(isCasualOnly(state,e,startDate) && ['Annual Leave','Personal Leave','Long Service Leave'].includes(leaveType)) return { ok:false, hours:0, detail:[], partialAllowed:false, message:`Casual-only employees do not have ${leaveType} entitlement.` };
     if(compare(startDate,endDate)>0) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'End date cannot be before start date.' };
+    if(daysBetween(startDate,endDate).some(date=>activeEmploymentType(state,e,date)==='Casual'))return {ok:false,hours:0,detail:[],partialAllowed:false,message:'Leave cannot be booked against a casual job record.'};
     const currentStart=currentEmploymentStart(e,startDate) || e.startDate;
     if(currentStart && compare(startDate,currentStart)<0) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave cannot be booked before the employee commences.' };
     if(e.terminationDate && isTerminatedOn(e,endDate)) return { ok:false, hours:0, detail:[], partialAllowed:false, message:'Leave cannot be booked on or after the termination effective date.' };

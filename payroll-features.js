@@ -67,6 +67,7 @@
      const text=(value,label,max=255)=>{if(!['string','number'].includes(typeof value)||!String(value).trim())throw Error('Enter '+label+'.');const out=String(value).trim();if(out.length>max)throw Error(label+' is too long.');return out;};
      const p=section('personalDetails','personal details'),personal={};
      for(const [key,label]of [['firstName','first name'],['lastName','last name'],['dateOfBirth','date of birth'],['email','email'],['phone','phone number'],['addressLine','address'],['townSuburb','town/suburb'],['state','state'],['postcode','postcode'],['country','country']])personal[key]=text(p[key],label);
+     if(p.preferredName!==undefined&&p.preferredName!==null&&p.preferredName!==''){if(typeof p.preferredName!=='string')throw Error('Enter a valid preferred name.');if(p.preferredName.trim())personal.preferredName=text(p.preferredName,'preferred name');}
      validDate('dateOfBirth',personal.dateOfBirth);if(personal.dateOfBirth>d.effectiveDate)throw Error('Date of birth cannot be after commencement.');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personal.email))throw Error('Enter a valid email address.');
      const t=section('taxDetails','tax details');for(const key of ['claimTaxFreeThreshold','stsl'])if(typeof t[key]!=='boolean')throw Error('Select '+(key==='stsl'?'STSL':'whether to claim the tax-free threshold')+'.');
      const tfnNotProvided=t.tfnNotProvided===true,taxFileNumber=tfnNotProvided?'':String(t.taxFileNumber||'').replace(/\s/g,'');if(!tfnNotProvided&&!/^\d{8,9}$/.test(taxFileNumber))throw Error('Enter an eight or nine digit TFN, or select TFN not provided.');
@@ -94,6 +95,19 @@
     const first=casual?{...zero}:week(d.hoursByDayWeek1,'week 1'),second=casual?{...zero}:pattern==='2-week'?week(d.hoursByDayWeek2,'week 2'):{...first};
     if(!casual&&[...Object.values(first),...Object.values(second)].reduce((n,x)=>n+x,0)<=0)throw Error('Enter the employee’s roster hours.');
     Object.assign(result,{rosterPattern:pattern,hoursByDay:{...first},hoursByDayWeek1:first,hoursByDayWeek2:second});
+    if(type==='Variation'&&d.reason==='Work Schedule Adjustment'&&d.scheduleDuration!==undefined){
+     if(!['Permanent','Temporary'].includes(d.scheduleDuration))throw Error('Select Permanent or Temporary for the work schedule change.');
+     result.scheduleDuration=d.scheduleDuration;
+     if(d.scheduleDuration==='Temporary'){
+      if(casual)throw Error('Temporary work schedules require a non-casual employment record.');
+      validDate('returnEffectiveDate',d.returnEffectiveDate);if(d.returnEffectiveDate<=d.effectiveDate)throw Error('Return effective date must be after the work schedule adjustment effective date.');
+      const roster=d.returnRoster;if(!roster||!['1-week','2-week'].includes(roster.rosterPattern))throw Error('Select a return roster pattern.');
+      const one=week(roster.hoursByDayWeek1,'return week 1'),two=roster.rosterPattern==='2-week'?week(roster.hoursByDayWeek2,'return week 2'):{...one};
+      if([...Object.values(one),...Object.values(two)].reduce((sum,h)=>sum+h,0)<=0)throw Error('Enter the return roster hours.');
+      result.returnEffectiveDate=d.returnEffectiveDate;result.returnRoster={rosterPattern:roster.rosterPattern,hoursByDayWeek1:one,hoursByDayWeek2:two};
+     }
+    }
+
    }
    return result;
   }

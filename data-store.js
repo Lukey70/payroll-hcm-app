@@ -1,7 +1,18 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.11';
+  const APP_VERSION = '1.2.12';
   const STORAGE_KEY = 'payrollAppData';
+
+  const DEFAULT_PAYROLL_REPLIES=[
+    {id:'reply_default_acknowledgement',name:'Request received',body:'Thank you for your request. Payroll has received it and will review the details provided. We will contact you through this support request if we need any further information.'},
+    {id:'reply_default_more_information',name:'Further information required',body:'Thank you for your request. We need some further information before we can proceed. Please reply to this case with the missing or updated details and any relevant supporting documents, including the applicable effective dates.'},
+    {id:'reply_default_processing_update',name:'Processing update',body:'Your request is currently being reviewed by Payroll. We will provide a further update in this case once the review and any required processing are complete.'},
+    {id:'reply_default_commencement_complete',name:'Commencement processed',body:'The commencement details provided in this request have been processed. Please review the employee’s details and job information, and let us know through this case if any corrections are needed.'},
+    {id:'reply_default_employment_change_complete',name:'Employment change processed',body:'The employment change requested in this case has been processed. Please review the effective date and updated job details, and let us know if anything needs correcting.'},
+    {id:'reply_default_roster_change_complete',name:'Work schedule adjustment processed',body:'The requested work schedule adjustment has been processed. Please review the effective dates and roster details, including any temporary arrangement and return roster, and let us know if any corrections are required.'},
+    {id:'reply_default_pay_review_complete',name:'Pay enquiry reviewed',body:'Payroll has completed its review of your pay enquiry. Please review the outcome provided in this case and your relevant payslip. If you need further clarification, reply with the pay period and the item you would like us to explain.'}
+  ];
+  function defaultPayrollReplies(){return DEFAULT_PAYROLL_REPLIES.map(reply=>({...reply,active:true}));}
 
   function emptyState(){
     return {
@@ -11,7 +22,7 @@
       payRates: [],
       leaveBookings: [],
       leaveRequestArchive: [],
-      supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: [], urgentPayBatches: [], urgentPaySequence: 0,
+      supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: defaultPayrollReplies(), urgentPayBatches: [], urgentPaySequence: 0,
       supportSequence: 0,
       additionalEarnings: [],
       deductions: [],
@@ -73,6 +84,11 @@
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
     ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','managerDelegations','jobRecords','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['flexOpeningBalances','payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
+    // Install starter replies once, preserving custom, edited and inactive replies.
+    if(!state.repairs.payrollReplyDefaultsV1){
+      for(const reply of defaultPayrollReplies())if(!state.supportResponseTemplates.some(existing=>existing.id===reply.id||String(existing.name||'').trim().toLowerCase()===reply.name.toLowerCase()))state.supportResponseTemplates.push(reply);
+      state.repairs.payrollReplyDefaultsV1=true;
+    }
     state.currentCycleId = Number(state.currentCycleId || 1);
     // Preserve trustworthy pending-status timestamps; unknown legacy ages start now.
     state.leaveBookings.forEach(l=>{

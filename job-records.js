@@ -9,6 +9,17 @@ function create(E){
  const multiple=(s,id)=>!(s._jobRecordScope!==undefined&&s._jobRecordEmployee===id)&&records(s,id).length>1;
  function matches(s,row){return number(row)===Number(s._jobRecordScope??0);}
  function record(s,id,n){const r=records(s,id).find(r=>r.recordNumber===Number(n));if(!r)throw Error('Select a valid job record.');return r;}
+ function calendarStatus(s,e,date,allowed=null){
+  const statuses=records(s,e.id).filter(r=>!allowed||allowed.includes(r.recordNumber)).map(r=>{
+   const v=scope(s,e.id,r.recordNumber),person=v.employees.find(x=>x.id===e.id);E.reconcileEmploymentFromJobData(v,person);
+   if(!E.isEmployedOn(person,date)||E.activeEmploymentType(v,person,date)==='Casual')return null;
+   return E.absenceCalendarStatus(v,person,date);
+  }).filter(Boolean);
+  if(!statuses.length)return {cssClass:'',title:'',label:'',hours:0,employed:false,leaveType:'',status:'',pending:false};
+  const leave=statuses.filter(x=>x.leaveType&&x.hours>0),chosen=leave[0]||statuses.find(x=>x.hours>0)||statuses[0];
+  return {...chosen,hours:E.round4(statuses.reduce((sum,x)=>sum+x.hours,0)),title:leave.length>1?leave.map(x=>x.title).join(' / '):chosen.title};
+ }
+ function leaveRecords(s,id,date=today()){return records(s,id).filter(r=>{const v=scope(s,id,r.recordNumber),e=v.employees.find(e=>e.id===id);return E.activeEmploymentType(v,e,date)!=='Casual';});}
  function scope(s,id,n=0){
   const r=record(s,id,n),original=s.employees.find(e=>e.id===id);if(!original)throw Error('Employee not found.');
   const missing=Number(n)>0&&!(s.jobDataRows||[]).some(j=>j.empId===id&&number(j)===Number(n)&&j.saved!==false&&j.action==='Commencement');const employment=missing?{startDate:'',originalStartDate:'',status:'Pending',terminationDate:'',terminationReason:'',contractEndDate:'',autoTerminate:false,employmentSegments:[],position:'',hourlyRate:0,type:'Permanent'}:r.employment;const employee={...clone(original),...(employment?clone(employment):{})};delete employee.concurrentEmployment;
@@ -110,7 +121,7 @@ function create(E){
    if(shared.lslAccrued-future-result.hours < -0.0001)throw Error('Insufficient shared Long Service Leave credits across job records.');
   }return result;
  }
- return {number,matches,records,record,multiple,scope,employee,add,reconcile,activeRecords,combinedSchedule,serviceView,calculate,projected,eligibleForManager,options,snapshot,forecast,validateLeave,canViewPayslip};
+ return {number,matches,records,leaveRecords,calendarStatus,record,multiple,scope,employee,add,reconcile,activeRecords,combinedSchedule,serviceView,calculate,projected,eligibleForManager,options,snapshot,forecast,validateLeave,canViewPayslip};
 }
 g.JobRecords={create};if(typeof module!=='undefined')module.exports={create};
 })(typeof window!=='undefined'?window:globalThis);

@@ -94,7 +94,7 @@
     const $=id=>document.getElementById(id),v=id=>$(id)?.value||'',put=(id,html)=>{if($(id))$(id).innerHTML=html;};
     let viewEpoch=0;let container='',mode='own',area='ess',caseId='',newCase=false,filter='open',mine=false,search='',page=0;
     const s=()=>getState(),u=()=>getUser(),label=id=>esc(T.name(s(),id));
-    const dt=value=>new Date(value).toLocaleString('en-AU',{timeZone:'Australia/Perth',hour12:false});
+    const dt=value=>new Date(value).toLocaleString('en-AU',{timeZone:'Australia/Perth',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
     const icon=name=>global.PayrollUI?.icon(name)||'<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const statusClass=status=>({'New':'new','Open':'open','Awaiting Info':'waiting','Resolved':'resolved','Closed':'closed'}[status]||'new');
     const badge=status=>`<span class="support-status support-status-${statusClass(status)}"><span class="support-status-dot" aria-hidden="true"></span>${esc(status)}</span>`;
@@ -143,9 +143,9 @@
     }
     const rosterDays=[['Mon','Monday',1],['Tue','Tuesday',2],['Wed','Wednesday',3],['Thu','Thursday',4],['Fri','Friday',5],['Sat','Saturday',6],['Sun','Sunday',0]];
     let lastRequestType='General Enquiry',generalSubject='',generalDescription='';
-    function rosterFields(){
-      const week=prefix=>`<div class="support-roster-days">${rosterDays.map(([short,name])=>`<label>${name}<input id="${prefix}${short}" type="number" min="0" max="24" step="0.01" value="0" aria-label="${prefix==='req_roster2'?'Week 2':'Week 1'} ${name} hours"></label>`).join('')}</div>`;
-      return `<section id="req_rosterSection" class="support-roster"><h4>Work Schedule</h4><label>Roster Pattern<select id="req_rosterPattern"><option value="1-week">1 Week (Default)</option><option value="2-week">2 Week</option></select></label><div id="req_week1"><h5 id="req_week1Title">Regular Week</h5>${week('req_roster')}</div><div id="req_week2" hidden><h5>Week 2 — Pay Close Week</h5>${week('req_roster2')}</div><p id="req_rosterTotals" class="support-roster-totals"></p></section>`;
+    function rosterFields(prefix='req_',title='Work Schedule'){
+      const week=(fieldPrefix,weekNumber)=>`<div class="support-roster-days">${rosterDays.map(([short,name])=>`<label>${name}<input id="${fieldPrefix}${short}" type="number" min="0" max="24" step="0.01" value="0" aria-label="${title} ${weekNumber} ${name} hours"></label>`).join('')}</div>`;
+      return `<section id="${prefix}rosterSection" class="support-roster"><h4>${esc(title)}</h4><label>Roster Pattern<select id="${prefix}rosterPattern"><option value="1-week">1 Week (Default)</option><option value="2-week">2 Week</option></select></label><div id="${prefix}week1"><h5 id="${prefix}week1Title">Regular Week</h5>${week(prefix+'roster','Week 1')}</div><div id="${prefix}week2" hidden><h5>Week 2 — Pay Close Week</h5>${week(prefix+'roster2','Week 2')}</div><p id="${prefix}rosterTotals" class="support-roster-totals"></p></section>`;
     }
     function requestEmploymentType(){if(v('supportRequestType')==='Commencement')return v('req_employmentType');const employee=s().employees.find(e=>e.id===v('supportRaisedFor'));return employee?E.activeEmploymentType(s(),employee,v('req_effectiveDate')||E.iso(new Date())):'';}
     function updateRoster(){
@@ -160,6 +160,17 @@
       const fields=(two?['req_roster','req_roster2']:['req_roster']).flatMap(prefix=>rosterDays.map(([short])=>v(prefix+short))),valid=fields.every(value=>value!==''&&Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=24)&&fields.reduce((n,value)=>n+Number(value),0)>0;
       const summary=$(container)?.querySelector?.('.validation-summary');if(summary&&/roster hours|week [12] (?:roster|daily) hours/.test(summary.textContent)&&(!needed||casual||valid))summary.remove();
       $('req_rosterTotals').textContent=casual?'Total Scheduled Hours: 0.00 — Casual employees do not have a regular work schedule.':two?`Week 1 (Pay Week): ${first.toFixed(2)} hours · Week 2 (Pay Close Week): ${second.toFixed(2)} hours · Fortnight: ${(first+second).toFixed(2)} hours`:`Total Weekly Hours: ${first.toFixed(2)}`;
+      updateReturnRoster();
+    }
+    function updateReturnRoster(){
+      if(!$('req_scheduleReturn'))return;
+      const needed=v('supportRequestType')==='Variation'&&v('req_reason')==='Work Schedule Adjustment'&&requestEmploymentType()!=='Casual',show=needed&&v('req_scheduleDuration')==='Temporary';
+      $('req_scheduleDurationRow').hidden=!needed;$('req_scheduleReturn').hidden=!show;
+      for(const key of ['req_returnEffectiveDate','req_return_rosterPattern'])$(key).disabled=!show;
+      const two=v('req_return_rosterPattern')==='2-week';$('req_return_week2').hidden=!two;$('req_return_week1Title').textContent=two?'Week 1 — Pay Week':'Regular Week';
+      for(const prefix of ['req_return_roster','req_return_roster2'])for(const [short]of rosterDays)$(prefix+short).disabled=!show;
+      const total=prefix=>rosterDays.reduce((n,[short])=>n+(Number(v(prefix+short))||0),0),first=total('req_return_roster'),second=total('req_return_roster2');
+      $('req_return_rosterTotals').textContent=two?`Week 1 (Pay Week): ${first.toFixed(2)} hours · Week 2 (Pay Close Week): ${second.toFixed(2)} hours · Fortnight: ${(first+second).toFixed(2)} hours`:`Total Weekly Hours: ${first.toFixed(2)}`;
     }
     function updateRequestPosition(){
       if(!$('req_reportsTo'))return;const pos=s().positions.find(p=>p.active!==false&&String(p.positionNumber)===v('req_positionNumber'));
@@ -172,29 +183,31 @@
       $('supportSubject').value=structured?type+' Request':generalSubject;$('supportSubject').readOnly=structured;$('supportSubject').required=!structured;$('supportSubjectRequired').hidden=structured;
       $('supportDescriptionLabel').hidden=structured;$('supportDescription').required=!structured;if(!structured)$('supportDescription').value=generalDescription;lastRequestType=type;
       if(!structured){put('supportTemplate','');return;}
-      const field=(key,label,kind='text')=>`<label>${label}<input id="req_${key}" type="${kind}"></label>`;
+      const field=(key,label,kind='text')=>`<label>${label}<input id="req_${key}" type="${kind}" ${kind==='date'?'lang="en-AU"':''}></label>`;
       const reasons=`<label>${type==='Termination'?'Termination Reason <span class="support-required">Required</span>':'Reason'}<select id="req_reason" required><option value="">Select reason</option>${Features.REASONS[type].map(r=>`<option>${esc(r)}</option>`).join('')}</select></label>`;
       let body=reasons+(type==='Termination'?field('lastWorkingDay','Last Working Day','date'):field('effectiveDate','Effective Date','date'));
       if(type==='Commencement')body+=`<label>Employment Type<select id="req_employmentType"><option value="">Select type</option><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></label>`+field('contractEndDate','Contract End Date (fixed term)','date');
       if(type==='Commencement'||type==='Movement')body+=`<label>Position<select id="req_positionNumber"><option value="">Select position</option>${s().positions.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.positionNumber)}">${esc(p.positionName)} (${esc(p.positionNumber)})</option>`).join('')}</select></label><label class="full-line">Reports To (automatic)<input id="req_reportsTo" readonly placeholder="Populated from the selected position"></label>`;
-      if(type==='Variation')body+='<label id="req_changesLabel" class="full-line">Details to Change and Proposed New Values<textarea id="req_changes" rows="5"></textarea></label>';
+      if(type==='Variation')body+='<label id="req_scheduleDurationRow" hidden>Work Schedule Change<select id="req_scheduleDuration"><option>Permanent</option><option>Temporary</option></select></label><label id="req_changesLabel" class="full-line">Details to Change and Proposed New Values<textarea id="req_changes" rows="5"></textarea></label>';
       if(type==='Movement')body+='<label>Assignment<select id="req_temporary"><option>Permanent</option><option>Temporary</option></select></label>'+field('returnDate','Expected Return Date (temporary)','date');
-      put('supportTemplate',`<fieldset class="request-template"><legend>${esc(type)} Request Details</legend><div class="grid form-grid" data-sectioned="true">${body}</div>${type==='Commencement'?'<div id="req_commencementPerson"></div>':''}${type!=='Termination'?rosterFields():''}<label>Additional Comments<textarea id="req_comments" rows="4" maxlength="20000"></textarea></label></fieldset>`);
+      put('supportTemplate',`<fieldset class="request-template"><legend>${esc(type)} Request Details</legend><div class="grid form-grid" data-sectioned="true">${body}</div>${type==='Commencement'?'<div id="req_commencementPerson"></div>':''}${type!=='Termination'?rosterFields():''}${type==='Variation'?`<section id="req_scheduleReturn" class="support-schedule-return" hidden><h4>Return to Work Schedule</h4><label>Return Effective Date<input id="req_returnEffectiveDate" type="date" lang="en-AU"></label><p class="small-note">The adjusted roster ends the day before this date. Enter the roster to apply from this date.</p>${rosterFields('req_return_','Return Work Schedule')}</section>`:''}<label>Additional Comments<textarea id="req_comments" rows="4" maxlength="20000"></textarea></label></fieldset>`);
       fillTemplatePerson();
       const conditional=()=>{if($('req_contractEndDate'))$('req_contractEndDate').parentElement.hidden=v('req_employmentType')!=='Fixed Term';if($('req_returnDate'))$('req_returnDate').parentElement.hidden=v('req_temporary')!=='Temporary';updateRoster();};
       $('req_employmentType')?.addEventListener('change',conditional);$('req_temporary')?.addEventListener('change',conditional);$('req_positionNumber')?.addEventListener('change',updateRequestPosition);$('req_effectiveDate')?.addEventListener('change',updateRoster);$('req_rosterPattern')?.addEventListener('change',updateRoster);
       $('req_reason')?.addEventListener('change',()=>{if(type==='Commencement'){const reason=v('req_reason');if(/Casual/.test(reason))$('req_employmentType').value='Casual';else if(/Fixed-Term|Fixed Term Contract/.test(reason))$('req_employmentType').value='Fixed Term';else if(/Permanent/.test(reason))$('req_employmentType').value='Permanent';}conditional();});
       for(const prefix of ['req_roster','req_roster2'])for(const [short]of rosterDays)$(prefix+short)?.addEventListener('input',updateRoster);
+      $('req_scheduleDuration')?.addEventListener('change',updateReturnRoster);$('req_return_rosterPattern')?.addEventListener('change',updateReturnRoster);
+      for(const prefix of ['req_return_roster','req_return_roster2'])for(const [short]of rosterDays)$(prefix+short)?.addEventListener('input',updateReturnRoster);
       conditional();updateRequestPosition();
     }
     function fillTemplatePerson(){
       if(!$('req_commencementPerson')){updateRoster();return;}
       const e=s().employees.find(e=>e.id===v('supportRaisedFor')),fresh=v('supportRaisedFor')==='new-employee';
       if(!fresh){put('req_commencementPerson',`<section class="support-onboarding-section"><h4>Employee Details</h4><div class="grid form-grid" data-sectioned="true"><label>Employee Name<input id="req_employeeName" value="${esc(e?E.employeeName(e):'')}" readonly></label><label>Employee ID<input id="req_employeeId" value="${esc(e?.id||'')}" readonly></label></div></section>`);updateRoster();return;}
-      const field=(key,label,type='text',value='')=>`<label>${label}<input id="req_${key}" type="${type}" value="${esc(value)}" maxlength="255" required></label>`;
+      const field=(key,label,type='text',value='',required=true)=>`<label>${label}<input id="req_${key}" type="${type}" value="${esc(value)}" maxlength="255" ${required?'required':''}></label>`;
       const section=(title,body)=>`<section class="support-onboarding-section"><h4>${title}</h4><div class="grid form-grid" data-sectioned="true">${body}</div></section>`;
       const choice=(key,label)=>`<label>${label}<select id="req_${key}" required><option value="">Select an option</option><option value="true">Yes</option><option value="false">No</option></select></label>`;
-      put('req_commencementPerson',section('Personal Details',field('firstName','First Name')+field('lastName','Last Name')+field('dateOfBirth','Date of Birth','date')+field('email','Email','email')+field('phone','Phone Number','tel')+field('addressLine','Address')+field('townSuburb','Town/Suburb')+field('state','State')+field('postcode','Postcode')+field('country','Country','text','Australia'))+
+      put('req_commencementPerson',section('Personal Details',field('firstName','First Name')+field('preferredName','Preferred Name (optional)','text','',false)+field('lastName','Last Name')+field('dateOfBirth','Date of Birth','date')+field('email','Email','email')+field('phone','Phone Number','tel')+field('addressLine','Address')+field('townSuburb','Town/Suburb')+field('state','State')+field('postcode','Postcode')+field('country','Country','text','Australia'))+
        section('Tax Details',field('taxFileNumber','Tax File Number','password')+'<label class="inline-check"><input id="req_tfnNotProvided" type="checkbox">TFN not provided</label>'+choice('claimTaxFreeThreshold','Claim Tax Free Threshold')+choice('stsl','STSL'))+
        section('Super Details',`<label>USI<input id="req_superUsi" list="req_superUsis" maxlength="100" required><datalist id="req_superUsis">${s().superFunds.filter(f=>!f.deleted&&f.active!==false).map(f=>`<option value="${esc(f.usi)}">${esc(f.fundName)} - ${esc(f.usi)}</option>`).join('')}</datalist></label>`+field('superFundName','Super Fund Name')+field('superAbn','ABN')+field('superMemberNumber','Member Number'))+
        section('Bank Details',field('bankBsb','BSB')+field('bankAccountNumber','Account Number')+field('bankAccountName','Account Name')));
@@ -205,16 +218,17 @@
     function templateValue(){
       const data={};for(const key of ['reason','effectiveDate','firstName','lastName','dateOfBirth','email','address','employmentType','contractEndDate','positionNumber','changes','temporary','returnDate','lastWorkingDay'])if($('req_'+key))data[key]=v('req_'+key);
       if(v('supportRequestType')==='Commencement'&&v('supportRaisedFor')==='new-employee'){
-        data.personalDetails=Object.fromEntries(['firstName','lastName','dateOfBirth','email','phone','addressLine','townSuburb','state','postcode','country'].map(key=>[key,v('req_'+key)]));
+        data.personalDetails=Object.fromEntries(['firstName','preferredName','lastName','dateOfBirth','email','phone','addressLine','townSuburb','state','postcode','country'].map(key=>[key,v('req_'+key)]));
         data.taxDetails={taxFileNumber:v('req_taxFileNumber'),tfnNotProvided:!!$('req_tfnNotProvided')?.checked,claimTaxFreeThreshold:v('req_claimTaxFreeThreshold')===''?undefined:v('req_claimTaxFreeThreshold')==='true',stsl:v('req_stsl')===''?undefined:v('req_stsl')==='true'};
         data.superDetails={usi:v('req_superUsi'),fundName:v('req_superFundName'),abn:v('req_superAbn'),memberNumber:v('req_superMemberNumber')};
         data.bankDetails={bsb:v('req_bankBsb'),accountNumber:v('req_bankAccountNumber'),accountName:v('req_bankAccountName')};
       }
+      if(v('supportRequestType')==='Variation'&&v('req_reason')==='Work Schedule Adjustment'&&requestEmploymentType()!=='Casual'){data.scheduleDuration=v('req_scheduleDuration');if(data.scheduleDuration==='Temporary'){data.returnEffectiveDate=v('req_returnEffectiveDate');data.returnRoster={rosterPattern:v('req_return_rosterPattern'),hoursByDayWeek1:Object.fromEntries(rosterDays.map(([short,,day])=>[day,v('req_return_roster'+short)])),hoursByDayWeek2:Object.fromEntries(rosterDays.map(([short,,day])=>[day,v('req_return_roster2'+short)]))};}}
       if($('req_rosterPattern')){data.rosterPattern=v('req_rosterPattern');data.hoursByDayWeek1=Object.fromEntries(rosterDays.map(([short,,day])=>[day,v('req_roster'+short)]));data.hoursByDayWeek2=Object.fromEntries(rosterDays.map(([short,,day])=>[day,v('req_roster2'+short)]));}return data;
     }
-    function rosterSummary(template){
+    function rosterSummary(template,title='Work Schedule'){
       if(!template.hoursByDayWeek1)return '';const two=template.rosterPattern==='2-week',first=template.hoursByDayWeek1,second=template.hoursByDayWeek2||first,total=values=>Object.values(values).reduce((n,x)=>n+Number(x||0),0);
-      return `<section class="support-roster"><h4>Work Schedule</h4><div class="table-wrap"><table class="support-roster-summary"><thead><tr><th>Day</th><th>${two?'Week 1 — Pay Week':'Regular Week'}</th>${two?'<th>Week 2 — Pay Close Week</th>':''}</tr></thead><tbody>${rosterDays.map(([,name,day])=>`<tr><td>${name}</td><td>${Number(first[day]||0).toFixed(2)}</td>${two?`<td>${Number(second[day]||0).toFixed(2)}</td>`:''}</tr>`).join('')}<tr><th>Total hours</th><th>${total(first).toFixed(2)}</th>${two?`<th>${total(second).toFixed(2)}</th>`:''}</tr></tbody></table></div></section>`;
+      return `<section class="support-roster"><h4>${esc(title)}</h4><div class="table-wrap"><table class="support-roster-summary"><thead><tr><th>Day</th><th>${two?'Week 1 — Pay Week':'Regular Week'}</th>${two?'<th>Week 2 — Pay Close Week</th>':''}</tr></thead><tbody>${rosterDays.map(([,name,day])=>`<tr><td>${name}</td><td>${Number(first[day]||0).toFixed(2)}</td>${two?`<td>${Number(second[day]||0).toFixed(2)}</td>`:''}</tr>`).join('')}<tr><th>Total hours</th><th>${total(first).toFixed(2)}</th>${two?`<th>${total(second).toFixed(2)}</th>`:''}</tr></tbody></table></div></section>`;
     }
     function form(){
       lastRequestType='General Enquiry';generalSubject='';generalDescription='';
@@ -236,9 +250,28 @@
         }finally{button.disabled=false;}
       });
     }
+    const requestLabels={scheduleDuration:'Work Schedule Change',returnEffectiveDate:'Return Effective Date',effectiveDate:'Effective Date',contractEndDate:'Contract End Date',returnDate:'Expected Return Date',lastWorkingDay:'Last Working Day',dateOfBirth:'Date of Birth',reason:'Reason',employmentType:'Employment Type',temporary:'Assignment',positionNumber:'Position',reportsTo:'Reports To',changes:'Proposed Changes',employeeId:'Employee ID',employeeName:'Employee Name',usi:'USI',abn:'ABN',stsl:'STSL',taxFileNumber:'Tax File Number',tfnNotProvided:'TFN Not Provided',claimTaxFreeThreshold:'Claim Tax Free Threshold',bsb:'BSB'};
+    const requestLabel=key=>requestLabels[key]||key.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase());
+    function requestDisplay(key,value){
+      if(value===undefined||value===null||value==='')return '—';
+      if(['effectiveDate','contractEndDate','returnDate','returnEffectiveDate','lastWorkingDay','dateOfBirth'].includes(key)){
+        const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(match)return `${match[3]}/${match[2]}/${match[1]}`;
+      }
+      if(typeof value==='boolean')return value?'Yes':'No';
+      if(key==='rosterPattern')return value==='2-week'?'2 Week':'1 Week';
+      if(['positionNumber','reportsTo'].includes(key))return (Array.isArray(value)?value:key==='reportsTo'?String(value).split(',').map(x=>x.trim()).filter(Boolean):[value]).map(number=>{const position=s().positions.find(p=>String(p.positionNumber)===String(number));return position?`${position.positionName} (${number})`:String(number);}).join(', ');
+      return Array.isArray(value)?value.join(', '):typeof value==='object'?JSON.stringify(value):String(value);
+    }
+    function requestSummary(c){
+      const template=c.template||{},omit=new Set(['hoursByDay','hoursByDayWeek1','hoursByDayWeek2','personalDetails','taxDetails','superDetails','bankDetails','returnRoster']),used=new Set();
+      const groups=[['Employment Details',['reason','employmentType','temporary','scheduleDuration','rosterPattern']],['Dates',['effectiveDate','contractEndDate','returnDate','returnEffectiveDate','lastWorkingDay']],['Position Details',['positionNumber','reportsTo']],['Employee Details',['employeeName','employeeId','firstName','lastName','dateOfBirth','email','address']],['Proposed Changes',['changes']]];
+      const section=(title,keys)=>{const fields=keys.filter(key=>Object.hasOwn(template,key)&&!omit.has(key)&&!(template.personalDetails&&Object.hasOwn(template.personalDetails,key)));fields.forEach(key=>used.add(key));if(!fields.length)return '';return `<section class="support-request-section"><h4>${title}</h4><dl class="support-template-values">${fields.map(key=>`<div class="${key==='changes'?'support-request-wide':''}"><dt>${esc(requestLabel(key))}</dt><dd>${esc(requestDisplay(key,template[key]))}</dd></div>`).join('')}</dl></section>`;};
+      const sections=groups.map(([title,keys])=>section(title,keys)).join(''),other=Object.keys(template).filter(key=>!used.has(key)&&!omit.has(key));
+      return card(`${esc(c.requestType)} Request`,`<div class="support-request-summary">${sections}${section('Other Details',other)}${onboardingSummary(template)}${rosterSummary(template,template.scheduleDuration==='Temporary'?'Adjusted Work Schedule':'Work Schedule')}${template.returnRoster?rosterSummary(template.returnRoster,'Work Schedule from '+requestDisplay('returnEffectiveDate',template.returnEffectiveDate)):''}<section class="support-comments"><h4>Additional Comments</h4><p>${esc(c.additionalComments)||'No additional comments.'}</p></section></div>`);
+    }
     function onboardingSummary(template){
       const labels={personalDetails:'Personal Details',taxDetails:'Tax Details',superDetails:'Super Details',bankDetails:'Bank Details'},label=k=>({usi:'USI',abn:'ABN',bsb:'BSB',stsl:'STSL',tfnNotProvided:'TFN Not Provided',fundId:'Fund Reference'}[k]||k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()));
-      return Object.entries(labels).filter(([key])=>template?.[key]).map(([key,title])=>`<section class="support-onboarding-section"><h4>${title}</h4><dl class="support-template-values">${Object.entries(template[key]).map(([field,value])=>`<div><dt>${esc(label(field))}</dt><dd>${field==='taxFileNumber'&&value?`<input type="password" readonly value="${esc(value)}" aria-label="Tax File Number"><button type="button" class="secondary" data-request-tfn>Show TFN</button>`:esc(typeof value==='boolean'?value?'Yes':'No':value)||'—'}</dd></div>`).join('')}</dl></section>`).join('');
+      return Object.entries(labels).filter(([key])=>template?.[key]).map(([key,title])=>`<section class="support-onboarding-section"><h4>${title}</h4><dl class="support-template-values">${Object.entries(template[key]).map(([field,value])=>`<div><dt>${esc(label(field))}</dt><dd>${field==='taxFileNumber'&&value?`<input type="password" readonly value="${esc(value)}" aria-label="Tax File Number"><button type="button" class="secondary" data-request-tfn>Show TFN</button>`:esc(requestDisplay(field,value))}</dd></div>`).join('')}</dl></section>`).join('');
     }
     function details(){
       const c=T.get(s(),u(),caseId,mode),editable=!['Resolved','Closed'].includes(c.status),seconds=T.timeWorked(c),time=new Date(seconds*1000).toISOString().slice(11,19);
@@ -246,7 +279,7 @@
       const previous=(c.resolutions||[]).slice(0,-(c.resolutionNotes?1:0)||undefined);
       const resolution=c.resolutionNotes?`<section class="support-resolution"><header>${icon('tick')}<h3>Resolution Notes</h3></header><p>${esc(c.resolutionNotes)}</p><small>${label(c.resolvedBy)} · ${esc(dt(c.resolvedAt))}</small></section>`:'';
       const oldResolutions=previous.length?`<details class="support-previous-resolutions"><summary>Previous Resolution Notes <span>${previous.length}</span></summary>${previous.map(r=>`<article><p>${esc(r.notes)}</p><small>${label(r.resolvedBy)} · ${esc(dt(r.resolvedAt))}</small></article>`).join('')}</details>`:'';
-      const template=c.requestType&&c.requestType!=='General Enquiry'?card(`${esc(c.requestType)} Request`,`<dl class="support-template-values">${Object.entries(c.template||{}).filter(([key])=>!['hoursByDay','hoursByDayWeek1','hoursByDayWeek2','personalDetails','taxDetails','superDetails','bankDetails'].includes(key)).map(([key,value])=>`<div><dt>${esc(key.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()))}</dt><dd>${esc(value)||'—'}</dd></div>`).join('')}</dl>${onboardingSummary(c.template)}${rosterSummary(c.template)}<div class="support-comments"><h4>Additional Comments</h4><p>${esc(c.additionalComments)||'No additional comments.'}</p></div>`):'';
+      const template=c.requestType&&c.requestType!=='General Enquiry'?requestSummary(c):'';
       const messages=c.messages.map((m,i)=>({m,i})).sort((a,b)=>b.m.createdAt.localeCompare(a.m.createdAt)||b.i-a.i).map(({m})=>`<article class="case-message ${m.side}"><header><span class="support-message-avatar" aria-hidden="true">${icon('person')}</span><div><strong>${esc(m.senderName)}</strong><small>${esc(c.number)} · ${esc(dt(m.createdAt))}</small></div></header>${m.kind==='Reopened'?'<span class="support-reopened-label">Support Request Reopened</span>':''}${m.text?`<p>${esc(m.text)}</p>`:''}${m.attachments.length?`<div class="support-attachment-list">${m.attachments.map((f,i)=>fileButton(f,`${m.id}:${i}`)).join('')}</div>`:''}</article>`).join('');
       const responsePicker=mode==='payroll'?'<label>Saved Payroll Reply<select id="supportSavedReply"><option value="">Select a template</option>'+(s().supportResponseTemplates||[]).filter(r=>r.active!==false).map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join('')+'</select></label><button id="supportInsertReply" class="secondary">Insert Reply</button>':'';
       const composer=editable?`<div class="support-composer">${responsePicker}<label for="supportMessage">Message</label><textarea id="supportMessage" rows="4" maxlength="20000" placeholder="Write a message about this request…"></textarea>${upload('supportFiles','supportMessageFileList','Attach files')}<div class="support-composer-footer"><button id="supportSend" class="support-primary-action">${icon('send')}Send</button></div></div>`:`<div class="support-readonly-note">${icon('report')}<p>This request is read only because it has been resolved or closed.</p>${mode==='own'&&c.status==='Resolved'?'<button id="supportReopen" class="secondary">Re-open Support Request</button>':''}</div>`;
