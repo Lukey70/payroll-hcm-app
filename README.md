@@ -1,10 +1,20 @@
-# Payroll/HCM App v1.2.12
+# Payroll/HCM App v1.2.13
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.13
+
+- Relief-style Casual Input in Payroll Tools and MSS Payment Processing, with employee/position replacement details, daily schedules, history and automatic pay-period routing.
+- Casual earnings are read-only in Additional Earnings. Select an employee and record for other earnings; manage casual earnings through Casual Input.
+- Managers cannot delete casual input after its payment is finalised. A prefilled Payroll support request is available; Payroll retains deletion and recovery authority.
+- Structured manager requests include Record Number, single-record defaults and New Concurrent Record for commencements. Requests remain instructions for Payroll processing.
+- Casual Job Data uses the configured Casual position with no Reports To. Multi-record calendars show NRD before non-casual commencement.
+
+See RELEASE-NOTES-v1.2.13.md, TEST-RESULTS-v1.2.13.md and IMPLEMENTATION-NOTES-v1.2.13.md.
 
 ## v1.2.12
 

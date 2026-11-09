@@ -39,7 +39,7 @@
  }
  function enhance(o){
   const refreshSearches=searchableSelects(o),refreshRows=rowSelection();
-  const ids={jobData:'jobDataEmp',jobSummary:'jobSummaryEmp',additionalEarnings:'addEmp',taxDetails:'taxEmp',deductions:'dedEmp',leave:'leaveSelectedEmp',absenceBalance:'absenceEmp',payslip:'payslipEmp',bankDetails:'bankEmp',superDetails:'superEmp'};
+  const ids={payrollTools:'casualEmployee',jobData:'jobDataEmp',jobSummary:'jobSummaryEmp',additionalEarnings:'addEmp',taxDetails:'taxEmp',deductions:'dedEmp',leave:'leaveSelectedEmp',absenceBalance:'absenceEmp',payslip:'payslipEmp',bankDetails:'bankEmp',superDetails:'superEmp'};
   function refresh(){
    arrangeActions();refreshSearches();refreshRows();
    document.querySelectorAll('.landing-tile-icon').forEach(span=>{if(span.querySelector('svg'))return;const text=span.parentElement.textContent;span.innerHTML=icon(span.dataset.uiIcon||(/Payslip|Statement|Report/.test(text)?'report':/Leave|Timesheet/.test(text)?'calendar':/Payment/.test(text)?'money':/Support/.test(text)?'support':/Approval/.test(text)?'tick':/Manager|Reports/.test(text)?'team':'person'));});

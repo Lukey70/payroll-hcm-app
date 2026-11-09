@@ -1,6 +1,6 @@
 {
-  "version": "1.2.12",
+  "version": "1.2.13",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Casual leave/calendar exclusions, clearer manager support requests, preferred names, temporary return rosters and starter Payroll replies",
-  "releaseNotes": "RELEASE-NOTES-v1.2.12.md"
+  "notes": "Relief-style Casual Input for Payroll and managers, finalised deletion safeguards and record-specific requests",
+  "releaseNotes": "RELEASE-NOTES-v1.2.13.md"
 }

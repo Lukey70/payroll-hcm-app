@@ -32,7 +32,7 @@
     const job=(s,id,date)=>s.jobDataRows.filter(r=>r.empId===id&&r.saved!==false&&r.action!=='Termination'&&!E.isPayControlJobDataRow(r)&&r.effectiveDate<=date&&(!r.endDate||r.endDate>=date)).slice().sort((a,b)=>b.effectiveDate.localeCompare(a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0))[0];
     function profile(s,id,date=today()){
       if(E.jobRecords?.multiple(s,id)){const profiles=E.jobRecords.records(s,id).map(r=>profile(E.jobRecords.scope(s,id,r.recordNumber),id,date));return {payroll:profiles.some(p=>p.payroll),mss:profiles.some(p=>p.mss)};}
-      const e=employee(s,id),j=job(s,id,date),number=j?.positionNumber;
+      const e=employee(s,id),j=E.casualJobDataRow(s,job(s,id,date)),number=j?.positionNumber;
       const p=s.positions.find(p=>p.active!==false&&(number?String(p.positionNumber)===String(number):p.positionName===(E.activePayRate(s,id,date).position||e?.position)));
       return {payroll:active(s,e,date)&&p?.accessPayrollManagement===true,mss:active(s,e,date)&&p?.accessManagerSelfService===true};
     }
@@ -54,7 +54,7 @@
     function managerPositionNumbers(s,id,date){return E.jobRecords?.multiple(s,id)?E.jobRecords.activeRecords(s,id,date).map(r=>{const v=E.jobRecords.scope(s,id,r.recordNumber);return String(job(v,id,date)?.positionNumber||'');}):[String(job(s,id,date)?.positionNumber||'')];}
     function managerFor(s,id,date=today()){
       if(E.jobRecords?.multiple(s,id)){const managers=E.jobRecords.activeRecords(s,id,date).map(r=>managerFor(E.jobRecords.scope(s,id,r.recordNumber),id,date)),ids=[...new Set(managers.flatMap(m=>m.managerIds))];return {managerId:ids[0]||'',managerIds:ids,managerName:ids.map(x=>E.employeeDisplayName(employee(s,x))).join(', '),automatic:managers.length>0&&managers.every(m=>m.automatic),message:managers.map(m=>m.message).filter(Boolean).join('; ')};}
-      const e=employee(s,id),rows=assignments(s,id,date);
+      const e=employee(s,id);if(E.activeEmploymentType(s,e,date)==='Casual')return {managerId:'',managerIds:[],managerName:'',message:'',automatic:false,casual:true};const rows=assignments(s,id,date);
       const positions=[...new Set(rows.flatMap(j=>{
         const p=s.positions.find(p=>String(p.positionNumber)===String(j.positionNumber));
         const value=j.reportsTo||p?.reportsTo||e?.reportsTo||'';
@@ -172,6 +172,7 @@
       const target=area==='ess'?id:input.empId;assertScope(s,id,target,area,date);assertJobScope(s,id,target,input.jobRecord||0,area,date);const view=E.jobRecords?.multiple(s,target)?E.jobRecords.scope(s,target,input.jobRecord||0):s,e=employee(view,target);
       const type=input.type==='Leave without Pay'?'LWOP':input.type;
       if(!(area==='mss'?MANAGER_LEAVE:EMPLOYEE_LEAVE).includes(type))throw Error('This leave type can only be booked by payroll.');
+      if(E.activeEmploymentType(view,e,input.startDate||date)==='Casual')throw Error('Leave cannot be booked against a casual job record.');
       const manager=approvalManagerFor(view,target,date);
       if(!manager.automatic&&(!manager.managerIds.length||manager.message))throw Error(manager.message+' Payroll must correct Reports To before submission.');
       const result=validateRequest(s,Object.assign({},input,{empId:target,type}));
@@ -218,7 +219,7 @@
       });
     }
     function errors(s,date=today(),structured=false){
-      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return m.automatic||m.managerIds.length&&!m.message?[]:[structured?{empId:e.id,employeeName:E.employeeDisplayName(e),message:m.message}:`${E.employeeDisplayName(e)}: ${m.message}`];});
+      return s.employees.filter(e=>active(s,e,date)).flatMap(e=>{const m=managerFor(s,e.id,date);return E.activeEmploymentType(s,e,date)==='Casual'||m.automatic||m.managerIds.length&&!m.message?[]:[structured?{empId:e.id,employeeName:E.employeeDisplayName(e),message:m.message}:`${E.employeeDisplayName(e)}: ${m.message}`];});
     }
     function syncNotifications(s,date=today()){
       const payroll=s.employees.filter(e=>profile(s,e.id,date).payroll).map(e=>e.id);
@@ -249,9 +250,10 @@
       const list=open.concat(s.payslips).filter(p=>p.empId===id&&(!from||p.cycle.end>=from)&&(!to||p.cycle.end<=to)).slice().sort((a,b)=>b.cycle.end.localeCompare(a.cycle.end)||Number(b.segmentIndex)-Number(a.segmentIndex));
       return recent?list.slice(0,10):list;
     }
-    const EARNINGS=['Additional Hours','Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Reimbursement'];
-    function canManageAdditional(a){return !a.sourceTimesheetId&&!a.onCallId&&!a.legacyCashOutId&&!['Annual Leave Cash Out','Long Service Leave Cash Out','Overpayment Adjustment'].includes(a.earningType);}
+    const EARNINGS=['Additional Hours','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Reimbursement'];
+    function canManageAdditional(a){return !a.sourceTimesheetId&&!a.onCallId&&!a.legacyCashOutId&&!['Annual Leave Cash Out','Long Service Leave Cash Out','Overpayment Adjustment','Casual Earnings'].includes(a.earningType);}
     function saveAdditional(s,id,input,date=today()){
+      if(input.earningType==='Casual Earnings'||s.additionalEarnings.find(a=>a.id===input.id)?.earningType==='Casual Earnings')throw Error('Casual earnings are read only here. Use Payroll Tools — Casual Input.');
       assertScope(s,id,input.empId,'mss',date);assertJobScope(s,id,input.empId,input.jobRecord||0,'mss',date);
       const old=input.id&&s.additionalEarnings.find(a=>a.id===input.id);
       if(old)assertJobScope(s,id,old.empId,old.jobRecord||0,'mss',date);
@@ -280,6 +282,7 @@
     }
     function deleteAdditional(s,id,recordId,date=today()){
       const a=s.additionalEarnings.find(a=>a.id===recordId);if(!a)throw Error('Earnings record no longer exists.');assertScope(s,id,a.empId,'mss',date);assertJobScope(s,id,a.empId,a.jobRecord||0,'mss',date);
+      if(a.earningType==='Casual Earnings')throw Error('Casual earnings are read only here. Use Payroll Tools — Casual Input.');
       if(a.sourceTimesheetId||a.onCallId)throw Error('Generated earnings cannot be deleted here.');
       if(a.earningType==='Overpayment Adjustment')throw Error('Overpayment Adjustments can only be changed by Payroll Management.');
       if(a.legacyCashOutId||['Annual Leave Cash Out','Long Service Leave Cash Out'].includes(a.earningType))throw Error('Leave cash-outs can only be changed by Payroll Management.');
@@ -375,7 +378,7 @@
       click('ssDownload',()=>{const current=ownPays().find(x=>x.id===slipId);if(!current)throw Error('Payslip unavailable.');if(!current.finalised)throw Error('Payslips cannot be printed or downloaded until finalised.');const html=`<!doctype html><html lang="en"><meta charset="utf-8"><title>Payslip</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:8px}.section-title{font-weight:bold;margin-top:18px}</style>${payslipHtml(current)}</html>`;const url=URL.createObjectURL(new Blob([html],{type:'text/html'}));const a=document.createElement('a');a.href=url;a.download=`Payslip-${current.cycle.end}-${current.segmentIndex||1}.html`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
     }
     let operationsView=null;
-    function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState,getUser,reportError,onChange});return operationsView;}
+    function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState,getUser,reportError,onChange,raiseSupport:input=>{page='support';section='';target='';render();$('supportNew')?.click();if($('supportSubject'))$('supportSubject').value=input.subject;if($('supportDescription'))$('supportDescription').value=input.description;if($('supportRaisedFor'))$('supportRaisedFor').value=input.empId;}});return operationsView;}
     function filesHtml(l){return (l.attachments||[]).map((f,i)=>'<button data-ss-file="'+esc(l.id)+'|'+i+'">'+esc(f.name)+'</button>').join('');}
     function bindLeaveFiles(){buttons('data-ss-file',key=>{const [id,index]=key.split('|'),files=E.operations.leaveFiles(state(),user(),id,page==='approvals'?'approvals':area);E.operationFiles.download(files[Number(index)],document);});}
     function requestDetails(l){return table(['Detail','Value'],[['Employee',esc(E.employeeDisplayName(state().employees.find(e=>e.id===l.empId)))],['Job Record',String(l.jobRecord||0)],['Leave Type',esc(l.type==='LWOP'?'Leave without Pay':l.type)],['Start Date',E.fmtPay(l.startDate)],['End Date',E.fmtPay(l.endDate)],['Hours',Number(l.hours||0).toFixed(2)],['Status',statusHtml(l.status)],['Approver',esc(l.approverName||'Unassigned')],['Evidence Provided',l.evidenceProvided?'Yes':'No'],['Comment',esc(l.decisionComment||'')],['Documents',filesHtml(l)]]);}
@@ -467,7 +470,8 @@
       click('ssMonthPrev',()=>shift(-1));click('ssMonthNext',()=>shift(1));change('ssMonth',draw);draw();
     }
     function renderPayments(){
-      put('ssSidebar','<h2>Payment Processing</h2>');
+      nav([['earnings','Additional Earnings'],['casual','Casual Input']]);
+      if(section==='casual'){operationsUI().mount('ssMain','casual','mss');return;}
       if(o.mountPayments)o.mountPayments('ssMain',user());else put('ssMain','<p>Payment Processing unavailable.</p>');
     }
     function refreshNotifications(){

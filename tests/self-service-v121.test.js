@@ -7,6 +7,7 @@ function test(name,fn){if(require.main!==module)return;fn();count++;console.log(
 function fixture(){
   const s=D.emptyState();s.currentCycleId=11;
   s.positions.push({positionNumber:'MGR',positionName:'Manager',active:true,accessManagerSelfService:true},{positionNumber:'MGR2',positionName:'Other Manager',active:true,accessManagerSelfService:true},{positionNumber:'PAY',positionName:'Payroll',active:true,accessPayrollManagement:true},{positionNumber:'STAFF',positionName:'Officer',active:true,hourlyRate:40},{positionNumber:'CREW',positionName:'Crew',active:true,hourlyRate:30});
+  s.positions.push({positionNumber:'CASPOOL',positionName:'Casual',active:true,hourlyRate:0,reportsTo:'MGR'});
   for(const [id,pos,manager]of [['manager','MGR',''],['otherManager','MGR2',''],['payroll','PAY',''],['worker','STAFF','MGR'],['outsider','STAFF','MGR2']]){
     s.employees.push({id,firstName:id,lastName:'Test',name:id+' Test',startDate:'2026-05-22',originalStartDate:'2026-05-22',lslServiceDate:'2026-05-22',type:'Permanent',position:'Officer',status:'Active',hourlyRate:40,annualLeaveBalance:150,personalLeaveBalance:100,lslAccruedBalance:100});
     s.jobDataRows.push({id:'job-'+id,empId:id,effectiveDate:'2026-05-22',effectiveSequence:0,action:'Commencement',reason:'New Hire Permanent',positionNumber:pos,positionName:s.positions.find(p=>p.positionNumber===pos).positionName,positionClass:'Permanent',hourlyRate:40,reportsTo:manager,saved:true});
@@ -100,8 +101,8 @@ test('MSS earnings use only direct reports and apply rate-based and non-taxable 
 });
 test('MSS casual/HDA/fixed allowances save with correct source position and amount',()=>{
   const s=fixture();const base={empId:'worker',cycleId:11,startDate:'2026-10-12',endDate:'2026-10-12'};
-  const casual=S.saveAdditional(s,'manager',{...base,earningType:'Casual Earnings',hours:4,positionNumber:'CREW'},DATE);assert.strictEqual(casual.casualLoadedRate,37.5);assert.strictEqual(S.additionalAmount(s,casual),150);
-  assert.throws(()=>S.saveAdditional(s,'manager',{...base,earningType:'Casual Earnings',hours:4,positionNumber:'UNKNOWN'},DATE),/active position/);
+  assert.throws(()=>S.saveAdditional(s,'manager',{...base,earningType:'Casual Earnings',hours:4,positionNumber:'CREW'},DATE),/read only/);
+  assert.throws(()=>S.saveAdditional(s,'manager',{...base,earningType:'Casual Earnings',hours:4,positionNumber:'UNKNOWN'},DATE),/read only/);
   const meal=S.saveAdditional(s,'manager',{...base,earningType:'Meal Allowance'},DATE);assert.strictEqual(S.additionalAmount(s,meal),18);
   const vehicle=S.saveAdditional(s,'manager',{...base,earningType:'Motor Vehicle Allowance - Return Trip'},DATE);assert.strictEqual(S.additionalAmount(s,vehicle),50);
 });

@@ -1,8 +1,8 @@
-Payroll/HCM v1.2.12 — 8 November 2026
+Payroll/HCM v1.2.13 — 9 November 2026
 
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.12 test
+> payroll-hcm-app@1.2.13 test
 > node tests/run-all.cjs
 
 PASS: Login button/password strings and app version are present
@@ -233,7 +233,8 @@ PASS: submitting onboarding stores request details without changing employee, jo
 PASS: new-employee preferred name is optional, trimmed and retained without changing legal names
 PASS: temporary work schedule requests retain both rosters and the return date without changing Job Data
 PASS: temporary schedule return requires a later valid date and complete valid roster
-PASS: 16 simplified request template rule groups.
+PASS: structured requests use an explicit existing record, auto-fill single records and queue new concurrent commencements
+PASS: 17 simplified request template rule groups.
 PASS: upcoming changes include today and day 30, exclude past/out-of-range, drafts and orphan records, and sort by date
 PASS: Job Data effective sequences produce one event and unprocessed support templates do not become employee changes
 PASS: contract expiry uses the last contract day, avoids duplication and ignores obsolete expiry following permanency
@@ -266,7 +267,19 @@ PASS: extended leave combines approved bookings across non-working gaps and find
 PASS: return reminders are current-manager scoped, deduplicated and removed after cancellation or reporting changes
 PASS: preferred names change display only while legal earnings and payment identity stay intact through export
 PASS: starter Payroll replies install once and preserve custom, edited, inactive and removed templates
-PASS: 14 payroll operations groups.
+PASS: Casual Input saves canonical earnings once, preserves unrelated pay and reflects updates/deletions
+PASS: Casual Input validates role, record, dates, hours, position and the entire batch before replacing pay
+PASS: Casual Input supports concurrent casual records, positions and historical rates without duplicating payslips
+PASS: Casual Input historical corrections generate arrears once and preserve closed payslips
+PASS: relief Casual Input routes daily schedules across periods, derives replacement positions and edits without duplicates
+PASS: relief Casual Input deletion removes earnings and recovers settled pay once without editing closed payslips
+PASS: casual input legacy migration is idempotent, instance numbers are retained and invalid schedules are rejected
+PASS: casual assignment uses the pool position, has no manager and is not a missing-manager error
+PASS: deleting cross-period relief recovers only settled dates and leaves unpaid future dates unrecovered
+PASS: MSS casual input shares Payroll workflow but cannot delete after any linked earnings are finalised
+PASS: MSS late casual input for a closed work period stays deletable until its payment is finalised
+PASS: MSS finalisation lock is record-specific when another casual record is on Cease Pay
+PASS: 26 payroll operations groups.
 PASS: Urgent Pay reduces net once without changing gross, tax, super or next-period deductions
 PASS: preview is read-only; running snapshots bank accounts, locks deductions and excludes repeat payments
 PASS: batch run rejects stale previews, missing bank details, invalid amounts and excess deductions atomically
@@ -357,7 +370,7 @@ PASS: deleting an unfinalised secondary commencement does not leave a phantom ac
 PASS: FTE establishment and earnings statement include each active job with its own rate
 PASS: all jobs use one super/bank account and employee deductions and debt settle once
 PASS: ending the privileged record removes its access even while another ordinary job stays active
-PASS: the single consolidated casual payslip remains available to its current Reports To managers
+PASS: casual payslips have no manager access when casual records have no Reports To
 PASS: shared LSL and negative leave are paid or recovered only once at the last ongoing termination
 PASS: fixed and percentage deductions charge only their assigned record
 PASS: held record deductions do not transfer to a paid job
@@ -365,13 +378,14 @@ PASS: recovery is limited to its own record and remains linked on a consolidated
 PASS: casual job records are excluded from booking choices and reject every leave type
 PASS: single casual records and dates changing into casual reject leave without removing existing history
 PASS: absence calendars ignore casual rosters and legacy leave while displaying only the contract schedule
-PASS: 25 concurrent job groups.
+PASS: multi-record calendars show NRD before non-casual commencement without creating employment or casual roster hours
+PASS: 26 concurrent job groups.
 PASS: all eighteen Node.js payroll regression suites.
 
 npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
 
-> payroll-hcm-app@1.2.12 test:browser
-> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js && node tests/time-records-ui.test.js && node tests/absence-overview-names-ui.test.js && node tests/shared-ui.test.js && node tests/search-certification-ui.test.js && node tests/dates-loading-rows-ui.test.js && node tests/support-submit-permissions-ui.test.js && node tests/termination-leave-recovery-ui.test.js && node tests/approval-recovery-search-ui.test.js && node tests/cease-pay-ui.test.js && node tests/job-data-toolbar-ui.test.js && node tests/concurrent-jobs-ui.test.js && node tests/casual-leave-ui.test.js
+> payroll-hcm-app@1.2.13 test:browser
+> node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js && node tests/time-records-ui.test.js && node tests/absence-overview-names-ui.test.js && node tests/shared-ui.test.js && node tests/search-certification-ui.test.js && node tests/dates-loading-rows-ui.test.js && node tests/support-submit-permissions-ui.test.js && node tests/termination-leave-recovery-ui.test.js && node tests/approval-recovery-search-ui.test.js && node tests/cease-pay-ui.test.js && node tests/job-data-toolbar-ui.test.js && node tests/concurrent-jobs-ui.test.js && node tests/casual-leave-ui.test.js && node tests/casual-input-ui.test.js && node tests/mss-casual-ui.test.js
 
 PASS: Chromium Dashboard, eight reports, PDF download, selected employee leave, compensation roster hours, packaging inline validation/save, cash-out credit validation/save/delete, MSS templates, case history and casual-only ESS login; no JavaScript page errors.
 PASS: real support popup, shared data with unsaved parent work, single-window reuse, popup blocking, failed-save rollback, draft preservation, parent closure, direct-link rejection and logout access; notification pane, per-user dismissal and navigation; ESS/MSS payslip rows, dedicated views, date-preserving Back and finalisation controls.
@@ -403,12 +417,7 @@ PASS: real Job Data reasons, orphan-return validation, read-only assignment/rost
 PASS: Job Data labelled row toolbar, disabled boundary navigation, desktop/mobile containment, draft and saved deletion confirmations, Cancel preservation, row identity, failed-save rollback, derived-record cleanup and reload persistence.
 PASS: actual concurrent Job Data creation, separate rosters/pay, per-row earnings attribution, Payroll/ESS record-specific leave, shared identity, MSS approval/job-summary/payslip/earnings scope, persistence and mobile layout.
 PASS: Payroll/ESS/MSS hide casual-only booking choices and casual job records, default to the non-casual record and show only contract rosters/leave on Payroll/ESS/MSS calendars, hide casual-only rows/yearly grids and retain leave history without browser errors.
+PASS: active casual employee search/history, date-range relief by employee/position, automatic position/record, schedule OK/Cancel, cross-period routing, instance persistence, idempotent saves, rollback/draft retention, read-only Additional Earnings and record isolation, deletion, pool position/no Reports To and mobile schedule.
+PASS: MSS Payment Processing Casual Input, same active casual pool, schedule/save, finalised-delete UI/API lock, prefilled Payroll support request, Payroll deletion/recovery authority, single/multiple/new-concurrent/new-employee request record selection and no automatic Job Data creation.
 
-Additional concurrent-record HTTP repeats:
-PASS: actual concurrent Job Data creation, separate rosters/pay, per-row earnings attribution, Payroll/ESS record-specific leave, shared identity, MSS approval/job-summary/payslip/earnings scope, persistence and mobile layout.
-
-PASS: actual concurrent Job Data creation, separate rosters/pay, per-row earnings attribution, Payroll/ESS record-specific leave, shared identity, MSS approval/job-summary/payslip/earnings scope, persistence and mobile layout.
-
-PASS: actual concurrent Job Data creation, separate rosters/pay, per-row earnings attribution, Payroll/ESS record-specific leave, shared identity, MSS approval/job-summary/payslip/earnings scope, persistence and mobile layout.
-
-PASS: 62 JavaScript syntax checks and matching v1.2.12 release assets.
+PASS: 64 syntax checks; v1.2.13 metadata and local HTML assets are consistent.

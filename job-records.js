@@ -10,12 +10,17 @@ function create(E){
  function matches(s,row){return number(row)===Number(s._jobRecordScope??0);}
  function record(s,id,n){const r=records(s,id).find(r=>r.recordNumber===Number(n));if(!r)throw Error('Select a valid job record.');return r;}
  function calendarStatus(s,e,date,allowed=null){
+  let beforeNonCasualStart=false;
   const statuses=records(s,e.id).filter(r=>!allowed||allowed.includes(r.recordNumber)).map(r=>{
    const v=scope(s,e.id,r.recordNumber),person=v.employees.find(x=>x.id===e.id);E.reconcileEmploymentFromJobData(v,person);
-   if(!E.isEmployedOn(person,date)||E.activeEmploymentType(v,person,date)==='Casual')return null;
+   if(!E.isEmployedOn(person,date)){if(E.employmentSegments(person).some(segment=>segment.startDate>date&&E.activeEmploymentType(v,person,segment.startDate)!=='Casual'))beforeNonCasualStart=true;return null;}
+   if(E.activeEmploymentType(v,person,date)==='Casual')return null;
    return E.absenceCalendarStatus(v,person,date);
   }).filter(Boolean);
-  if(!statuses.length)return {cssClass:'',title:'',label:'',hours:0,employed:false,leaveType:'',status:'',pending:false};
+  if(!statuses.length){
+   if(beforeNonCasualStart){const holiday=E.isPublicHoliday(date);return {cssClass:holiday?'publicholiday':'nonrostered',title:holiday?E.publicHolidayName(date):'Non Rostered Day',label:holiday?'PH':'NRD',hours:0,employed:false,leaveType:'',status:'',pending:false};}
+   return {cssClass:'',title:'',label:'',hours:0,employed:false,leaveType:'',status:'',pending:false};
+  }
   const leave=statuses.filter(x=>x.leaveType&&x.hours>0),chosen=leave[0]||statuses.find(x=>x.hours>0)||statuses[0];
   return {...chosen,hours:E.round4(statuses.reduce((sum,x)=>sum+x.hours,0)),title:leave.length>1?leave.map(x=>x.title).join(' / '):chosen.title};
  }
@@ -60,7 +65,7 @@ function create(E){
  }
  function serviceView(s,e,asOf=today()){
   const eligible=records(s,e.id).filter(r=>(s.jobDataRows||[]).some(j=>j.empId===e.id&&number(j)===r.recordNumber&&j.saved!==false&&j.action!=='Termination'&&j.positionClass&&j.positionClass!=='Casual'));
-  if(!eligible.length)return scope(s,e.id,0);
+  if(!eligible.length){const v=scope(s,e.id,0);v._sharedLeaveState=undefined;return v;}
   const ids=new Set(eligible.map(r=>r.recordNumber)),v={...s,_jobRecordScope:'service',_jobRecordEmployee:e.id,_sharedLeaveState:undefined,_serviceRoot:s},x={...clone(e),type:'Permanent',employmentSegments:union(eligible.flatMap(r=>E.employmentSegments(employee(s,e.id,r.recordNumber))))};
   delete x.concurrentEmployment;x.startDate=x.employmentSegments.at(-1)?.startDate||x.startDate;x.originalStartDate=x.employmentSegments[0]?.startDate||x.originalStartDate;x.lslServiceDate=[x.lslServiceDate,x.originalStartDate].filter(Boolean).sort().pop();x.terminationDate=x.employmentSegments.at(-1)?.endDate||'';x.contractEndDate='';
   v.employees=s.employees.map(a=>a.id===e.id?x:a);v.jobDataRows=s.jobDataRows.filter(j=>j.empId!==e.id||ids.has(number(j))&&j.positionClass!=='Casual');

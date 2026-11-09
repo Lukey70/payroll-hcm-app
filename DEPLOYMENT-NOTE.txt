@@ -1,30 +1,7 @@
-Payroll/HCM App v1.2.3
+Payroll/HCM App v1.2.13 — 9 November 2026
 
-Export Data and retain the JSON backup before updating. Preserve browser/site origin or import the backup.
-Upload all nine runtime files together:
-index.html
-styles.css
-data-store.js
-payment-details.js
-self-service.js
-payroll-engine.js
-support-requests.js
-app.js
-latest-version.json
-Keep script order. Refresh and confirm v1.2.3. Existing data migrates in place; finalised payroll, accounts, recoveries, leave and cases are retained. Support documents/messages/resolution history are included in backups.
+Export existing browser data before replacing files. Extract the complete ZIP into one folder. Open index.html, or serve that folder using a static web server. Upload the complete matching file set when deploying. No build step or external CDN is required.
 
-Payroll/MSS access is configured in Settings > Positions. Current acting assignment replaces substantive reporting until return/expiry. All Payroll users can open all cases; ESS/MSS own-request lists are limited to Raised by. Payroll on-behalf creation requires Raised by and Raised for selections.
-Raiser replies notify only assignee, or nobody if unassigned. Payroll replies and resolution notify raiser. Reopening requires a reason and is available only while Resolved; Closed requires a new case. Fourteen-day auto closure checks startup/every minute while running.
-Attachments: up to five per submission/message, 1 MB each, 2 MB/case total. Browser quotas also apply; failed saves roll back changes.
-Certifiers auto-populate from current logged-in assignment. Shared manager tick is read only in Payroll; its Certify controls are separate company-wide review.
+GitHub deployment: upload of generated v1.2.13 requested separately.
 
-Run:
-node test-cases.js
-node tests/payment-details-v140.test.js
-node tests/self-service-v121.test.js
-node tests/support-v122.test.js
-node tests/update-v123.test.js
-
-Before live use, validate your backed-up real employee data, particularly casual eligibility, Payroll/non-owner case access, on-behalf creation, attachments, reopening, assignment notifications and certification identities.
-This remains browser-local data with readable credentials, no shared multi-device database/server authorization, and in-app notifications only. No processing runs while closed. A backend is required for a secure shared staff portal.
-Live-browser visual QA and real employee export acceptance QA were unavailable; see test-results.txt.
+The app stores payroll data in browser localStorage, so use the same browser and origin to retain existing data, or import an exported backup. Data is not shared between devices or browsers. This prototype does not supply server-side authentication or authorization.

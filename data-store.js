@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.12';
+  const APP_VERSION = '1.2.13';
   const STORAGE_KEY = 'payrollAppData';
 
   const DEFAULT_PAYROLL_REPLIES=[
@@ -22,7 +22,7 @@
       payRates: [],
       leaveBookings: [],
       leaveRequestArchive: [],
-      supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: defaultPayrollReplies(), urgentPayBatches: [], urgentPaySequence: 0,
+      casualInputs: [], supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: defaultPayrollReplies(), urgentPayBatches: [], urgentPaySequence: 0,
       supportSequence: 0,
       additionalEarnings: [],
       deductions: [],
@@ -82,7 +82,7 @@
     const sourceVersion = String((state&&state.version)||'');
     const blank = emptyState();
     Object.keys(blank).forEach(k=>{ if(state[k] === undefined || state[k] === null) state[k] = clone(blank[k]); });
-    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','managerDelegations','jobRecords','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
+    ['employees','schedules','payRates','leaveBookings','leaveRequestArchive','supportRequests','casualInputs','timesheets','timesheetRecordArchive','timesheetPayrollArchive','onCallPeriods','probations','supportResponseTemplates','urgentPayBatches','additionalEarnings','deductions','superFunds','superDetails','bankDetails','recoveryRepayments','managerDelegations','jobRecords','positions','jobDataRows','cashOutRequests','taxDetails','alerts','jobEvents','payslips','auditLog'].forEach(k=>{ if(!Array.isArray(state[k])) state[k] = []; });
     ['flexOpeningBalances','payResults','certifications','finalisedCycles','repairs','loginCredentials'].forEach(k=>{ if(typeof state[k] !== 'object' || Array.isArray(state[k])) state[k] = {}; });
     // Install starter replies once, preserving custom, edited and inactive replies.
     if(!state.repairs.payrollReplyDefaultsV1){

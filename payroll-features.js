@@ -42,10 +42,18 @@
   }
   function validateTemplate(type,d,raisedFor,s){
    if(!Object.hasOwn(REASONS,type))throw Error('Select a valid request type.');
+   let requestRecord;
+   if(raisedFor==='new-employee')requestRecord={jobRecord:0,recordMode:'new-employee'};
+   else{
+    const person=(s?.employees||[]).find(e=>e.id===raisedFor);if(!person)throw Error('Select an existing employee.');const records=E.jobRecords.records(s,raisedFor),value=d.jobRecord??(records.length===1?records[0].recordNumber:'');
+    if(value==='new'||d.recordMode==='new-concurrent'){if(type!=='Commencement')throw Error('Use a commencement request to create a New Concurrent Record.');requestRecord={jobRecord:'new',recordMode:'new-concurrent'};}
+    else {if(value===''||!Number.isInteger(Number(value))||!records.some(r=>r.recordNumber===Number(value)))throw Error('Select a valid employee record number.');requestRecord={jobRecord:Number(value),recordMode:'existing'};}
+   }
    const validDate=(key,value)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value||'')||E.iso(E.parseDate(value))!==value)throw Error('Enter a valid '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');};
    if(type!=='Commencement'&&raisedFor==='new-employee')throw Error('Select an existing employee for this request.');
-   if(type==='Termination'){if(!REASONS.Termination.includes(d.reason))throw Error('Select a valid termination reason.');if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {reason:d.reason,lastWorkingDay:d.lastWorkingDay};}
+   if(type==='Termination'){if(!REASONS.Termination.includes(d.reason))throw Error('Select a valid termination reason.');if(!String(d.lastWorkingDay||'').trim())throw Error('Enter last working day.');validDate('lastWorkingDay',d.lastWorkingDay);return {...requestRecord,reason:d.reason,lastWorkingDay:d.lastWorkingDay};}
    if(!REASONS[type].includes(d.reason))throw Error('Select a valid '+type+' reason.');
+   if(type==='Commencement'&&d.employmentType==='Casual'){const pool=E.casualPosition(s);if(!pool)throw Error('Payroll must configure an active Casual position first.');d={...d,positionNumber:pool.positionNumber};}
    const rosterNeeded=type==='Commencement'||type==='Movement'||type==='Variation'&&d.reason==='Work Schedule Adjustment';
    const required=type==='Commencement'?['effectiveDate','employmentType','positionNumber']:type==='Variation'?['effectiveDate',...(rosterNeeded?[]:['changes'])]:['effectiveDate','positionNumber','temporary'];
    for(const key of required)if(!String(d[key]||'').trim())throw Error('Enter '+key.replace(/([A-Z])/g,' $1').toLowerCase()+'.');
@@ -56,7 +64,7 @@
    if(type==='Commencement'&&!['Permanent','Fixed Term','Casual'].includes(d.employmentType))throw Error('Select a valid employment type.');
    if(type==='Commencement'&&d.employmentType==='Fixed Term'&&(!d.contractEndDate||d.contractEndDate<d.effectiveDate))throw Error('Enter a valid contract end date.');
    const fields=['reason','effectiveDate','firstName','lastName','dateOfBirth','email','address','employmentType','contractEndDate','positionNumber','changes','temporary','returnDate'];
-   const result=Object.fromEntries(fields.filter(k=>d[k]!==undefined&&String(d[k]).trim()!=='').map(k=>[k,String(d[k]).trim()]));
+   const result={...requestRecord,...Object.fromEntries(fields.filter(k=>d[k]!==undefined&&String(d[k]).trim()!=='').map(k=>[k,String(d[k]).trim()]))};
    if(type==='Commencement'){
     for(const key of ['firstName','lastName','dateOfBirth','email','address'])delete result[key];
     if(raisedFor!=='new-employee'){
@@ -83,10 +91,10 @@
    if(type==='Movement'&&d.temporary!=='Temporary')delete result.returnDate;
    if(type==='Commencement'||type==='Movement'){
     const pos=(s?.positions||[]).find(p=>p.active!==false&&String(p.positionNumber)===String(d.positionNumber));if(!pos)throw Error('Select an active position.');
-    result.positionName=String(pos.positionName||'');result.reportsTo=Array.isArray(pos.reportsTo)?pos.reportsTo.map(String).join(', '):String(pos.reportsTo||'');
+    result.positionName=String(pos.positionName||'');result.reportsTo=Array.isArray(pos.reportsTo)?pos.reportsTo.map(String).join(', '):String(pos.reportsTo||'');if(type==='Commencement'&&d.employmentType==='Casual')result.reportsTo='';
    }
    if(rosterNeeded){
-    const employee=(s?.employees||[]).find(e=>e.id===raisedFor),employmentType=type==='Commencement'?d.employmentType:E.activeEmploymentType(s,employee,d.effectiveDate);
+    const view=type==='Commencement'?s:E.jobRecords.scope(s,raisedFor,requestRecord.jobRecord),employee=(view?.employees||[]).find(e=>e.id===raisedFor),employmentType=type==='Commencement'?d.employmentType:E.activeEmploymentType(view,employee,d.effectiveDate);
     if(!employmentType)throw Error('Select an existing employee with employment details.');
     const zero={0:0,1:0,2:0,3:0,4:0,5:0,6:0},casual=employmentType==='Casual';
     if(!casual&&!['1-week','2-week'].includes(d.rosterPattern))throw Error('Select a roster pattern.');

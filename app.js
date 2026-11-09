@@ -18,6 +18,7 @@
   let selectedCalendarYear = null;
   let additionalPeriodOffset = 0;
   let additionalDraftRows = [];
+  let additionalSelectedRecord=0,additionalEmployeeKey='';
   let additionalDirty = false;
   let selectedDeductionEmp = '';
   let selectedCertCycleId = '';
@@ -127,7 +128,7 @@
   function guardPaymentEmployee(id){if(paymentManagerId)S.assertScope(state,paymentManagerId,id,'mss');}
 
   function selfServiceUI(){
-    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids,managerId)=>monthlyAbsenceCalendarHtml(month,ids,managerId),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:change=>{if(change?.kind!=='timesheet')calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
+    if(!ssUI) ssUI=E.createSelfServiceUI({E,getState:()=>state,getUser:()=>currentUserId,payslipHtml,esc,reportError:alert,mountSupport,openSupportCase,onNotifications:alerts=>{presentNotificationPopups(alerts);renderNotificationPane(alerts);},toggleNotifications:toggleAlertsDropdown,mountCertification:mountSelfServiceCertification,unmountCertification:unmountSelfServiceCertification,jobSummaryHtml,yearlyCalendarHtml,monthlyCalendarHtml:(month,ids,managerId)=>monthlyAbsenceCalendarHtml(month,ids,managerId),mountPayments:mountSelfServicePayments,unmountPayments:unmountSelfServicePayments,home:showLanding,logout,onChange:change=>{if(change?.kind!=='timesheet')calculateAllForCurrent(change?.kind!=='casual-input');if(!DataStore.save(state))throw Error('Unable to save. The change has been rolled back. Export your data before continuing.');renderAlerts();}});
     return ssUI;
   }
   function openSelfService(area){
@@ -485,14 +486,14 @@
     }
     if(changed){ rec.completed=false; rec.locked=false; rec.completedAt=''; rec.updatedAt=new Date().toISOString(); }
   }
-  function calculateAllForCurrent(){
+  function calculateAllForCurrent(persist=true){
     const c=currentCycle();
     const oldResults=state.payResults[String(c.id)] || [];
     const newResults=E.calculateAll(state,c.id,false);
     S.syncNotifications(state);
     state.payResults[String(c.id)] = newResults;
     reconcileCertificationForCycle(c, oldResults, newResults);
-    save();
+    if(persist!==false)save();
   }
   function calculateOne(empId){
     const c = currentCycle();
@@ -584,7 +585,8 @@
 
 
   function normaliseJobDataCompare(row){
-    const hours = Object.assign({0:0,1:0,2:0,3:0,4:0,5:0,6:0}, (row && row.hoursByDay) || {});
+    row=E.casualJobDataRow(state,row);
+    const hours = Object.assign({0:0,1:0,2:0,3:0,4:0,5:0,6:0}, row?.positionClass==='Casual'?{}:(row && row.hoursByDay) || {});
     const normalHours = {};
     [0,1,2,3,4,5,6].forEach(k=>{ normalHours[k] = Number(hours[k] || 0); });
     return {
@@ -705,9 +707,9 @@
   function urgentPayUI(){if(!urgentView)urgentView=E.createUrgentPayUI({E,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:()=>{if(!DataStore.save(state))throw Error('Unable to save urgent pay. No deductions have been locked.');deductionDraftLoadedFor='';calculateAllForCurrent();renderAlerts();}});return urgentView;}
 
   let operationsView=null;
-  function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:change=>{if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');if(change?.kind!=='timesheet')calculateAllForCurrent();renderAlerts();renderDashboard();}});return operationsView;}
+  function operationsUI(){if(!operationsView)operationsView=E.createOperationsUI({E,S,document,window,getState:()=>state,getUser:()=>currentUserId,reportError:alert,onChange:change=>{if(change?.kind==='casual-input'){calculateAllForCurrent(false);if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');}else {if(!DataStore.save(state))throw Error('Unable to save. Your change has been rolled back.');if(change?.kind!=='timesheet')calculateAllForCurrent();}renderAlerts();renderDashboard();}});return operationsView;}
   function renderPayrollTools(){
-    h('payrollTools','<h2>Payroll Tools</h2><div class="report-tiles">'+[['probation','Probation Tracking'],['responses','Support Response Templates'],['timesheets','Timesheets'],['delegations','Manager Delegation']].map(([key,label])=>'<button class="landing-tile" data-ops-tool="'+key+'"><span class="landing-tile-icon">'+(typeof PayrollUI!=='undefined'?PayrollUI.icon(key==='oncall'?'clock':key==='responses'?'support':key==='delegations'?'team':'report'):'▤')+'</span><span>'+label+'</span></button>').join('')+'</div><div id="payrollToolOutput"></div>');
+    h('payrollTools','<h2>Payroll Tools</h2><div class="report-tiles">'+[['casual','Casual Input'],['probation','Probation Tracking'],['responses','Support Response Templates'],['timesheets','Timesheets'],['delegations','Manager Delegation']].map(([key,label])=>'<button class="landing-tile" data-ops-tool="'+key+'"><span class="landing-tile-icon">'+(typeof PayrollUI!=='undefined'?PayrollUI.icon(key==='casual'?'money':key==='oncall'?'clock':key==='responses'?'support':key==='delegations'?'team':'report'):'▤')+'</span><span>'+label+'</span></button>').join('')+'</div><div id="payrollToolOutput"></div>');
     $('payrollTools').querySelectorAll('[data-ops-tool]').forEach(b=>b.addEventListener('click',()=>{const key=b.dataset.opsTool;h('payrollTools','<button id="opsBackTools" class="secondary">Back to Payroll Tools</button><div id="payrollToolOutput"></div>');$('opsBackTools').addEventListener('click',renderPayrollTools);operationsUI().mount('payrollToolOutput',key);}));
   }
   function renderOperationsDashboard(){
@@ -941,7 +943,7 @@
     row.positionNumber=v('jdPositionNumber') || row.positionNumber || '';
     const pos=positionByNumber(row.positionNumber);
     if(pos){ row.positionName=pos.positionName||''; row.department=pos.department||''; row.hourlyRate=Number(pos.hourlyRate||0); row.reportsTo=pos.reportsTo||''; row.reportsToName=row.reportsTo?((positionByNumber(row.reportsTo)||{}).positionName||''):''; }
-    row.positionClass=v('jdPositionClass') || row.positionClass || 'Permanent';
+    row.positionClass=v('jdPositionClass') || row.positionClass || 'Permanent';if(row.positionClass==='Casual'){row.reportsTo='';row.reportsToName='';}
     if(row.reason==='Permanency Confirmed') row.positionClass='Permanent';
     Object.assign(row,rosterHoursFromForm(row.positionClass));
     return row;
@@ -981,6 +983,8 @@
     const control=v('jdAction')==='Variation'&&['Cease Pay','Return from Cease Pay'].includes(v('jdReason'));
     if(control){const schedule=E.activeSchedule(jobView(selectedJobDataEmp),selectedJobDataEmp,v('jdEffectiveDate'));if(schedule){setScheduleInputs('jd',schedule.hoursByDayWeek1||schedule.hoursByDay||{});setScheduleInputs('jd2',schedule.hoursByDayWeek2||schedule.hoursByDayWeek1||schedule.hoursByDay||{});setv('jdRosterPattern',schedule.rosterPattern||'1-week');}}
     const casual=v('jdPositionClass')==='Casual';
+    if(casual){const pool=E.casualPosition(state);if(pool)populateJobDataPosition(pool.positionNumber);setv('jdReportsTo','');h('jdReportsToName','');}
+    if($('jdReportsTo')?.parentElement)$('jdReportsTo').parentElement.hidden=casual;
     const pattern=casual?'1-week':rosterPatternFromForm();
     if($('jdRosterPattern')){ if(casual) $('jdRosterPattern').value='1-week'; $('jdRosterPattern').disabled=casual; }
     ['jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun','jd2Mon','jd2Tue','jd2Wed','jd2Thu','jd2Fri','jd2Sat','jd2Sun'].forEach(id=>{ const el=$(id); if(!el) return; if(casual) el.value='0'; el.disabled=casual; });
@@ -988,7 +992,7 @@
     if($('jdWeek1Title')) h('jdWeek1Title',pattern==='2-week'?'Week 1 — Pay Week':'Regular Week');
     updateJobDataWeeklyHours();
     ['jdPositionNumber','jdPositionLookup','jdPositionClass','jdRosterPattern','jdMon','jdTue','jdWed','jdThu','jdFri','jdSat','jdSun','jd2Mon','jd2Tue','jd2Wed','jd2Thu','jd2Fri','jd2Sat','jd2Sun'].forEach(id=>{const el=$(id);if(el&&control)el.disabled=true;});
-    if($('jdPositionNumber'))$('jdPositionNumber').disabled=control;if($('jdPositionLookup'))$('jdPositionLookup').disabled=control;if($('jdPositionClass'))$('jdPositionClass').disabled=control;
+    if($('jdPositionNumber'))$('jdPositionNumber').disabled=control||casual;if($('jdPositionLookup'))$('jdPositionLookup').disabled=control||casual;if($('jdPositionClass'))$('jdPositionClass').disabled=control;
     if($('jdPayControlNote')){$('jdPayControlNote').hidden=!control;$('jdPayControlNote').textContent=v('jdReason')==='Cease Pay'?'Pay stops from this effective date. Employment, position and roster remain unchanged.':'Pay resumes from this effective date. A backdated return generates any unpaid arrears from that date; earlier held dates remain unpaid.';}
   }
   function populateJobDataPosition(num){
@@ -1052,6 +1056,7 @@
     const row=confirmedRow?.empId?confirmedRow:readJobDataForm(); const e=emp(row.empId); if(!e) return alert('Select an employee.');
     if(!row.effectiveDate) return alert('Enter an effective date.');
     if(!row.reason) return alert('Select a reason.');
+    if(row.positionClass==='Casual'&&row.action!=='Termination'&&!E.isPayControlJobDataRow(row)){const pool=E.casualPosition(state);if(!pool)return alert('Create or activate the Casual position in Settings before saving casual Job Data.');Object.assign(row,{positionNumber:pool.positionNumber,positionName:pool.positionName,department:pool.department||'',hourlyRate:Number(pool.hourlyRate||0),reportsTo:'',reportsToName:''});}
     const payControl=E.isPayControlJobDataRow(row);
     if(payControl){try{E.validatePayControlRow(jobView(row.empId,row.jobRecord||0),row);}catch(err){return alert(err.message);}}
     if(!payControl && row.action!=='Termination' && !positionByNumber(row.positionNumber)) return alert('Select a valid active position.');
@@ -1162,7 +1167,7 @@
     bindShowTerminated('jobShowTerminated','jobSummary',renderJobSummary); $('jobEmp').addEventListener('change',renderJobOutput); renderJobOutput();
   }
   function jobSummaryHtml(id,allowedRecords=null){
-    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id&&r.saved!==false&&(!allowedRecords||allowedRecords.includes(Number(r.jobRecord||0)))).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
+    const rows=(state.jobDataRows||[]).filter(r=>r.empId===id&&r.saved!==false&&(!allowedRecords||allowedRecords.includes(Number(r.jobRecord||0)))).map(r=>E.casualJobDataRow(state,r)).slice().sort((a,b)=>E.compare(b.effectiveDate,a.effectiveDate)||Number(b.effectiveSequence||0)-Number(a.effectiveSequence||0));
     return rows.length?table([...(E.jobRecords.records(state,id).length>1?['Job Record']:[]),'Effective Date','Effective Sequence','Action','Reason','Position Name','Weekly Hours'],rows.map(r=>[...(E.jobRecords.records(state,id).length>1?[Number(r.jobRecord||0)]:[]),E.fmtPay(r.effectiveDate),esc(r.effectiveSequence||0),esc(r.action||''),esc(r.reason||''),esc(r.positionName||''),weeklyHours(r.hoursByDay).toFixed(2)])):'<p class="small-note">No Job Data rows saved for this employee.</p>';
   }
   function renderJobOutput(){const id=v('jobEmp');h('jobOutput',id?jobSummaryHtml(id):'<p class="small-note">Select an employee.</p>');}
@@ -1172,14 +1177,22 @@
     const scoped=!!paymentManagerId;
     const list=scoped?S.directReports(state,paymentManagerId):employeeList(showTerminatedByTab.additionalEarnings);
     if(additionalPeriodOffset === undefined) additionalPeriodOffset = 0;
-    h(paymentContainer, `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${scoped?'':showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(list)}</select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addCurrentPeriod" class="secondary">Current Pay Period</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="cancelAdditional" class="secondary">Cancel</button><button id="saveAdditional">Save</button></div>`);
-    if(!scoped)bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addCurrentPeriod').addEventListener('click',()=>{ additionalPeriodOffset=0; loadAdditionalDraft(); }); $('addRow').addEventListener('click',addAdditionalRow); $('cancelAdditional').addEventListener('click',loadAdditionalDraft);$('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
+    h(paymentContainer, `<h2>Additional Earnings</h2><p id="additionalNote" class="small-note"></p><div class="controls">${scoped?'':showTerminatedControl('addShowTerminated','additionalEarnings')}</div><div class="grid form-grid"><div><label>Employee</label><select id="addEmp">${employeeOptions(list)}</select></div><div><label>Record Number</label><select id="addRecord"></select></div><div><label>Pay Period</label><input id="addPeriod" readonly></div></div><div class="controls" style="margin-top:14px"><button id="addPrev" class="secondary">← Previous Pay</button><button id="addNext" class="secondary">Next Pay →</button><button id="addCurrentPeriod" class="secondary">Current Pay Period</button><button id="addRow">+ Add Row</button></div><div id="addRows"></div><div class="save-row"><button id="cancelAdditional" class="secondary">Cancel</button><button id="saveAdditional">Save</button></div>`);
+    if(!scoped)bindShowTerminated('addShowTerminated','additionalEarnings',renderAdditionalEarnings); $('addEmp').addEventListener('change',loadAdditionalDraft);$('addRecord').addEventListener('change',()=>{additionalSelectedRecord=Number(v('addRecord'));loadAdditionalDraft();}); $('addPrev').addEventListener('click',()=>moveAdditionalPeriod(-1)); $('addNext').addEventListener('click',()=>moveAdditionalPeriod(1)); $('addCurrentPeriod').addEventListener('click',()=>{ additionalPeriodOffset=0; loadAdditionalDraft(); }); $('addRow').addEventListener('click',addAdditionalRow); $('cancelAdditional').addEventListener('click',loadAdditionalDraft);$('saveAdditional').addEventListener('click',saveAdditional); loadAdditionalDraft();
   }
   function additionalCycle(){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const idx=Math.min(currentIndex+1,Math.max(0,currentIndex+additionalPeriodOffset)); return E.PAY_CYCLES[idx] || currentCycle(); }
   function moveAdditionalPeriod(n){ const currentIndex=E.PAY_CYCLES.findIndex(c=>c.id===currentCycle().id); const nextOffset=additionalPeriodOffset+n; const idx=currentIndex+nextOffset; if(idx<0 || idx>currentIndex+1) return; additionalPeriodOffset=nextOffset; loadAdditionalDraft(); }
-  function loadAdditionalDraft(){ const c=additionalCycle(); if($('addPeriod')) setv('addPeriod',E.cycleDisplay(c)); if($('addCurrentPeriod')) $('addCurrentPeriod').disabled=c.id===currentCycle().id; const empId=v('addEmp'); if(empId)guardPaymentEmployee(empId); additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&!a.sourceTimesheetId&&!a.onCallId&&(!paymentManagerId||S.canManageAdditional(a)&&E.jobRecords.eligibleForManager(state,paymentManagerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)))).map(a=>DataStore.clone(a)):[]; additionalDirty=false; renderAdditionalRows(); }
+  function loadAdditionalDraft(){
+    const c=additionalCycle();if($('addPeriod'))setv('addPeriod',E.cycleDisplay(c));if($('addCurrentPeriod'))$('addCurrentPeriod').disabled=c.id===currentCycle().id;
+    const empId=v('addEmp');if(empId)guardPaymentEmployee(empId);if(empId!==additionalEmployeeKey){additionalEmployeeKey=empId;additionalSelectedRecord=0;}
+    const allowed=empId?(paymentManagerId?E.jobRecords.eligibleForManager(state,paymentManagerId,empId).map(r=>r.recordNumber):E.jobRecords.records(state,empId).map(r=>r.recordNumber)):[];
+    if(!allowed.includes(additionalSelectedRecord))additionalSelectedRecord=allowed[0]??0;
+    if($('addRecord')){h('addRecord',empId?E.jobRecords.options(state,empId,additionalSelectedRecord,allowed).map(r=>`<option value="${r.value}" ${r.selected?'selected':''}>${esc(r.label)}</option>`).join(''):'<option value="">Select employee first</option>');$('addRecord').disabled=!empId;}
+    additionalDraftRows=empId?state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.jobRecord||0)===additionalSelectedRecord&&Number(a.cycleId)===Number(c.id)&&a.saved!==false&&a.earningType!=='Casual Earnings'&&!a.sourceTimesheetId&&!a.onCallId&&(!paymentManagerId||S.canManageAdditional(a))).map(a=>DataStore.clone(a)):[];
+    additionalDirty=false;renderAdditionalRows();
+  }
   function markAdditionalDirty(){ additionalDirty=true; h('additionalNote','Unsaved changes. Additional earnings will not appear on payslips until saved.'); }
-  function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),jobRecord:paymentManagerId?(E.jobRecords.eligibleForManager(state,paymentManagerId,v('addEmp'))[0]?.recordNumber??0):0,cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
+  function addAdditionalRow(){ if(v('addEmp'))guardPaymentEmployee(v('addEmp'));if(!v('addEmp')) return alert('Select an employee first.'); const c=additionalCycle(); additionalDraftRows.push({id:uid('add'),empId:v('addEmp'),jobRecord:additionalSelectedRecord,cycleId:c.id,earningType:'Additional Hours',startDate:c.start,endDate:c.start,hours:0,amount:0,saved:false}); markAdditionalDirty(); renderAdditionalRows(); }
   function casualPositionOptions(a){
     const selected=String((a&&a.positionNumber)||'');
     const positions=(state.positions||[]).filter(p=>p.active!==false || String(p.positionNumber)===selected).slice().sort((x,y)=>String(x.positionName||'').localeCompare(String(y.positionName||'')));
@@ -1210,7 +1223,7 @@
   }
   let additionalRowsRendering=false;
   function renderAdditionalRows(){
-    const protectedRows=state.additionalEarnings.filter(a=>a.empId===v('addEmp')&&Number(a.cycleId)===Number(additionalCycle().id)&&(a.sourceTimesheetId||a.onCallId));
+    const protectedRows=state.additionalEarnings.filter(a=>a.empId===v('addEmp')&&Number(a.cycleId)===Number(additionalCycle().id)&&Number(a.jobRecord||0)===additionalSelectedRecord&&(a.sourceTimesheetId||a.onCallId));
     if($('generatedEarnings'))$('generatedEarnings').remove();
     if(protectedRows.length&&$(paymentContainer)){const el=document.createElement('div');el.id='generatedEarnings';el.innerHTML='<h3>Approved Timesheets / On-call Earnings</h3><p>Generated records are read-only here.</p>'+table(['Type','Date','Hours','Source'],protectedRows.map(a=>[esc(a.earningType),E.fmtPay(a.startDate),Number(a.hours||0),a.sourceTimesheetId?'Approved Timesheet':'On-call Period']));$(paymentContainer).appendChild(el);}
 
@@ -1227,13 +1240,15 @@
       const fixedAmount=['Meal Allowance','Special Responsibility Allowance (Days)','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip'].includes(a.earningType);
       const isAmountOnly=userAmount||fixedAmount;
       const amount=frozenCash?Number(a.amount||0):additionalDraftAmount(a);
-      const options=(paymentManagerId?S.EARNINGS:['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Casual Earnings','Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement']).map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
+      const options=(paymentManagerId?S.EARNINGS:['Additional Hours',...(!paymentManagerId?['Annual Leave Cash Out','Long Service Leave Cash Out']:[]),'Higher Duties Allowance','Overtime 1.5','Overtime 2.0','On-call Allowance','Meal Allowance','Special Responsibility Allowance (Days)','Travel Allowance','Motor Vehicle Allowance - Single Trip','Motor Vehicle Allowance - Return Trip','Bonus','Overpayment Adjustment','Reimbursement']).map(t=>`<option ${a.earningType===t?'selected':''}>${t}</option>`).join('');
       const positionBased=isCasual||isHigherDuties;
       const positionSelect=`<select data-add-field="${i}|positionNumber" ${positionBased?'':'disabled class="readonly"'}>${positionBased?casualPositionOptions(a):'<option value="">—</option>'}</select>`;
-      const jobCell=E.jobRecords.records(state,v('addEmp')).length>1?[`<select data-add-field="${i}|jobRecord" ${frozenCash?'disabled':''}>${recordOptions(v('addEmp'),a.jobRecord||0,paymentManagerId)}</select>`]:[];
-      return [...jobCell,`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>`,positionSelect,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
+
+      return [`<select ${frozenCash?'disabled':''} data-add-field="${i}|earningType">${options}</select>${isHigherDuties?'<label>Higher Duties Position'+positionSelect+'</label>':''}`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.start:(a.startDate||''))}" ${isOver||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|startDate">`,`<input type="date" min="${esc(c.start)}" max="${esc(c.end)}" value="${esc(isOver?c.end:(a.endDate||''))}" ${(isOver||isCasual||isHigherDuties||isCash)?'readonly class="readonly"':''} data-add-field="${i}|endDate">`,`<input type="number" step="0.01" min="0" value="${esc(isAmountOnly?0:(a.hours||0))}" ${isAmountOnly||frozenCash?'readonly class="readonly"':''} data-add-field="${i}|hours">`,`<input type="number" step="0.01" value="${esc(amount)}" ${userAmount?'': 'readonly class="readonly"'} data-add-field="${i}|amount">`,frozenCash?'<span class="muted">Finalised - read only</span>':`<button class="danger" data-del-add="${esc(a.id)}">Delete</button>`];
     });
-    h('addRows', table([...(E.jobRecords.records(state,v('addEmp')).length>1?['Job Record']:[]),'Earnings Type','Position','Start Date','End Date','Hours','Amount','Delete'], rows));
+    const casualRows=state.additionalEarnings.filter(a=>a.empId===v('addEmp')&&Number(a.jobRecord||0)===additionalSelectedRecord&&Number(a.cycleId)===Number(c.id)&&a.earningType==='Casual Earnings'&&a.saved!==false).map(a=>[`<span class="readonly-casual-earnings">Casual Earnings — ${esc(a.positionName||positionByNumber(a.positionNumber)?.positionName||a.positionNumber||'')}</span>`,E.fmtPay(a.startDate),E.fmtPay(a.endDate||a.startDate),Number(a.hours||0).toFixed(2),E.money(E.round2(Number(a.hours||0)*Number(a.casualLoadedRate||Number(a.casualBaseRate||0)*1.25))),'Read only — Casual Input']);
+    h('addRows',table(['Earnings Type','Start Date','End Date','Hours','Amount','Action'],rows.concat(casualRows)));
+
     document.querySelectorAll('[data-add-field]').forEach(el=>el.addEventListener('change',()=>{
       if(additionalRowsRendering)return;
       const [i,field]=el.dataset.addField.split('|'); const row=additionalDraftRows[Number(i)];
@@ -1267,7 +1282,8 @@
     guardPaymentEmployee(empId);
     const managerId=paymentManagerId;
     if(managerId&&additionalDraftRows.some(a=>!S.canManageAdditional(a)))return alert('These earnings can only be changed by Payroll Management.');
-    const c=additionalCycle();
+    const c=additionalCycle(),recordNumber=additionalSelectedRecord;
+    if(additionalDraftRows.some(a=>a.earningType==='Casual Earnings'||Number(a.jobRecord||0)!==recordNumber))return alert('Casual earnings are read only. Use Casual Input, and enter other earnings against the selected record.');
     if(additionalDraftRows.some(a=>a.earningType==='Overpayment Adjustment' && Number(c.id)!==Number(currentCycle().id))) return alert('Overpayment Adjustment can only be entered in the current open pay period.');
     for(const a of additionalDraftRows){
       try{E.jobRecords.record(state,empId,a.jobRecord||0);if(managerId&&!E.jobRecords.eligibleForManager(state,managerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)))throw Error('You do not have access to this job record.');}catch(err){return alert(err.message);}
@@ -1291,14 +1307,14 @@
     if(additionalDraftRows.some(a=>a.sourceTimesheetId||a.onCallId))return alert('Generated earnings cannot be edited here.');
     const stagedRows=DataStore.clone(additionalDraftRows);
     loadingModal('Saving Additional Earnings','Save Successful',()=>{
-      if(paymentManagerId!==managerId||v('addEmp')!==empId||additionalCycle().id!==c.id)throw Error('The selection changed. Return to the employee and pay period before saving.');
+      if(paymentManagerId!==managerId||v('addEmp')!==empId||additionalCycle().id!==c.id||additionalSelectedRecord!==recordNumber)throw Error('The selection changed. Return to the employee and pay period before saving.');
       if(managerId){
         if($('selfServiceScreen')?.hidden)throw Error('The selection changed. Return to the employee and pay period before saving.');
         S.assertScope(state,managerId,empId,'mss');
         const backup=DataStore.clone(state);
         try{
           const source=stagedRows.map(a=>Object.assign({},a,{empId,cycleId:c.id}));
-          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&S.canManageAdditional(a)&&E.jobRecords.eligibleForManager(state,managerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)));
+          const existing=state.additionalEarnings.filter(a=>a.empId===empId&&Number(a.cycleId)===Number(c.id)&&Number(a.jobRecord||0)===recordNumber&&S.canManageAdditional(a)&&E.jobRecords.eligibleForManager(state,managerId,empId).some(r=>r.recordNumber===Number(a.jobRecord||0)));
 for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assign({},a,{id:existing.some(old=>old.id===a.id)?a.id:undefined}));a.id=saved.id;}
           const ids=new Set(source.map(a=>a.id));for(const a of existing)if(!ids.has(a.id))S.deleteAdditional(state,managerId,a.id);
           calculateAllForCurrent();
@@ -1308,7 +1324,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
       }
       F?.validateCashDraft(state,empId,c,stagedRows);
       const additionalBackup=DataStore.clone(state);
-      state.additionalEarnings=state.additionalEarnings.filter(a=>a.sourceTimesheetId||a.onCallId||!(a.empId===empId&&Number(a.cycleId)===Number(c.id)));
+      state.additionalEarnings=state.additionalEarnings.filter(a=>a.earningType==='Casual Earnings'||a.sourceTimesheetId||a.onCallId||!(a.empId===empId&&Number(a.jobRecord||0)===recordNumber&&Number(a.cycleId)===Number(c.id)));
       stagedRows.forEach(a=>{
         const row=Object.assign({},a,{empId,cycleId:c.id,saved:true});
         if(row.earningType==='Overpayment Adjustment'){ row.hours=0; row.startDate=c.start; row.endDate=c.end; row.amount=Number(row.amount||0); }
@@ -1325,7 +1341,7 @@ for(const a of source){const saved=S.saveAdditional(state,managerId,Object.assig
         state.additionalEarnings.push(row);
       });
       try{F?.syncCashOuts(state,empId,c);calculateAllForCurrent();if(!DataStore.save(state))throw Error('Unable to save earnings.');}catch(err){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,additionalBackup);throw err;}
-      additionalDirty=false;renderAll();setv('addEmp',empId);loadAdditionalDraft();
+      additionalDirty=false;renderAll();setv('addEmp',empId);additionalEmployeeKey=empId;additionalSelectedRecord=recordNumber;loadAdditionalDraft();
     },700);
   }
 
@@ -2212,6 +2228,8 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
   function renderPositionsSettings(){
     const rows=(state.positions||[]).sort((a,b)=>String(a.positionName||'').localeCompare(String(b.positionName||''))).map(p=>[esc(p.positionNumber),`<button class="link-button" data-open-position="${esc(p.id)}">${esc(p.positionName||'')}</button>`,esc(p.department||''),E.money(p.hourlyRate||0),p.active===false?badge('Inactive'):badge('Active')]);
     h('settingsOutput', `<div class="controls"><button id="createPosition">Create</button></div>${rows.length?table(['Position Number','Position Name','Department','Hourly Rate','Status'],rows):'<p class="small-note">No positions have been created.</p>'}`);
+    h('settingsOutput',`<section class="ops-panel"><h3>Casual Position</h3><label>Position for casual employment<select id="casualPoolSetting"><option value="">Select position</option>${state.positions.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.positionNumber)}" ${String(E.casualPosition(state)?.positionNumber)===String(p.positionNumber)?'selected':''}>${esc(p.positionName)} (${esc(p.positionNumber)})</option>`).join('')}</select></label><p class="small-note">Casual job records use this position and have no Reports To.</p><button id="saveCasualPool">Save Casual Position</button></section>`+$('settingsOutput').innerHTML);
+    $('saveCasualPool').addEventListener('click',()=>{if(!S.profile(state,currentUserId).payroll)return alert('Payroll Management access is required.');const p=positionByNumber(v('casualPoolSetting'));if(!p||p.active===false)return alert('Select an active Casual position.');const before=DataStore.clone(state);try{state.casualPositionNumber=p.positionNumber;calculateAllForCurrent(false);if(!DataStore.save(state))throw Error('Unable to save the Casual position.');renderPositionsSettings();toast('Casual position saved');}catch(error){Object.keys(state).forEach(k=>delete state[k]);Object.assign(state,before);alert(error.message);}});
     $('createPosition').addEventListener('click',openCreatePosition);
     document.querySelectorAll('[data-open-position]').forEach(b=>b.addEventListener('click',()=>openEditPosition(b.dataset.openPosition)));
   }
@@ -2336,6 +2354,7 @@ return `<div class="payslip"><h2>Payment Advice ${p.segmentCount>1?`(${p.segment
 
   async function checkForUpdates(){ h('settingsGeneralOutput','Checking for updates...'); try{ const res=await fetch('./latest-version.json?ts='+Date.now()); if(!res.ok) throw new Error('No file'); const latest=await res.json(); h('settingsGeneralOutput', latest.version===APP_VERSION?`You are up to date. Current version: v${APP_VERSION}.`:`Update available: v${esc(latest.version)}. Export data before replacing files.`); }catch(e){ h('settingsGeneralOutput','Could not check updates. Make sure latest-version.json has been uploaded.'); } }
   const changeNotes=[
+    {"version": "v1.2.13", "notes": ["Relief-style Casual Input in Payroll Tools and MSS Payment Processing, with employee/position replacement details, daily schedules, history and automatic pay-period routing.", "Casual earnings are read-only in Additional Earnings. Select an employee and record for other earnings; manage casual earnings through Casual Input.", "Managers cannot delete casual input after its payment is finalised. A prefilled Payroll support request is available; Payroll retains deletion and recovery authority.", "Structured manager requests include Record Number, single-record defaults and New Concurrent Record for commencements. Requests remain instructions for Payroll processing.", "Casual Job Data uses the configured Casual position with no Reports To. Multi-record calendars show NRD before non-casual commencement."]},
     {"version": "v1.2.12", "notes": ["Casual-only employees and casual job records no longer appear in leave booking choices. All leave types are blocked on casual dates; historical bookings are preserved.", "Payroll/ESS/MSS absence calendars use only non-casual work schedules and leave. Casual-only employees and managers who own only a casual record are excluded.", "Job Data support requests use clearer sections and DD/MM/YYYY dates, including new-employee dates of birth. Commencement requests include an optional Preferred Name.", "Temporary Work Schedule Adjustment requests require a return effective date and return roster; both schedules display in the submitted request for Payroll processing.", "Added seven editable starter Payroll replies. Existing custom and inactive replies are preserved; inserting a reply does not send it automatically."]},
     {"version": "v1.2.11", "notes": ["Added concurrent job records with independent Job Data, rosters, rates, managers, leave attribution and Additional Earnings. Shared leave balances and accounts retain one employee identity.", "Deductions apply to the assigned record; combined tax is calculated once. Final non-casual termination pays eligible leave even if casual records remain active. Statement of Service Job Number matches the record number.", "Added Cease Pay / Return from Cease Pay, held-period Pay Errors, negative leave termination recovery, Manager Delegation, negative net checks and recovery-completion notifications.", "Improved support search and employee submission, labelled Job Data controls and deletion confirmation; removed the on-call hourly-rate input."]},
     {version:'v1.2.10',notes:['Timesheets now default to the current pay period, exclude future periods and new weekend entries, and show a single Flex Balance. Leaving unsaved changes offers Save, Leave Without Saving or Keep Editing.','On non-rostered days, only work above 7.5 hours earns flex. Approved leave and missing-day warnings appear against each day. Timesheets remain separate from pay.','Added configurable extended-absence Dashboard and manager return reminders, plus preferred names with legal names retained on payslips and formal statements.','Removed the On-call Allowance Super Eligible option. New/open entries exclude super; the $22.50 hourly rate and finalised history are preserved.','Added shared status colours, Save/Cancel placement, compact employee headers and searchable long employee/position dropdowns. Certification ticks retain scroll and focus.','Dates use four-digit years, reports show loading placeholders, and data tables have hover highlights and selected-row outlines.']},
