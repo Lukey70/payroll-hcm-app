@@ -1,3 +1,3 @@
 # Development status
 
-All pending changes were included in generated version v1.2.13 on 9 November 2026. See IMPLEMENTATION-NOTES-v1.2.13.md for details.
+The completed draft changes are included in v1.2.14. See IMPLEMENTATION-NOTES-v1.2.14.md for details.

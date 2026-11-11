@@ -2085,6 +2085,8 @@
     const c = currentCycle(state);
     if(isFinalised(state,c)) throw new Error(`${ppeLabel(c)} has already been finalised.`);
     api.urgentPay.finalisationCheck(state,c);
+    const unfinished=api.jobRecords.requestCompanionErrors(state,c)[0];
+    if(unfinished)throw Error(unfinished.employeeName+' ('+unfinished.empId+'): '+unfinished.message);
     if((state.jobDataRows||[]).some(isPayControlJobDataRow)){
       const checked=JSON.parse(JSON.stringify(state));reconcileAllEmploymentFromJobData(checked);autoProcessContractExpiries(checked,c.end);
       const blocked=payControlErrors(checked,c).find(r=>r.message.startsWith('Termination final pay'));
@@ -2095,13 +2097,14 @@
       a.unitRate=ON_CALL_ALLOWANCE_RATE;a.amount=round2(Number(a.hours||0)*a.unitRate);a.ote=false;
       const period=(state.onCallPeriods||[]).find(r=>r.id===a.onCallId);if(period){period.rate=a.unitRate;period.superEligible=false;}
     }
+    api.operations.ensureCasualInputs(state);
     const payslips = calculateAll(state,c.id,true).map(p=>Object.assign({},p,{finalised:true,finalisedAt:(new Date()).toISOString().slice(0,10)}));
     state.payslips = (state.payslips||[]).filter(p=>Number(p.cycleId)!==Number(c.id)).concat(payslips);
     const heldDates={};
     for(const e of state.employees||[]){const dates=daysBetween(c.start,c.end).filter(d=>isPayCeasedOn(state,e.id,d));if(dates.length)heldDates[e.id]=dates;}
     const jobHeld={};for(const e of state.employees||[]){if(!api.jobRecords.multiple(state,e.id))continue;jobHeld[e.id]={};for(const r of api.jobRecords.records(state,e.id)){const view=api.jobRecords.scope(state,e.id,r.recordNumber);jobHeld[e.id][String(r.recordNumber)]=daysBetween(c.start,c.end).filter(d=>isPayCeasedOn(view,e.id,d));}}
     state.finalisedCycles[String(c.id)] = { ...(Object.keys(jobHeld).length?{jobRecordHeldDates:jobHeld}:{}),id:c.id, finalisedAt:(new Date()).toISOString().slice(0,10), label:ppeLabel(c),...(Object.keys(heldDates).length?{payControlHeldDates:heldDates}:{}) };
-    api.operations.commitCasualInputFinalisation(state,c,payslips);
+    api.operations.commitCasualInputFinalisation(state,c);
     const completedRecoveries=Payment.commitRecoveryRepayments(state,c,payslips);
     api.operations.notifyRecoveryCompletions(state,c,completedRecoveries);
     commitBalancesOnFinalise(state,c,payslips);

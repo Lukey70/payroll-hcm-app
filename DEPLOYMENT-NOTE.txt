@@ -1,7 +1,7 @@
-Payroll/HCM App v1.2.13 — 9 November 2026
+Payroll/HCM App v1.2.14 — 11 November 2026
 
 Export existing browser data before replacing files. Extract the complete ZIP into one folder. Open index.html, or serve that folder using a static web server. Upload the complete matching file set when deploying. No build step or external CDN is required.
 
-GitHub deployment: upload of generated v1.2.13 requested separately.
+GitHub Pages serves the complete app from the main branch.
 
 The app stores payroll data in browser localStorage, so use the same browser and origin to retain existing data, or import an exported backup. Data is not shared between devices or browsers. This prototype does not supply server-side authentication or authorization.

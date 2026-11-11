@@ -41,17 +41,113 @@
       const c=get(s,id,caseId,'payroll',d);if(['Resolved','Closed'].includes(c.status))throw Error('Resolved or closed cases cannot be assigned.');
       if(assignee&&!S.profile(s,assignee,d).payroll)throw Error('Select an employee with Payroll Management access.');
       const previousAssignedTo=c.assignedTo;
-      c.assignedTo=assignee||'';c.status=assignee?(c.status==='Awaiting Info'?'Awaiting Info':'Open'):'New';c.updatedAt=now();
+      c.assignedTo=assignee||'';c.status=c.correctionPending?'Awaiting Correction':assignee?(c.status==='Awaiting Info'?'Awaiting Info':'Open'):'New';c.updatedAt=now();
       c.history.push({status:c.status,assignedTo:c.assignedTo,previousAssignedTo,actorId:id,at:c.updatedAt});audit(s,id,c,assignee?`assigned to ${name(s,assignee)}`:'unassigned');return c;
     }
     function status(s,id,caseId,value,notes='',d=date()){
       const c=get(s,id,caseId,'payroll',d);if(['Resolved','Closed'].includes(c.status))throw Error('This case is already resolved or closed.');
+      if(c.correctionPending)throw Error('Wait for the manager to submit the requested corrections.');
+      if(value==='Resolved'&&(s.jobDataRows||[]).some(r=>r.saved!==false&&r.sourceRequestCaseId===c.id&&Number(r.sourceRequestRevision||0)<Number(c.jobDataStepRevisions?.[r.sourceRequestStep]||0)))throw Error('Review and save the corrected Job Data rows before resolving this request.');
       if(!['Awaiting Info','Resolved'].includes(value))throw Error('Choose Awaiting Info or Resolved.');
       if(value==='Resolved'&&!String(notes).trim())throw Error('Resolution Notes are required.');if(String(notes).length>20000)throw Error('Resolution Notes must be at most 20,000 characters.');
       if(value==='Awaiting Info'&&!c.assignedTo)throw Error('Assign the case before marking it Awaiting Info.');
       c.status=value;c.updatedAt=now();c.history.push({status:value,actorId:id,at:c.updatedAt});
       if(value==='Resolved'){stopTimer(c);c.resolvedAt=c.updatedAt;c.resolutionNotes=String(notes).trim();c.resolvedBy=id;(c.resolutions||(c.resolutions=[])).push({notes:c.resolutionNotes,resolvedBy:id,resolvedAt:c.resolvedAt});notify(s,[c.raisedBy],`${c.number} has been marked as resolved. Please see support requests for resolution notes.`,`support-resolved:${c.id}`,c);}
       audit(s,id,c,`marked ${value}`);return c;
+    }
+    const copy=value=>value===undefined?undefined:JSON.parse(JSON.stringify(value));
+    const fieldLabels={jobRecord:'Job Record',reason:'Reason',effectiveDate:'Effective Date',lastWorkingDay:'Last Working Day',contractEndDate:'Last Working Day (fixed term)',returnDate:'Return Effective Date',returnEffectiveDate:'Return Effective Date',positionNumber:'Position',roster:'Work Schedule',returnRoster:'Return Work Schedule',changes:'Proposed Changes',additionalComments:'Additional Comments'};
+    function correctionFields(s,c){
+      if(!F.jobDataRequestSteps(c).length)return [];
+      const t=c.template,fields=Object.keys(fieldLabels).filter(key=>key==='additionalComments'||key==='roster'&&t.hoursByDayWeek1||Object.hasOwn(t,key));
+      const saved=(s.jobDataRows||[]).some(r=>r.saved!==false&&r.sourceRequestCaseId===c.id);
+      return fields.filter(key=>!(key==='jobRecord'&&(saved||c.raisedFor==='new-employee'))).map(key=>({key,label:fieldLabels[key]}));
+    }
+    function correctionValue(c,key){
+      const t=c.template;
+      if(key==='additionalComments')return c.additionalComments||'';
+      if(key==='roster')return {rosterPattern:t.rosterPattern,hoursByDayWeek1:t.hoursByDayWeek1,hoursByDayWeek2:t.hoursByDayWeek2};
+      return t[key];
+    }
+    function setCorrectionValue(t,key,value){
+      if(key==='roster'){for(const k of ['rosterPattern','hoursByDayWeek1','hoursByDayWeek2'])t[k]=copy(value?.[k]);return;}
+      if(value===undefined)delete t[key];else t[key]=copy(value);
+      if(key==='jobRecord')t.recordMode=value==='new'?'new-concurrent':'existing';
+    }
+    function affectedSteps(c,fields){
+      const steps=F.jobDataRequestSteps(c),out=new Set();
+      for(const key of fields){
+        if(key==='additionalComments')continue;
+        if(key==='contractEndDate'){out.add('expiry');continue;}
+        if(['returnDate','returnEffectiveDate','returnRoster'].includes(key)){out.add('return');continue;}
+        out.add('main');
+        if(key==='jobRecord')steps.forEach(step=>out.add(step));
+        if(key==='effectiveDate'&&c.requestType==='Movement'&&steps.includes('return'))out.add('return');
+      }
+      return [...out].filter(step=>steps.includes(step));
+    }
+    function returnForCorrection(s,id,caseId,fields,note,d=date()){
+      const c=get(s,id,caseId,'payroll',d);
+      if(['Resolved','Closed'].includes(c.status)||c.correctionPending)throw Error('This request cannot be returned for correction right now.');
+      const allowed=correctionFields(s,c).map(f=>f.key);
+      if(!Array.isArray(fields)||!fields.length||fields.some(key=>!allowed.includes(key)))throw Error('Select valid fields to correct.');
+      note=String(note||'').trim();if(!note||note.length>20000)throw Error('Enter correction instructions of up to 20,000 characters.');
+      const at=now(),keys=[...new Set(fields)];
+      c.correctionPending={id:uid('correction'),fields:keys,steps:affectedSteps(c,keys),previousStatus:c.status,note,requestedBy:id,requestedAt:at};
+      c.status='Awaiting Correction';c.updatedAt=at;c.history.push({at,actorId:id,status:c.status,action:'Returned for correction',reason:note});
+      notify(s,[c.raisedBy],c.number+' was returned for correction. Open the request to update the selected fields.','support-correction:'+c.correctionPending.id,c);
+      audit(s,id,c,'returned for correction');return c;
+    }
+    function withdrawCorrection(s,id,caseId,pendingId,d=date()){
+      const c=get(s,id,caseId,'payroll',d),pending=c.correctionPending;
+      if(!pending||pending.id!==pendingId||c.status!=='Awaiting Correction')throw Error('This correction request is no longer current.');
+      const at=now();delete c.correctionPending;c.status=pending.previousStatus==='Awaiting Info'&&c.assignedTo?'Awaiting Info':pending.previousStatus==='Open'||c.assignedTo?'Open':'New';c.updatedAt=at;
+      c.history.push({at,actorId:id,status:c.status,action:'Correction request withdrawn',reason:pending.note});
+      notify(s,[c.raisedBy],c.number+' no longer needs the requested corrections.','support-correction-withdrawn:'+pending.id,c);
+      audit(s,id,c,'withdrew correction request');return c;
+    }
+    function submitCorrection(s,id,caseId,pendingId,input,area,d=date()){
+      const c=get(s,id,caseId,'own',d),pending=c.correctionPending;
+      if(area!=='mss'||!S.profile(s,id,d).mss)throw Error('Submit corrections from Manager Self Service.');
+      if(!pending||pending.id!==pendingId||c.status!=='Awaiting Correction')throw Error('This correction request is no longer current.');
+      const allowed=correctionFields(s,c).map(f=>f.key);
+      if(!input||Object.keys(input).some(key=>!pending.fields.includes(key))||pending.fields.some(key=>!allowed.includes(key)||!Object.hasOwn(input,key)))throw Error('Update only the requested correction fields.');
+      const next=copy(c.template);
+      for(const key of pending.fields)if(key!=='additionalComments')setCorrectionValue(next,key,input[key]);
+      const comments=pending.fields.includes('additionalComments')?String(input.additionalComments||'').trim():c.additionalComments;
+      if(String(comments||'').length>20000)throw Error('Additional Comments must be at most 20,000 characters.');
+      const validated=pending.fields.some(k=>k!=='additionalComments')?F.validateTemplate(c.requestType,next,c.raisedFor,s):next;
+      // Validation may derive fields such as Reports To, but must never
+      // silently change another editable field that Payroll didn't return.
+      const proposed={template:validated,additionalComments:comments};
+      const changes=correctionFields(s,c).map(({key,label})=>({key,label,before:copy(correctionValue(c,key)),after:copy(correctionValue(proposed,key))})).filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after));
+      if(changes.some(x=>!pending.fields.includes(x.key)))throw Error('These changes affect other request fields. Ask Payroll to return those fields for correction too.');
+      if(!changes.length)throw Error('Change at least one of the requested fields.');
+      F.jobDataDraftPlan(s,{...c,template:validated},c.raisedFor,Number(validated.jobRecord)||0);
+      const at=now(),revision=(Number(c.templateRevision)||0)+1;
+      c.template=validated;c.additionalComments=comments;c.templateRevision=revision;
+      (c.corrections||(c.corrections=[])).push({...pending,revision,changes,submittedBy:id,submittedAt:at});
+      c.jobDataStepRevisions={...c.jobDataStepRevisions};
+      for(const step of affectedSteps(c,changes.map(x=>x.key)))c.jobDataStepRevisions[step]=revision;
+      delete c.correctionPending;c.status='Open';c.updatedAt=at;
+      c.history.push({at,actorId:id,status:'Open',action:'Corrections submitted',reason:changes.map(x=>x.label).join(', ')});
+      notify(s,[c.assignedTo||pending.requestedBy],c.number+' has been corrected and is ready for Payroll review.','support-corrected:'+pending.id,c);
+      audit(s,id,c,'submitted corrected request fields');return c;
+    }
+    function templateAtRevision(c,revision){
+      const t=copy(c.template);
+      for(const correction of (c.corrections||[]).slice().reverse())if(correction.revision>revision)for(const field of correction.changes)if(field.key!=='additionalComments')setCorrectionValue(t,field.key,field.before);
+      return t;
+    }
+    function jobDataResolutionNote(s,c){
+      const steps=F.jobDataRequestSteps(c);if(!steps.length||c.correctionPending)return '';
+      const rows=(s.jobDataRows||[]).filter(r=>r.saved!==false&&r.sourceRequestCaseId===c.id);
+      const main=rows.find(r=>r.sourceRequestStep==='main'&&r.action===c.requestType);
+      if(!main||!steps.every(step=>rows.some(r=>r.sourceRequestStep===step&&Number(r.sourceRequestRevision||0)===Number(c.jobDataStepRevisions?.[step]||0)&&r.empId===main.empId&&Number(r.jobRecord||0)===Number(main.jobRecord||0)&&r.action===(step==='expiry'?'Termination':main.action)&&(step==='main'||r.effectiveDate>main.effectiveDate))))return '';
+      const lastSave=(c.history||[]).slice().reverse().find(event=>event.action==='Job Data saved'),processedAt=new Date(lastSave?.at);
+      if(Number.isNaN(processedAt.getTime()))return '';
+      const processedDate=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Perth',day:'2-digit',month:'2-digit',year:'numeric'}).format(processedAt);
+      return 'Request processed '+processedDate;
     }
     function validateFiles(c,files){
       if(!Array.isArray(files)||files.length>5)throw Error('Attach at most five files per message.');
@@ -87,7 +183,7 @@
       return !q||[c.number,c.subject,c.description,c.additionalComments,name(s,c.raisedBy),name(s,c.raisedFor),c.status,...(c.messages||[]).map(m=>m.text)].some(value=>String(value||'').toLocaleLowerCase().includes(q));
     }
     function list(s,id,mode='own',filters={},d=date()){signed(s,id,d);if(mode==='payroll')payroll(s,id,d);init(s);closeDue(s);return s.supportRequests.filter(c=>(mode==='payroll'||c.raisedBy===id)&&matchesSearch(s,c,filters.search)&&(!filters.mine||c.assignedTo===id)&&(filters.closed?c.status==='Closed':filters.resolved?c.status==='Resolved':!['Resolved','Closed'].includes(c.status))).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));}
-    return {name,nextNumber,submit,get,assign,status,message,reopen,timer,timeWorked,closeDue,list,matchesSearch,validateFiles};
+    return {name,nextNumber,submit,get,assign,status,correctionFields,correctionValue,returnForCorrection,withdrawCorrection,submitCorrection,templateAtRevision,jobDataResolutionNote,message,reopen,timer,timeWorked,closeDue,list,matchesSearch,validateFiles};
   }
   function createUI(o){
     const {E,S,getState,getUser,onChange,esc}=o,T=create(E,S);const Features=typeof module!=='undefined'?require('./payroll-features'):global.PayrollFeatures;const reportError=o.reportError||alert;
@@ -96,14 +192,14 @@
     const s=()=>getState(),u=()=>getUser(),label=id=>esc(T.name(s(),id));
     const dt=value=>new Date(value).toLocaleString('en-AU',{timeZone:'Australia/Perth',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
     const icon=name=>global.PayrollUI?.icon(name)||'<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const statusClass=status=>({'New':'new','Open':'open','Awaiting Info':'waiting','Resolved':'resolved','Closed':'closed'}[status]||'new');
+    const statusClass=status=>({'New':'new','Open':'open','Awaiting Info':'waiting','Awaiting Correction':'waiting','Resolved':'resolved','Closed':'closed'}[status]||'new');
     const badge=status=>`<span class="support-status support-status-${statusClass(status)}"><span class="support-status-dot" aria-hidden="true"></span>${esc(status)}</span>`;
     const fileButton=(f,token)=>`<button class="support-attachment" data-support-file="${esc(token)}">${icon('attachment')}<span>${esc(f.name)}<small>${Math.max(1,Math.ceil(f.size/1024))} KB</small></span><span class="support-download-label">Download</span></button>`;
     const upload=(inputId,listId,labelText)=>`<div class="support-upload"><label for="${inputId}" class="support-upload-label">${icon('attachment')}<span>${labelText}</span></label><input id="${inputId}" type="file" multiple aria-describedby="${inputId}Help"><p id="${inputId}Help" class="small-note">Up to five files, 1 MB each and 2 MB total per case.</p><div id="${listId}" class="support-selected-files" aria-live="polite"></div></div>`;
     function bindUpload(inputId,listId){$(''+inputId)?.addEventListener('change',()=>put(listId,Array.from($(inputId).files||[]).map(f=>`<span>${icon('attachment')}${esc(f.name)} <small>${Math.max(1,Math.ceil(f.size/1024))} KB</small></span>`).join('')));}
     const card=(title,body,subtitle='')=>`<section class="support-card"><header class="support-card-heading"><h3>${title}</h3>${subtitle?`<p>${subtitle}</p>`:''}</header>${body}</section>`;
     const popout=()=>mode==='payroll'&&o.openWindow?`<button id="supportPopout" class="support-popout">${icon('external')}Open in New Window</button>`:'';
-    function hasDraft(){return newCase||!!v('supportMessage')||!!$('supportFiles')?.files?.length||!!$('supportResolveDialog')?.open||!!$('supportReopenDialog')?.open;}
+    function hasDraft(){return newCase||!!v('supportMessage')||!!$('supportFiles')?.files?.length||!!$('supportResolveDialog')?.open||!!$('supportReopenDialog')?.open||!!$('supportCorrectionDialog')?.open;}
     function refresh(){if(hasDraft())return false;const typed=v('supportSearch'),focused=document.activeElement?.id;render();if($('supportSearch')){$('supportSearch').value=typed;if(focused==='supportSearch')$('supportSearch').focus();}return true;}
     function navigate(id=''){if(id===caseId&&!newCase)return true;if(hasDraft())throw Error('Finish or discard the unsent draft in this window before opening another request.');viewEpoch++;caseId=id;newCase=false;render();return true;}
     function mutate(fn){const current=s(),before=JSON.parse(JSON.stringify(current));try{const result=fn(current);onChange();return result;}catch(e){Object.keys(current).forEach(k=>delete current[k]);Object.assign(current,before);throw e;}}
@@ -115,11 +211,11 @@
       const active=T.list(s(),u(),mode),resolved=T.list(s(),u(),mode,{resolved:true}),closed=T.list(s(),u(),mode,{closed:true});
       let rows=filter==='closed'?closed:filter==='resolved'?resolved:active;
       if(mode==='own'&&filter==='open')rows=active.concat(resolved);if(mine)rows=rows.filter(c=>c.assignedTo===u());
-      if(filter==='unassigned')rows=rows.filter(c=>!c.assignedTo);if(filter==='awaiting')rows=rows.filter(c=>c.status==='Awaiting Info');
+      if(filter==='unassigned')rows=rows.filter(c=>!c.assignedTo);if(filter==='awaiting')rows=rows.filter(c=>['Awaiting Info','Awaiting Correction'].includes(c.status));
       const q=search.trim().toLocaleLowerCase();rows=rows.filter(c=>T.matchesSearch(s(),c,q));
       const pages=Math.max(1,Math.ceil(rows.length/10));page=Math.min(page,pages-1);
       const headers=mode==='payroll'?['Subject','Raised by','Raised for','Status','Assigned to','Created']:['Number','Status','Subject','Updated'];
-      const summary=[['Active requests',active.length,'support'],['Awaiting info',active.filter(c=>c.status==='Awaiting Info').length,'clock'],['Resolved',resolved.length,'tick'],['Closed',closed.length,'report']];
+      const summary=[['Active requests',active.length,'support'],['Awaiting reply',active.filter(c=>['Awaiting Info','Awaiting Correction'].includes(c.status)).length,'clock'],['Resolved',resolved.length,'tick'],['Closed',closed.length,'report']];
       const rowHtml=rows.slice(page*10,page*10+10).map(c=>{
         const subject=`<button class="case-link" data-support-case="${esc(c.id)}">${esc(c.subject)}<small>${esc(c.number)}</small></button>`;
         const cells=mode==='payroll'?[subject,label(c.raisedBy),label(c.raisedFor),badge(c.status),c.assignedTo?label(c.assignedTo):'<span class="support-unassigned">Unassigned</span>',`<time class="support-date">${esc(dt(c.createdAt))}</time>`]:[`<button class="case-link support-number" data-support-case="${esc(c.id)}">${esc(c.number)}</button>`,badge(c.status),`<button class="case-link" data-support-case="${esc(c.id)}">${esc(c.subject)}</button>`,`<time class="support-date">${esc(dt(c.updatedAt))}</time>`];
@@ -186,10 +282,10 @@
       const field=(key,label,kind='text')=>`<label>${label}<input id="req_${key}" type="${kind}" ${kind==='date'?'lang="en-AU"':''}></label>`;
       const reasons=`<label>${type==='Termination'?'Termination Reason <span class="support-required">Required</span>':'Reason'}<select id="req_reason" required><option value="">Select reason</option>${Features.REASONS[type].map(r=>`<option>${esc(r)}</option>`).join('')}</select></label>`;
       let body=reasons+(type==='Termination'?field('lastWorkingDay','Last Working Day','date'):field('effectiveDate','Effective Date','date'));
-      if(type==='Commencement')body+=`<label>Employment Type<select id="req_employmentType"><option value="">Select type</option><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></label>`+field('contractEndDate','Contract End Date (fixed term)','date');
+      if(type==='Commencement')body+=`<label>Employment Type<select id="req_employmentType"><option value="">Select type</option><option>Permanent</option><option>Fixed Term</option><option>Casual</option></select></label>`+field('contractEndDate','Last Working Day (fixed term)','date');
       if(type==='Commencement'||type==='Movement')body+=`<label>Position<select id="req_positionNumber"><option value="">Select position</option>${s().positions.filter(p=>p.active!==false).map(p=>`<option value="${esc(p.positionNumber)}">${esc(p.positionName)} (${esc(p.positionNumber)})</option>`).join('')}</select></label><label class="full-line">Reports To (automatic)<input id="req_reportsTo" readonly placeholder="Populated from the selected position"></label>`;
       if(type==='Variation')body+='<label id="req_scheduleDurationRow" hidden>Work Schedule Change<select id="req_scheduleDuration"><option>Permanent</option><option>Temporary</option></select></label><label id="req_changesLabel" class="full-line">Details to Change and Proposed New Values<textarea id="req_changes" rows="5"></textarea></label>';
-      if(type==='Movement')body+='<label>Assignment<select id="req_temporary"><option>Permanent</option><option>Temporary</option></select></label>'+field('returnDate','Expected Return Date (temporary)','date');
+      if(type==='Movement')body+='<label>Assignment<select id="req_temporary"><option>Permanent</option><option>Temporary</option></select></label>'+field('returnDate','Return Effective Date (first day back)','date');
       put('supportTemplate',`<fieldset class="request-template"><legend>${esc(type)} Request Details</legend><div id="req_recordSection"></div><div class="grid form-grid" data-sectioned="true">${body}</div>${type==='Commencement'?'<div id="req_commencementPerson"></div>':''}${type!=='Termination'?rosterFields():''}${type==='Variation'?`<section id="req_scheduleReturn" class="support-schedule-return" hidden><h4>Return to Work Schedule</h4><label>Return Effective Date<input id="req_returnEffectiveDate" type="date" lang="en-AU"></label><p class="small-note">The adjusted roster ends the day before this date. Enter the roster to apply from this date.</p>${rosterFields('req_return_','Return Work Schedule')}</section>`:''}<label>Additional Comments<textarea id="req_comments" rows="4" maxlength="20000"></textarea></label></fieldset>`);
       fillTemplatePerson();
       const conditional=()=>{if(type==='Commencement'){const casual=v('req_employmentType')==='Casual',pool=E.casualPosition(s());if(casual&&pool)$('req_positionNumber').value=pool.positionNumber;$('req_positionNumber').disabled=casual;updateRequestPosition();if(casual)$('req_reportsTo').value='';$('req_reportsTo').parentElement.hidden=casual;}if($('req_contractEndDate'))$('req_contractEndDate').parentElement.hidden=v('req_employmentType')!=='Fixed Term';if($('req_returnDate'))$('req_returnDate').parentElement.hidden=v('req_temporary')!=='Temporary';updateRoster();};
@@ -259,7 +355,7 @@
         }finally{button.disabled=false;}
       });
     }
-    const requestLabels={jobRecord:'Record Number',scheduleDuration:'Work Schedule Change',returnEffectiveDate:'Return Effective Date',effectiveDate:'Effective Date',contractEndDate:'Contract End Date',returnDate:'Expected Return Date',lastWorkingDay:'Last Working Day',dateOfBirth:'Date of Birth',reason:'Reason',employmentType:'Employment Type',temporary:'Assignment',positionNumber:'Position',reportsTo:'Reports To',changes:'Proposed Changes',employeeId:'Employee ID',employeeName:'Employee Name',usi:'USI',abn:'ABN',stsl:'STSL',taxFileNumber:'Tax File Number',tfnNotProvided:'TFN Not Provided',claimTaxFreeThreshold:'Claim Tax Free Threshold',bsb:'BSB'};
+    const requestLabels={jobRecord:'Record Number',scheduleDuration:'Work Schedule Change',returnEffectiveDate:'Return Effective Date',effectiveDate:'Effective Date',contractEndDate:'Last Working Day (fixed term)',returnDate:'Return Effective Date',lastWorkingDay:'Last Working Day',dateOfBirth:'Date of Birth',reason:'Reason',employmentType:'Employment Type',temporary:'Assignment',positionNumber:'Position',reportsTo:'Reports To',changes:'Proposed Changes',employeeId:'Employee ID',employeeName:'Employee Name',usi:'USI',abn:'ABN',stsl:'STSL',taxFileNumber:'Tax File Number',tfnNotProvided:'TFN Not Provided',claimTaxFreeThreshold:'Claim Tax Free Threshold',bsb:'BSB'};
     const requestLabel=key=>requestLabels[key]||key.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase());
     function requestDisplay(key,value){
       if(value===undefined||value===null||value==='')return '—';
@@ -283,6 +379,66 @@
       const labels={personalDetails:'Personal Details',taxDetails:'Tax Details',superDetails:'Super Details',bankDetails:'Bank Details'},label=k=>({usi:'USI',abn:'ABN',bsb:'BSB',stsl:'STSL',tfnNotProvided:'TFN Not Provided',fundId:'Fund Reference'}[k]||k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()));
       return Object.entries(labels).filter(([key])=>template?.[key]).map(([key,title])=>`<section class="support-onboarding-section"><h4>${title}</h4><dl class="support-template-values">${Object.entries(template[key]).map(([field,value])=>`<div><dt>${esc(label(field))}</dt><dd>${field==='taxFileNumber'&&value?`<input type="password" readonly value="${esc(value)}" aria-label="Tax File Number"><button type="button" class="secondary" data-request-tfn>Show TFN</button>`:esc(requestDisplay(field,value))}</dd></div>`).join('')}</dl></section>`).join('');
     }
+    function correctionDisplay(key,value){
+      if(['roster','returnRoster'].includes(key)){
+        if(!value)return '—';
+        const format=hours=>rosterDays.map(([short,,day])=>short+' '+Number(hours?.[day]||0)+'h').join(' · ');
+        return value.rosterPattern==='2-week'?'Week 1: '+format(value.hoursByDayWeek1)+' / Week 2: '+format(value.hoursByDayWeek2):format(value.hoursByDayWeek1);
+      }
+      if(value===undefined||value==='')return '—';
+      return requestDisplay(key,value);
+    }
+    function correctionsPanel(c){
+      const pending=c.correctionPending,history=(c.corrections||[]).slice().reverse(),fields=T.correctionFields(s(),c);
+      if(!pending&&!history.length)return '';
+      return card('Corrections',
+        (pending?`<section class="support-request-section"><h4>Awaiting Correction</h4><p>${esc(pending.note)}</p><ul>${pending.fields.map(key=>'<li>'+esc(fields.find(f=>f.key===key)?.label||requestLabel(key))+'</li>').join('')}</ul>${mode==='own'&&area==='mss'?'<button id="supportEditCorrection" class="support-primary-action">Edit Requested Fields</button>':mode==='payroll'?'<button id="supportWithdrawCorrection" class="secondary">Withdraw Correction Request</button>':o.openManagerCorrection&&S.profile(s(),u()).mss?'<button id="supportOpenManagerCorrection" class="secondary">Open in Manager Self Service</button>':''}</section>`:'')+
+        history.map(x=>`<section class="support-request-section"><h4>Corrections submitted · ${esc(dt(x.submittedAt))}</h4><p><strong>Payroll instructions:</strong> ${esc(x.note)}</p><div class="table-wrap"><table><thead><tr><th>Field</th><th>Previous</th><th>Corrected</th></tr></thead><tbody>${x.changes.map(f=>'<tr><td>'+esc(f.label)+'</td><td>'+esc(correctionDisplay(f.key,f.before))+'</td><td>'+esc(correctionDisplay(f.key,f.after))+'</td></tr>').join('')}</tbody></table></div></section>`).join(''));
+    }
+    function correctionDialog(c,manager){
+      const fields=T.correctionFields(s(),c),pending=c.correctionPending;
+      const field=(key,label)=>{
+        const current=T.correctionValue(c,key),id='cor_'+key;
+        const select=options=>`<label>${esc(label)}<select id="${id}">${options.map(([value,text])=>'<option value="'+esc(value)+'" '+(String(value)===String(current)?'selected':'')+'>'+esc(text)+'</option>').join('')}</select></label>`;
+        if(['roster','returnRoster'].includes(key))return rosterFields(id+'_',label);
+        if(key==='reason'){
+          const reasons=Features.REASONS[c.requestType];
+          return select(reasons.map(r=>[r,r]));
+        }
+        if(key==='jobRecord')return select([...E.jobRecords.options(s(),c.raisedFor,Number(current)).map(r=>[r.value,r.label]),...(c.requestType==='Commencement'?[['new','New Concurrent Record']]:[])]);
+        if(key==='positionNumber')return select(s().positions.filter(p=>p.active!==false||String(p.positionNumber)===String(current)).map(p=>[p.positionNumber,p.positionName+' ('+p.positionNumber+')']));
+        if(['changes','additionalComments'].includes(key))return `<label>${esc(label)}<textarea id="${id}" rows="4" maxlength="20000">${esc(current||'')}</textarea></label>`;
+        return `<label>${esc(label)}<input type="date" id="${id}" value="${esc(current||'')}" lang="en-AU"></label>`;
+      };
+      const selected=manager?fields.filter(f=>pending.fields.includes(f.key)):fields;
+      const body=manager?`<p>${esc(pending.note)}</p><div class="support-fields">${selected.map(f=>field(f.key,f.label)).join('')}</div>`:
+       '<p>Choose the fields the manager should update. The original values will be kept in the case history.</p><fieldset><legend>Fields to correct</legend>'+fields.map(f=>'<label class="inline-check"><input type="checkbox" data-correction-field="'+esc(f.key)+'">'+esc(f.label)+'</label>').join('')+'</fieldset><label>Correction Instructions<textarea id="supportCorrectionInstructions" rows="4" maxlength="20000"></textarea></label>';
+      put('supportResolution',`<dialog id="supportCorrectionDialog" aria-labelledby="correctionTitle"><h2 id="correctionTitle">${manager?'Correct Request':'Return for Correction'}</h2>${body}<p id="supportCorrectionError" class="validation-summary" role="alert" hidden></p><div class="controls form-actions"><button id="supportCorrectionCancel" class="secondary">Cancel</button><button id="supportCorrectionSubmit">${manager?'Submit Corrections':'Return for Correction'}</button></div></dialog>`);
+      for(const {key} of selected.filter(f=>manager&&['roster','returnRoster'].includes(f.key))){
+        const value=T.correctionValue(c,key),prefix='cor_'+key+'_';
+        $(prefix+'rosterPattern').value=value?.rosterPattern||'1-week';
+        for(const [short,,day] of rosterDays){$(prefix+'roster'+short).value=value?.hoursByDayWeek1?.[day]??0;$(prefix+'roster2'+short).value=value?.hoursByDayWeek2?.[day]??value?.hoursByDayWeek1?.[day]??0;}
+        const show=()=>{$(prefix+'week2').hidden=v(prefix+'rosterPattern')!=='2-week';};$(prefix+'rosterPattern').addEventListener('change',show);show();
+      }
+      $('supportCorrectionDialog').showModal();
+      click('supportCorrectionCancel',()=>{$('supportCorrectionDialog').close();put('supportResolution','');});
+      click('supportCorrectionSubmit',()=>{
+        try{
+          if(manager){
+            const values=Object.fromEntries(selected.map(({key})=>{
+              if(!['roster','returnRoster'].includes(key))return [key,v('cor_'+key)];
+              const prefix='cor_'+key+'_',week=part=>Object.fromEntries(rosterDays.map(([short,,day])=>[day,v(prefix+part+short)]));
+              return [key,{rosterPattern:v(prefix+'rosterPattern'),hoursByDayWeek1:week('roster'),hoursByDayWeek2:week('roster2')}];
+            }));
+            mutate(s=>T.submitCorrection(s,u(),c.id,pending.id,values,area));
+          }else{
+            const keys=[...$('supportCorrectionDialog').querySelectorAll('[data-correction-field]:checked')].map(f=>f.dataset.correctionField);
+            mutate(s=>T.returnForCorrection(s,u(),c.id,keys,v('supportCorrectionInstructions')));
+          }
+          $('supportCorrectionDialog').close();details();
+        }catch(error){$('supportCorrectionError').hidden=false;$('supportCorrectionError').textContent=error.message;}
+      });
+    }
     function details(){
       const c=T.get(s(),u(),caseId,mode),editable=!['Resolved','Closed'].includes(c.status),seconds=T.timeWorked(c),time=new Date(seconds*1000).toISOString().slice(11,19);
       const eligible=s().employees.filter(e=>S.profile(s(),e.id).payroll);
@@ -290,14 +446,24 @@
       const resolution=c.resolutionNotes?`<section class="support-resolution"><header>${icon('tick')}<h3>Resolution Notes</h3></header><p>${esc(c.resolutionNotes)}</p><small>${label(c.resolvedBy)} · ${esc(dt(c.resolvedAt))}</small></section>`:'';
       const oldResolutions=previous.length?`<details class="support-previous-resolutions"><summary>Previous Resolution Notes <span>${previous.length}</span></summary>${previous.map(r=>`<article><p>${esc(r.notes)}</p><small>${label(r.resolvedBy)} · ${esc(dt(r.resolvedAt))}</small></article>`).join('')}</details>`:'';
       const template=c.requestType&&c.requestType!=='General Enquiry'?requestSummary(c):'';
+      const draftAction=mode==='payroll'&&c.source==='mss'&&c.template&&o.createJobDataDraft&&!c.correctionPending?'<div class="controls"><button id="supportCreateJobDataDraft" class="support-primary-action">'+(c.templateRevision?'Review Job Data Draft':'Create Job Data Draft')+'</button></div>':'';
+      const returnAction=mode==='payroll'&&editable&&!c.correctionPending&&T.correctionFields(s(),c).length?'<button id="supportReturnCorrection" class="secondary">Return for Correction</button>':'';
       const messages=c.messages.map((m,i)=>({m,i})).sort((a,b)=>b.m.createdAt.localeCompare(a.m.createdAt)||b.i-a.i).map(({m})=>`<article class="case-message ${m.side}"><header><span class="support-message-avatar" aria-hidden="true">${icon('person')}</span><div><strong>${esc(m.senderName)}</strong><small>${esc(c.number)} · ${esc(dt(m.createdAt))}</small></div></header>${m.kind==='Reopened'?'<span class="support-reopened-label">Support Request Reopened</span>':''}${m.text?`<p>${esc(m.text)}</p>`:''}${m.attachments.length?`<div class="support-attachment-list">${m.attachments.map((f,i)=>fileButton(f,`${m.id}:${i}`)).join('')}</div>`:''}</article>`).join('');
       const responsePicker=mode==='payroll'?'<label>Saved Payroll Reply<select id="supportSavedReply"><option value="">Select a template</option>'+(s().supportResponseTemplates||[]).filter(r=>r.active!==false).map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join('')+'</select></label><button id="supportInsertReply" class="secondary">Insert Reply</button>':'';
       const composer=editable?`<div class="support-composer">${responsePicker}<label for="supportMessage">Message</label><textarea id="supportMessage" rows="4" maxlength="20000" placeholder="Write a message about this request…"></textarea>${upload('supportFiles','supportMessageFileList','Attach files')}<div class="support-composer-footer"><button id="supportSend" class="support-primary-action">${icon('send')}Send</button></div></div>`:`<div class="support-readonly-note">${icon('report')}<p>This request is read only because it has been resolved or closed.</p>${mode==='own'&&c.status==='Resolved'?'<button id="supportReopen" class="secondary">Re-open Support Request</button>':''}</div>`;
       const history=`<section class="support-card activity-history"><header class="support-card-heading"><h3>Activity History</h3><p>Changes to this request, most recent first.</p></header><ol class="support-timeline">${(c.history||[]).slice().reverse().map(h=>`<li><span class="support-timeline-dot" aria-hidden="true"></span><div><strong>${esc(h.action||('status' in h?h.status:'Updated'))}</strong><span class="support-history-meta">${h.actorId==='system'?'System':label(h.actorId||c.createdBy||c.raisedBy)} · ${esc(dt(h.at))}</span>${'assignedTo' in h?`<p>Assigned to: ${h.assignedTo?label(h.assignedTo):'Unassigned'}</p>`:''}${h.reason?`<p>${esc(h.reason)}</p>`:''}${(c.resolutions||[]).find(r=>r.resolvedAt===h.at)&&h.status==='Resolved'?`<p>${esc((c.resolutions||[]).find(r=>r.resolvedAt===h.at).notes)}</p>`:''}</div></li>`).join('')}</ol></section>`;
       const requestDetails=card('Request details',`<dl class="support-metadata"><div><dt>Number</dt><dd class="support-number">${esc(c.number)}</dd></div><div><dt>Raised by</dt><dd>${label(c.raisedBy)}</dd></div><div><dt>Raised for</dt><dd>${label(c.raisedFor)}</dd></div><div><dt>Created</dt><dd>${esc(dt(c.createdAt))}</dd></div><div><dt>Last updated</dt><dd>${esc(dt(c.updatedAt))}</dd></div></dl>`);
       const handling=mode==='payroll'?card('Payroll handling',`<label>Assigned to<div class="support-assignment"><select id="supportAssigned" ${editable?'':'disabled'}><option value="">Unassigned</option>${c.assignedTo&&!eligible.some(e=>e.id===c.assignedTo)?`<option value="${esc(c.assignedTo)}" selected>${label(c.assignedTo)} (access removed)</option>`:''}${eligible.map(e=>`<option value="${esc(e.id)}" ${e.id===c.assignedTo?'selected':''}>${label(e.id)}</option>`).join('')}</select><button id="supportAssignMe" class="support-icon-button" title="Assign to me" aria-label="Assign to me" ${editable?'':'disabled'}>${icon('person')}</button></div></label><div class="support-work-time"><span>${icon('clock')}Time worked</span><strong>${Math.floor(seconds/3600)}:${time.slice(3)}</strong>${c.timerStartedAt?'<small>Timer running</small>':''}<button id="supportTimer" class="secondary" ${editable?'':'disabled'}>${c.timerStartedAt?'Pause':'Start'} timer</button></div>`):'';
-      put(container,`<section class="support-page support-case-page"><button id="supportBack" class="support-back">${icon('back')}Back</button><header class="support-heading support-case-heading"><div><p class="support-eyebrow">Support request <span class="support-number">${esc(c.number)}</span></p><h2>${esc(c.subject)}</h2><div class="support-case-subtitle">${badge(c.status)}<span>Updated ${esc(dt(c.updatedAt))}</span></div></div>${mode==='payroll'?`<div class="support-case-actions">${popout()}<button id="supportAwait" class="support-await-action" ${editable?'':'disabled'}>${icon('clock')}Awaiting Info</button><button id="supportResolve" class="support-resolve-action" ${editable?'':'disabled'}>${icon('tick')}Resolved</button></div>`:''}</header>
-        <div class="support-case-layout"><div class="support-case-main">${resolution}${oldResolutions}${c.description?card('Description',`<p class="support-description">${esc(c.description)}</p>`):''}${template}${(c.attachments||[]).length?card('Submitted Documents',`<div class="support-attachment-list">${c.attachments.map((f,i)=>fileButton(f,`initial:${i}`)).join('')}</div>`):''}${card('Messages',`<div class="case-conversation">${messages||`<div class="support-empty">${icon('support')}<strong>No messages yet.</strong><p>Messages about this request will appear here.</p></div>`}</div>${composer}`,'Most recent messages appear at the top.')}${history}</div><aside class="support-case-aside">${requestDetails}${handling}</aside></div><div id="supportResolution"></div></section>`);
+      put(container,`<section class="support-page support-case-page"><button id="supportBack" class="support-back">${icon('back')}Back</button><header class="support-heading support-case-heading"><div><p class="support-eyebrow">Support request <span class="support-number">${esc(c.number)}</span></p><h2>${esc(c.subject)}</h2><div class="support-case-subtitle">${badge(c.status)}<span>Updated ${esc(dt(c.updatedAt))}</span></div></div>${mode==='payroll'?`<div class="support-case-actions">${popout()}${returnAction}<button id="supportAwait" class="support-await-action" ${editable&&!c.correctionPending?'':'disabled'}>${icon('clock')}Awaiting Info</button><button id="supportResolve" class="support-resolve-action" ${editable&&!c.correctionPending?'':'disabled'}>${icon('tick')}Resolved</button></div>`:''}</header>
+        <div class="support-case-layout"><div class="support-case-main">${resolution}${oldResolutions}${c.description?card('Description',`<p class="support-description">${esc(c.description)}</p>`):''}${template}${correctionsPanel(c)}${draftAction}${(c.attachments||[]).length?card('Submitted Documents',`<div class="support-attachment-list">${c.attachments.map((f,i)=>fileButton(f,`initial:${i}`)).join('')}</div>`):''}${card('Messages',`<div class="case-conversation">${messages||`<div class="support-empty">${icon('support')}<strong>No messages yet.</strong><p>Messages about this request will appear here.</p></div>`}</div>${composer}`,'Most recent messages appear at the top.')}${history}</div><aside class="support-case-aside">${requestDetails}${handling}</aside></div><div id="supportResolution"></div></section>`);
+      click('supportReturnCorrection',()=>correctionDialog(c,false));
+      click('supportOpenManagerCorrection',()=>o.openManagerCorrection(c.id));
+      click('supportWithdrawCorrection',()=>{
+        if(!global.confirm('Withdraw the correction request? The submitted values will stay unchanged.'))return;
+        mutate(s=>T.withdrawCorrection(s,u(),c.id,c.correctionPending?.id));details();
+      });
+click('supportEditCorrection',()=>correctionDialog(c,true));
+      click('supportCreateJobDataDraft',()=>o.createJobDataDraft(T.get(s(),u(),caseId,'payroll').id));
       click('supportInsertReply',()=>{T.get(s(),u(),caseId,'payroll');const template=(s().supportResponseTemplates||[]).find(r=>r.id===v('supportSavedReply')&&r.active!==false);if(!template)throw Error('Select an active response template.');$('supportMessage').value=($('supportMessage').value?$('supportMessage').value+'\n\n':'')+template.body;});
       bindUpload('supportFiles','supportMessageFileList');click('supportPopout',()=>o.openWindow(caseId));
       click('supportBack',()=>{viewEpoch++;caseId='';listing();});
@@ -310,7 +476,7 @@
       click('supportAssignMe',()=>{mutate(s=>T.assign(s,u(),caseId,u()));details();});click('supportTimer',()=>{mutate(s=>T.timer(s,u(),caseId));details();});click('supportAwait',()=>{mutate(s=>T.status(s,u(),caseId,'Awaiting Info'));details();});
       click('supportResolve',()=>{
         put('supportResolution','<dialog id="supportResolveDialog" aria-labelledby="resolutionTitle"><h2 id="resolutionTitle">Resolution Notes</h2><label>Resolution Notes<textarea id="supportNotes" rows="6" maxlength="20000"></textarea></label><div class="controls form-actions"><button id="supportCancelResolve" class="secondary">Cancel</button><button id="supportConfirmResolve">Resolve</button></div></dialog>');
-        $('supportResolveDialog').showModal();click('supportCancelResolve',()=>{$('supportResolveDialog').close();put('supportResolution','');});click('supportConfirmResolve',()=>{mutate(s=>T.status(s,u(),caseId,'Resolved',v('supportNotes')));$('supportResolveDialog').close();details();});
+        $('supportNotes').value=T.jobDataResolutionNote(s(),c);$('supportResolveDialog').showModal();click('supportCancelResolve',()=>{$('supportResolveDialog').close();put('supportResolution','');});click('supportConfirmResolve',()=>{mutate(s=>T.status(s,u(),caseId,'Resolved',v('supportNotes')));$('supportResolveDialog').close();details();});
       });
       click('supportSend',async()=>{
         const savedId=caseId,sender=u(),epoch=viewEpoch,body=v('supportMessage'),files=Array.from($('supportFiles').files||[]),button=$('supportSend'),savedMode=mode;

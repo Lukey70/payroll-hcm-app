@@ -1,11 +1,11 @@
 {
   "name": "payroll-hcm-app",
-  "version": "1.2.13",
+  "version": "1.2.14",
   "private": true,
   "description": "Browser-local payroll and HCM prototype",
   "scripts": {
     "test": "node tests/run-all.cjs",
-    "test:browser": "node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js && node tests/time-records-ui.test.js && node tests/absence-overview-names-ui.test.js && node tests/shared-ui.test.js && node tests/search-certification-ui.test.js && node tests/dates-loading-rows-ui.test.js && node tests/support-submit-permissions-ui.test.js && node tests/termination-leave-recovery-ui.test.js && node tests/approval-recovery-search-ui.test.js && node tests/cease-pay-ui.test.js && node tests/job-data-toolbar-ui.test.js && node tests/concurrent-jobs-ui.test.js && node tests/casual-leave-ui.test.js && node tests/casual-input-ui.test.js && node tests/mss-casual-ui.test.js"
+    "test:browser": "node tests/browser-v124.test.js && node tests/windows-notifications-payslips.test.js && node tests/request-template-ui.test.js && node tests/dashboard-ui.test.js && node tests/payroll-payslips-ui.test.js && node tests/absence-balance-cards-ui.test.js && node tests/pay-errors-report-ui.test.js && node tests/operations-ui.test.js && node tests/urgent-pay-ui.test.js && node tests/casual-rehire-ui.test.js && node tests/time-records-ui.test.js && node tests/absence-overview-names-ui.test.js && node tests/shared-ui.test.js && node tests/search-certification-ui.test.js && node tests/dates-loading-rows-ui.test.js && node tests/support-submit-permissions-ui.test.js && node tests/termination-leave-recovery-ui.test.js && node tests/approval-recovery-search-ui.test.js && node tests/cease-pay-ui.test.js && node tests/job-data-toolbar-ui.test.js && node tests/concurrent-jobs-ui.test.js && node tests/casual-leave-ui.test.js && node tests/casual-input-ui.test.js && node tests/mss-casual-ui.test.js && node tests/request-job-draft-ui.test.js && node tests/request-correction-ui.test.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"

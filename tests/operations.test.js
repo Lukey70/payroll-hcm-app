@@ -83,7 +83,7 @@ test('relief Casual Input deletion removes earnings and recovers settled pay onc
 });
 test('casual input legacy migration is idempotent, instance numbers are retained and invalid schedules are rejected',()=>{
  const s=casualFixture();O.saveCasualInput(s,'payroll','worker',11,[casualLine],DATE);const list=O.casualEntries(s,'payroll','worker',DATE);assert.equal(list.length,1);assert.equal(O.casualEntries(s,'payroll','worker',DATE)[0].id,list[0].id);const entry=O.saveCasualEntry(s,'payroll',{...list[0],replacementMode:'position'},DATE);assert.equal(entry.instance,1);assert.equal(s.additionalEarnings.length,1);
- const before=JSON.stringify(s.additionalEarnings);for(const patch of [{endDate:'2026-10-11'},{hoursByDate:{}},{hoursByDate:{'2026-10-12':25}},{replacementMode:'employee',replacedEmployeeId:'worker'},{jobRecord:99}]){assert.throws(()=>O.saveCasualEntry(s,'payroll',{...entry,...patch},DATE));assert.equal(JSON.stringify(s.additionalEarnings),before);}assert.throws(()=>O.saveCasualEntry(s,'manager',entry,DATE),/Payroll/);O.deleteCasualEntry(s,'payroll',entry.id,DATE);const next=O.saveCasualEntry(s,'payroll',{...entry,id:undefined},DATE);assert.equal(next.instance,2);
+ const before=JSON.stringify(s.additionalEarnings);for(const patch of [{endDate:'2026-10-11'},{hoursByDate:{}},{hoursByDate:{'2026-10-12':25}},{replacementMode:'employee',replacedEmployeeId:'worker'},{jobRecord:99}]){assert.throws(()=>O.saveCasualEntry(s,'payroll',{...entry,...patch},DATE));assert.equal(JSON.stringify(s.additionalEarnings),before);}assert.throws(()=>O.saveCasualEntry(s,'manager',entry,DATE),/Payroll/);O.deleteCasualEntry(s,'payroll',entry.id,DATE);const next=O.saveCasualEntry(s,'payroll',{...entry,id:undefined},DATE);assert.equal(next.instance,1);
 });
 test('casual assignment uses the pool position, has no manager and is not a missing-manager error',()=>{
  const s=casualFixture(),e=s.employees.find(e=>e.id==='worker'),row=E.activeJobDataRow(s,e,'2026-10-12');assert.equal(row.positionNumber,'CASPOOL');assert.equal(row.positionName,'Casual');assert.equal(row.reportsTo,'');assert.deepEqual(E.selfService.managerFor(s,e.id,'2026-10-12').managerIds,[]);assert(!E.selfService.errors(s,'2026-10-12',true).some(r=>r.empId===e.id));assert(!E.selfService.directReports(s,'manager','2026-10-12').some(r=>r.id===e.id));
@@ -101,5 +101,55 @@ test('MSS late casual input for a closed work period stays deletable until its p
 });
 test('MSS finalisation lock is record-specific when another casual record is on Cease Pay',()=>{
  const s=casualFixture(),{addJob}=require('./concurrent-jobs.test');addJob(s,'worker',{type:'Casual'});const input={empId:'worker',jobRecord:0,startDate:'2026-10-12',endDate:'2026-10-12',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-12':4}},held=O.saveCasualEntry(s,'manager',input,DATE,'mss'),paid=O.saveCasualEntry(s,'manager',{...input,jobRecord:1},DATE,'mss');s.jobDataRows.push({id:'hold-casual0',empId:'worker',jobRecord:0,action:'Variation',reason:'Cease Pay',effectiveDate:'2026-10-09',effectiveSequence:1,saved:true});E.finaliseCurrentPay(s);assert(!O.casualEntryFinalised(s,s.casualInputs.find(e=>e.id===held.id)));assert(O.casualEntryFinalised(s,s.casualInputs.find(e=>e.id===paid.id)));O.deleteCasualEntry(s,'manager',held.id,DATE,'mss');assert.throws(()=>O.deleteCasualEntry(s,'manager',paid.id,DATE,'mss'),/support request/);
+});
+test('casual instances reset on distinct worked dates and increment only on shared days',()=>{
+ const s=casualFixture(),input={empId:'worker',jobRecord:0,startDate:'2026-10-12',endDate:'2026-10-12',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-12':4}};
+ const a=O.saveCasualEntry(s,'payroll',input,DATE),b=O.saveCasualEntry(s,'payroll',{...input,startDate:'2026-10-13',endDate:'2026-10-13',hoursByDate:{'2026-10-13':4}},DATE);
+ assert.equal(a.instance,1);assert.equal(b.instance,1);
+ const c=O.saveCasualEntry(s,'payroll',input,DATE),d=O.saveCasualEntry(s,'manager',input,DATE,'mss');assert.equal(c.instance,2);assert.equal(d.instance,3);
+ assert.equal(O.saveCasualEntry(s,'payroll',{...c,comments:'Same input'},DATE).instance,2);
+ const before=JSON.stringify(s.additionalEarnings);s.casualInputs.forEach((e,i)=>e.instance=i+10);const fixed=O.casualEntries(s,'payroll','worker',DATE);assert.equal(fixed.find(e=>e.id===b.id).instance,1);assert.equal(fixed.find(e=>e.id===d.id).instance,3);assert.equal(JSON.stringify(s.additionalEarnings),before);
+ O.deleteCasualEntry(s,'payroll',a.id,DATE);assert.equal(O.casualEntries(s,'payroll','worker',DATE).find(e=>e.id===c.id).instance,1);
+});
+test('casual ranges only collide on positive scheduled work dates, including across records',()=>{
+ const s=casualFixture(),{addJob}=require('./concurrent-jobs.test');addJob(s,'worker',{type:'Casual'});const input={empId:'worker',jobRecord:0,startDate:'2026-10-12',endDate:'2026-10-15',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-12':4,'2026-10-13':0}};
+ const a=O.saveCasualEntry(s,'payroll',input,DATE),b=O.saveCasualEntry(s,'payroll',{...input,hoursByDate:{'2026-10-13':4}},DATE);assert.equal(a.instance,1);assert.equal(b.instance,1);
+ assert.equal(O.saveCasualEntry(s,'manager',{...input,jobRecord:1},DATE,'mss').instance,2);
+ assert.equal(O.saveCasualEntry(s,'payroll',{...b,hoursByDate:{'2026-10-14':4}},DATE).instance,1);
+});
+test('casual preview groups current, future and backdated amounts without mutating data',()=>{
+ const s=casualFixture(),input={empId:'worker',jobRecord:0,startDate:'2026-10-08',endDate:'2026-10-23',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-08':4,'2026-10-22':2,'2026-10-23':6}};
+ const before=JSON.stringify(s),preview=O.previewCasualEntry(s,'manager',input,DATE,'mss');
+ assert.equal(JSON.stringify(s),before);assert.deepEqual(preview.groups.map(g=>[g.cycleId,g.total,g.backdatedTotal]),[[11,225,150],[12,225,0]]);
+ assert.deepEqual(preview.groups[0].lines.map(r=>[r.date,r.rate,r.backdated]),[['2026-10-08',37.5,true],['2026-10-22',37.5,false]]);
+ const saved=O.saveCasualEntry(s,'payroll',input,DATE);assert.equal(saved.reference,'CI-00001');assert.equal(O.casualPaymentStatus(s,saved).status,'Awaiting Pay');
+ const duplicate=O.previewCasualEntry(s,'manager',input,DATE,'mss');assert.deepEqual(duplicate.duplicates.map(x=>[x.reference,x.position,x.hours,x.instance]),[[saved.reference,'Crew',4,1],[saved.reference,'Crew',2,1],[saved.reference,'Crew',6,1]]);
+ assert.equal(O.previewCasualEntry(s,'payroll',saved,DATE).duplicates.length,0);
+ const actual=pay=>E.round2(pay.payslips.filter(p=>p.empId==='worker').flatMap(p=>p.rows).filter(r=>r.casualEarnings).reduce((n,r)=>n+r.amount,0));
+ assert.equal(actual(E.finaliseCurrentPay(s)),225);const get=()=>O.casualEntries(s,'payroll','worker',DATE).find(x=>x.id===saved.id);
+ assert.equal(O.casualPaymentStatus(s,get()).status,'Partially Paid');assert.deepEqual(O.casualPaymentStatus(s,get()).dates.map(x=>[x.status,x.cycleId]),[['Paid',11],['Paid',11],['Pending',undefined]]);
+ assert.equal(actual(E.finaliseCurrentPay(s)),225);assert.equal(O.casualPaymentStatus(s,get()).status,'Finalised');assert.equal(get().paidByDate['2026-10-23'].cycleId,12);
+ const edited={...get(),hoursByDate:{...get().hoursByDate,'2026-10-22':3}};
+ assert.equal(O.previewCasualEntry(s,'payroll',edited,DATE).groups.find(g=>g.cycleId===13).total,37.5);
+ assert.equal(O.saveCasualEntry(s,'payroll',edited,DATE).reference,saved.reference);
+ assert.equal(O.casualPaymentStatus(s,get()).status,'Partially Paid');E.finaliseCurrentPay(s);assert.equal(O.casualPaymentStatus(s,get()).status,'Finalised');
+ assert.equal(D.importJson(D.exportJson(s)).casualInputs[0].reference,saved.reference);
+});
+test('casual review links pending duplicate, backdated and missing rate issues to inputs',()=>{
+ const s=casualFixture(),input={empId:'worker',jobRecord:0,startDate:'2026-10-12',endDate:'2026-10-12',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-12':4}};
+ const paid=O.saveCasualEntry(s,'payroll',input,DATE);E.finaliseCurrentPay(s);
+ const late=O.saveCasualEntry(s,'manager',input,DATE,'mss');assert.equal(O.casualPaymentStatus(s,late).status,'Awaiting Pay');
+ s.additionalEarnings.push({id:'missing-rate',empId:'worker',jobRecord:0,earningType:'Casual Earnings',positionNumber:'MISSING',hours:2,startDate:'2026-10-13',saved:true});
+ const checks=O.casualReview(s,'payroll',DATE);assert(checks.some(x=>x.id===late.id&&x.type==='Possible duplicate'&&x.detail.includes(paid.reference)));assert(checks.some(x=>x.id===late.id&&x.type==='Unpaid backdated work'));assert(checks.some(x=>x.type==='Missing rate'&&x.id==='casual_legacy_missing-rate'));
+ assert.throws(()=>O.casualReview(s,'manager',DATE),/Payroll/);
+ E.finaliseCurrentPay(s);assert.equal(O.casualPaymentStatus(s,O.casualEntries(s,'payroll','worker',DATE).find(x=>x.id===late.id)).dates[0].cycleId,12);
+ assert(!O.casualReview(s,'payroll',DATE).some(x=>x.id===late.id));assert(O.casualReview(s,'payroll',DATE).some(x=>x.type==='Missing rate'));
+ O.deleteCasualEntry(s,'payroll',late.id,DATE);assert.notEqual(O.saveCasualEntry(s,'payroll',input,DATE).reference,late.reference);
+});
+test('historical matches cannot use a finalised amount twice or mark new late entries paid',()=>{
+ const s=casualFixture(),input={empId:'worker',jobRecord:0,startDate:'2026-10-12',endDate:'2026-10-12',replacementMode:'position',positionNumber:'CREW',hoursByDate:{'2026-10-12':4}};
+ const a=O.saveCasualEntry(s,'payroll',input,DATE);E.finaliseCurrentPay(s);
+ const b=O.saveCasualEntry(s,'payroll',input,DATE);for(const e of s.casualInputs)delete e.paidByDate;
+ const entries=O.casualEntries(s,'payroll','worker',DATE);assert.equal(O.casualPaymentStatus(s,entries.find(e=>e.id===a.id)).dates[0].historical,true);assert.equal(O.casualPaymentStatus(s,entries.find(e=>e.id===b.id)).status,'Awaiting Pay');
 });
 console.log('PASS: '+count+' payroll operations groups.');

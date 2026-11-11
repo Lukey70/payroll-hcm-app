@@ -1,6 +1,6 @@
 {
-  "version": "1.2.13",
+  "version": "1.2.14",
   "file": "https://github.com/Lukey70/payroll-hcm-app/archive/refs/heads/main.zip",
-  "notes": "Relief-style Casual Input for Payroll and managers, finalised deletion safeguards and record-specific requests",
-  "releaseNotes": "RELEASE-NOTES-v1.2.13.md"
+  "notes": "Manager request corrections and Job Data drafts, finalisation safeguards and Casual Input pay review",
+  "releaseNotes": "RELEASE-NOTES-v1.2.14.md"
 }

@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const APP_VERSION = '1.2.13';
+  const APP_VERSION = '1.2.14';
   const STORAGE_KEY = 'payrollAppData';
 
   const DEFAULT_PAYROLL_REPLIES=[
@@ -22,7 +22,7 @@
       payRates: [],
       leaveBookings: [],
       leaveRequestArchive: [],
-      casualInputs: [], supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: defaultPayrollReplies(), urgentPayBatches: [], urgentPaySequence: 0,
+      casualInputs: [], casualInputSequence: 0, supportRequests: [], timesheets: [], timesheetRecordArchive: [], timesheetPayrollArchive: [], flexOpeningBalances: {}, onCallPeriods: [], probations: [], supportResponseTemplates: defaultPayrollReplies(), urgentPayBatches: [], urgentPaySequence: 0,
       supportSequence: 0,
       additionalEarnings: [],
       deductions: [],

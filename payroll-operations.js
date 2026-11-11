@@ -81,15 +81,69 @@ function create(E,S){
  function activeCasualRecords(s,empId,d=today()){
   return E.jobRecords.activeRecords(s,empId,d).filter(r=>{const v=E.jobRecords.scope(s,empId,r.recordNumber);return E.activeEmploymentType(v,person(v,empId),d)==='Casual';});
  }
+ // Instances distinguish inputs sharing an actual work date, not lifetime input count.
+ function casualWorkDates(input){
+  return Object.entries(input.hoursByDate||{}).filter(([d,h])=>Number(h)>0&&d>=input.startDate&&d<=input.endDate).map(([d])=>d);
+ }
+ function casualInputInstance(s,input,entries=rows(s,'casualInputs')){
+  const days=casualWorkDates(input),used=new Set(entries.filter(e=>!e.deletedAt&&e.empId===input.empId&&(!input.id||e.id!==input.id)&&casualWorkDates(e).some(d=>days.length?days.includes(d):d>=input.startDate&&d<=input.endDate)).map(e=>Number(e.instance||1)));
+  let instance=1;while(used.has(instance))instance++;return instance;
+ }
+ function normaliseCasualInstances(entries){
+  const numbered=[];for(const entry of entries){if(entry.deletedAt)continue;entry.instance=casualInputInstance(null,entry,numbered);numbered.push(entry);}
+ }
+ function casualReference(s){
+  s.casualInputSequence=Math.max(0,Number(s.casualInputSequence)||0)+1;
+  return 'CI-'+String(s.casualInputSequence).padStart(5,'0');
+ }
+ function casualGross(s,a){
+  const rate=E.round4(Number(a.casualBaseRate||E.positionHourlyRate(s,a.positionNumber,a.startDate)||0)*1.25);
+  return {rate,amount:E.round2(Number(a.hours||0)*rate)};
+ }
+ function casualSettlement(s,a,cycleId){
+  const {rate,amount}=casualGross(s,a);return {cycleId,hours:Number(a.hours||0),rate,amount,positionNumber:String(a.positionNumber||'')};
+ }
+ function casualSourcePaid(s,entry,a){
+  const settled=entry?.paidByDate?.[a.startDate],now=casualSettlement(s,a);
+  return !!settled&&['hours','rate','amount','positionNumber'].every(k=>settled[k]===now[k]);
+ }
+ // Older payslips were grouped; allocate each historical line only once and
+ // never infer payment before a modern input existed.
+ function inferCasualSettlements(s,entries){
+  const unknown=entries.filter(e=>!e.deletedAt&&!e.paidByDate);
+  if(!unknown.length)return;
+  const byId=new Map(entries.map(e=>[e.id,e])),ids=new Set(unknown.map(e=>e.id));
+  const sources=rows(s,'additionalEarnings').filter(a=>a.saved!==false&&byId.has(a.casualInputId));
+  const slips=rows(s,'payslips').filter(p=>p.finalised).slice().sort((a,b)=>Number(a.cycleId)-Number(b.cycleId));
+  for(const e of unknown)e.paidByDate={};
+  const lines=slips.flatMap(p=>(p.rows||[]).filter(r=>r.casualEarnings&&Number(r.amount)!==0).map(r=>({p,r,remaining:Number(r.amount)})));
+  const matches=(line,a,settled)=>line.p.empId===a.empId&&Number(a.jobRecord||0)===Number(line.r.jobRecord||0)&&settled.positionNumber===String(line.r.positionNumber||'')&&a.startDate>=line.r.startDate&&a.startDate<=(line.r.endDate||line.r.startDate)&&Math.abs(settled.rate-Number(line.r.rate||0))<=0.0001;
+  const reserve=(a,settled,when)=>lines.find(l=>l.remaining>=settled.amount&&when(l.p)&&matches(l,a,settled));
+  for(const a of sources){
+   const known=byId.get(a.casualInputId).paidByDate?.[a.startDate];
+   if(known?.amount>0){const l=reserve(a,known,p=>Number(p.cycleId)===Number(known.cycleId));if(l)l.remaining=E.round2(l.remaining-known.amount);}
+  }
+  for(const a of sources){
+   const e=byId.get(a.casualInputId);if(!ids.has(e.id)||e.paidByDate[a.startDate]||!e.legacy&&!e.finalisedAt)continue;
+   const settled=casualSettlement(s,a);
+   // Historical recoveries can make an apparent positive match ambiguous.
+   if(!(settled.amount>0)||lines.some(l=>l.remaining<0&&matches(l,a,settled)))continue;
+   const l=reserve(a,settled,p=>e.legacy||!(Number(e.createdInCycleId)>Number(p.cycleId)||Number(e.finalisedCycleId)>Number(p.cycleId)));
+   if(!l)continue;
+   e.paidByDate[a.startDate]={...settled,cycleId:l.p.cycleId,historical:true};l.remaining=E.round2(l.remaining-settled.amount);
+  }
+ }
  function ensureCasualInputs(s){
   const entries=rows(s,'casualInputs');
   for(const a of rows(s,'additionalEarnings').filter(casualInputRow)){
    if(a.casualInputId&&entries.some(entry=>entry.id===a.casualInputId))continue;
    const id='casual_legacy_'+a.id;let entry=entries.find(entry=>entry.id===id);
-   if(!entry){const n=Number(a.jobRecord||0);entry={id,empId:a.empId,jobRecord:n,instance:1+Math.max(0,...entries.filter(e=>e.empId===a.empId&&e.jobRecord===n).map(e=>Number(e.instance||0))),startDate:a.startDate,endDate:a.startDate,replacementMode:'position',positionNumber:a.positionNumber,positionName:a.positionName||'',hoursByDate:{[a.startDate]:Number(a.hours||0)},createdAt:a.createdAt||stamp(),updatedAt:a.updatedAt||stamp(),legacy:true};entries.push(entry);}
+   if(!entry){const n=Number(a.jobRecord||0);entry={id,empId:a.empId,jobRecord:n,instance:1,startDate:a.startDate,endDate:a.startDate,replacementMode:'position',positionNumber:a.positionNumber,positionName:a.positionName||'',hoursByDate:{[a.startDate]:Number(a.hours||0)},createdAt:a.createdAt||stamp(),updatedAt:a.updatedAt||stamp(),legacy:true};entries.push(entry);}
    a.casualInputId=id;
   }
-  return entries;
+  s.casualInputSequence=Math.max(0,Number(s.casualInputSequence)||0,...entries.map(e=>/^CI-\d+$/.test(e.reference||'')?Number(e.reference.slice(3)):0));
+  for(const e of entries)if(!e.reference)e.reference=casualReference(s);
+  normaliseCasualInstances(entries);inferCasualSettlements(s,entries);return entries;
  }
  function casualAccess(s,id,d=today(),area='payroll'){
   if(area==='payroll'){payroll(s,id,d);return;}if(area!=='mss'||!S.profile(s,id,d).mss)throw Error('Manager Self Service access is required.');
@@ -100,11 +154,51 @@ function create(E,S){
   const source=rows(s,'additionalEarnings').filter(a=>a.casualInputId===entry.id);
   return (s.payslips||[]).some(p=>p.finalised&&p.empId===entry.empId&&(p.rows||[]).some(r=>r.casualEarnings&&Math.abs(Number(r.amount||0))>0.004&&source.some(a=>Number(a.jobRecord||0)===Number(r.jobRecord||0)&&String(a.positionNumber)===String(r.positionNumber)&&a.startDate>=(r.startDate||'')&&a.startDate<=(r.endDate||r.startDate||''))));
  }
- function commitCasualInputFinalisation(s,c,payslips){
-  for(const entry of rows(s,'casualInputs').filter(e=>!e.deletedAt&&!e.finalisedAt)){
-   const source=rows(s,'additionalEarnings').filter(a=>a.casualInputId===entry.id);
-   if(payslips.some(p=>p.empId===entry.empId&&(p.rows||[]).some(r=>r.casualEarnings&&Math.abs(Number(r.amount||0))>0.004&&source.some(a=>Number(a.jobRecord||0)===Number(r.jobRecord||0)&&String(a.positionNumber)===String(r.positionNumber)&&a.startDate>=(r.startDate||'')&&a.startDate<=(r.endDate||r.startDate||''))))){entry.finalisedAt=stamp();entry.finalisedCycleId=c.id;}
+ function casualPayTarget(s,a,current=E.currentCycle(s),view){
+  const work=E.cycleForDate(a.startDate);
+  if(!work)return {reason:'Work date is outside the payroll calendar.'};
+  const backdated=work.id<current.id||E.isFinalised(s,work)&&work.id!==current.id;
+  try{view=view||E.jobRecords.scope(s,a.empId,Number(a.jobRecord||0));}catch{return {work,backdated,reason:'Job record is unavailable.'};}
+  const target=backdated?current:work;
+  if(backdated&&work.end<E.RETRO_PROCESSING_START)return {work,backdated,reason:'Outside the automatic arrears window.'};
+  if(E.isPayCeasedOn(view,a.empId,a.startDate)||!E.payEnabledInCycle(view,a.empId,target))return {work,backdated,reason:'Pay is on hold.'};
+  return {work,backdated,target};
+ }
+ function commitCasualInputFinalisation(s,c){
+  const entries=new Map(rows(s,'casualInputs').filter(e=>!e.deletedAt).map(e=>[e.id,e])),views=new Map();
+  // Current earnings and cumulative retro both settle eligible sources. The
+  // net retro can be zero, so a positive payslip line is not required.
+  for(const a of rows(s,'additionalEarnings')){
+   const entry=entries.get(a.casualInputId);
+   if(!entry||!casualInputRow(a)||a.saved===false||casualSourcePaid(s,entry,a)||!(casualGross(s,a).amount>0))continue;
+   const key=a.empId+':'+Number(a.jobRecord||0);
+   if(!views.has(key)){try{views.set(key,E.jobRecords.scope(s,a.empId,Number(a.jobRecord||0)));}catch{continue;}}
+   if(casualPayTarget(s,a,c,views.get(key)).target?.id!==c.id)continue;
+   (entry.paidByDate||(entry.paidByDate={}))[a.startDate]=casualSettlement(s,a,c.id);
+   if(!entry.finalisedAt){entry.finalisedAt=stamp();entry.finalisedCycleId=c.id;}
   }
+  for(const entry of entries.values())for(const [date,paid] of Object.entries(entry.paidByDate||{})){
+   if(!paid.pendingRemoval||casualPayTarget(s,{startDate:date,empId:entry.empId,jobRecord:entry.jobRecord},c).target?.id!==c.id)continue;
+   entry.paidByDate[date]={...paid,amount:0,hours:0,pendingRemoval:false,removed:true,cycleId:c.id};
+  }
+ }
+ function casualPaymentStatus(s,entry,source=rows(s,'additionalEarnings').filter(a=>a.casualInputId===entry.id&&a.saved!==false)){
+  const unknown=!Object.keys(entry.paidByDate||{}).length&&casualEntryFinalised(s,entry);
+  const dates=casualWorkDates(entry).sort().map(date=>{
+   const a=source.find(a=>a.startDate===date),paid=entry.paidByDate?.[date],settled=a&&casualSourcePaid(s,entry,a);
+   const status=settled?'Paid':paid?'Adjustment pending':unknown?'Check pay history':'Pending';
+   return {date,hours:Number(entry.hoursByDate[date]),status,historical:settled&&!!paid.historical,cycleId:paid?.cycleId,reason:settled?'':a?casualPayTarget(s,a).reason:'Earnings row is missing.'};
+  });
+  const paid=dates.filter(d=>d.status==='Paid').length,removed=Object.keys(entry.paidByDate||{}).filter(d=>!dates.some(x=>x.date===d)&&entry.paidByDate[d].pendingRemoval);
+  for(const date of removed)dates.push({date,hours:0,status:'Adjustment pending',cycleId:entry.paidByDate[date].cycleId});
+  return {status:paid&&paid===dates.length?'Finalised':paid||dates.some(d=>d.status==='Adjustment pending')?'Partially Paid':dates.some(d=>d.status==='Check pay history')?'Check Pay History':'Awaiting Pay',dates:dates.sort((a,b)=>a.date.localeCompare(b.date))};
+ }
+ function casualDuplicates(s,entry,lines){
+  const byId=new Map(rows(s,'casualInputs').filter(e=>!e.deletedAt&&e.id!==entry.id&&e.empId===entry.empId).map(e=>[e.id,e]));
+  const dates=new Set(lines.map(a=>a.startDate));
+  return rows(s,'additionalEarnings').filter(a=>a.saved!==false&&dates.has(a.startDate)&&Number(a.hours)>0&&byId.has(a.casualInputId)).map(a=>{
+   const e=byId.get(a.casualInputId);return {date:a.startDate,reference:e.reference,position:a.positionName||a.positionNumber,hours:Number(a.hours),instance:e.instance};
+  }).sort((a,b)=>a.date.localeCompare(b.date)||a.instance-b.instance);
  }
  function casualEntries(s,id,empId,d=today(),area='payroll'){casualAccess(s,id,d,area);return ensureCasualInputs(s).filter(e=>e.empId===empId&&!e.deletedAt).slice().sort((a,b)=>b.startDate.localeCompare(a.startDate)||b.instance-a.instance).map(copy);}
  function replacementPosition(s,input,onDate){
@@ -117,7 +211,7 @@ function create(E,S){
   if(input.replacementMode!=='position')throw Error('Choose replacement by employee or position.');
   return s.positions.find(p=>String(p.positionNumber)===String(input.positionNumber));
  }
- function saveCasualEntry(s,id,input,d=today(),area='payroll'){
+ function prepareCasualEntry(s,id,input,d,area){
   casualAccess(s,id,d,area);if(!person(s,input.empId)||!activeCasualRecords(s,input.empId,d).length)throw Error('Select an employee with an active casual record.');
   const entries=ensureCasualInputs(s),old=input.id&&entries.find(e=>e.id===input.id&&!e.deletedAt);
   if(input.id&&(!old||old.empId!==input.empId))throw Error('Casual input is not available for this employee.');
@@ -141,13 +235,51 @@ function create(E,S){
   }
   if(total<=0)throw Error('Open Schedule and enter hours for at least one work day.');
   const position=replacementPosition(s,input,start)||replacementPosition(s,input,generated[0].startDate);
-  const entry={...old,...(wasFinalised&&!old.finalisedAt?{finalisedAt:stamp()}:{}),id:entryId,empId:input.empId,jobRecord:n,instance:old?.instance||1+Math.max(0,...entries.filter(e=>e.empId===input.empId&&e.jobRecord===n).map(e=>Number(e.instance||0))),startDate:start,endDate:end,replacementMode:input.replacementMode,replacedEmployeeId:input.replacementMode==='employee'?input.replacedEmployeeId:'',replacedJobRecord:input.replacementMode==='employee'?Number(input.replacedJobRecord||0):null,positionNumber:position.positionNumber,positionName:position.positionName,hoursByDate,totalHours:E.round4(total),comments:String(input.comments||'').trim().slice(0,20000),createdAt:old?.createdAt||stamp(),createdInCycleId:old?old.createdInCycleId:E.currentCycle(s).id,updatedAt:stamp(),updatedBy:id};
-  s.additionalEarnings=rows(s,'additionalEarnings').filter(a=>a.casualInputId!==entryId).concat(generated);const index=entries.findIndex(e=>e.id===entryId);if(index<0)entries.push(entry);else entries[index]=entry;audit(s,id,'Saved Casual Input '+entry.instance+' for '+entry.empId);return copy(entry);
+  return {entries,old,wasFinalised,n,start,end,entryId,hoursByDate,total,generated,position};
+ }
+ function previewCasualEntry(s,id,input,d=today(),area='payroll'){
+  const state=copy(s),{old,generated}=prepareCasualEntry(state,id,input,d,area),current=E.currentCycle(state);
+  const groups=new Map();
+  const add=(a,gross,removed=false)=>{
+   const {work,backdated,target,reason}=casualPayTarget(state,a,current),settled=!removed&&casualSourcePaid(state,old,a),paid=old?.paidByDate?.[a.startDate];
+   const key=settled?'settled:'+paid.cycleId:target?.id??'pending';
+   if(!groups.has(key))groups.set(key,{cycleId:settled?paid.cycleId:target?.id,settled,total:0,backdatedTotal:0,lines:[]});
+   const group=groups.get(key),amount=settled?0:E.round2(gross-Number(paid?.amount||0));
+   group.lines.push({date:a.startDate,position:a.positionName||a.positionNumber,hours:Number(a.hours||0),rate:a.casualLoadedRate,gross,amount,backdated:!!backdated,reason,workCycleId:work?.id,removed});
+   group.total=E.round2(group.total+amount);if(backdated)group.backdatedTotal=E.round2(group.backdatedTotal+amount);
+  };
+  generated.forEach(a=>add(a,a.amount));
+  for(const [day,paid] of Object.entries(old?.paidByDate||{})){
+   if(!paid.removed&&!generated.some(a=>a.startDate===day))add({startDate:day,empId:old.empId,jobRecord:old.jobRecord,positionNumber:paid.positionNumber,casualLoadedRate:paid.rate},0,true);
+  }
+  return {groups:[...groups.values()].sort((a,b)=>(a.cycleId??Infinity)-(b.cycleId??Infinity)),duplicates:casualDuplicates(state,input,generated)};
+ }
+ function saveCasualEntry(s,id,input,d=today(),area='payroll'){
+  const {entries,old,wasFinalised,n,start,end,entryId,hoursByDate,total,generated,position}=prepareCasualEntry(s,id,input,d,area);
+  const paidByDate={...old?.paidByDate};
+  for(const [day,paid] of Object.entries(paidByDate))if(!paid.removed)paidByDate[day]={...paid,pendingRemoval:!(hoursByDate[day]>0)};
+  const entry={...old,reference:old?.reference||casualReference(s),paidByDate,...(wasFinalised&&!old.finalisedAt?{finalisedAt:stamp()}:{}),id:entryId,empId:input.empId,jobRecord:n,instance:casualInputInstance(s,{...input,id:entryId,startDate:start,endDate:end,hoursByDate},entries),startDate:start,endDate:end,replacementMode:input.replacementMode,replacedEmployeeId:input.replacementMode==='employee'?input.replacedEmployeeId:'',replacedJobRecord:input.replacementMode==='employee'?Number(input.replacedJobRecord||0):null,positionNumber:position.positionNumber,positionName:position.positionName,hoursByDate,totalHours:E.round4(total),comments:String(input.comments||'').trim().slice(0,20000),createdAt:old?.createdAt||stamp(),createdInCycleId:old?old.createdInCycleId:E.currentCycle(s).id,updatedAt:stamp(),updatedBy:id};
+  s.additionalEarnings=rows(s,'additionalEarnings').filter(a=>a.casualInputId!==entryId).concat(generated);const index=entries.findIndex(e=>e.id===entryId);if(index<0)entries.push(entry);else entries[index]=entry;audit(s,id,'Saved Casual Input '+entry.reference+' for '+entry.empId);return copy(entry);
  }
  function deleteCasualEntry(s,id,entryId,d=today(),area='payroll'){
   casualAccess(s,id,d,area);const entry=ensureCasualInputs(s).find(e=>e.id===entryId&&!e.deletedAt);if(!entry)throw Error('Casual input no longer exists.');
   if(area==='mss'&&casualEntryFinalised(s,entry))throw Error('This casual input has been finalised. Raise a support request with Payroll to delete it.');
-  s.additionalEarnings=rows(s,'additionalEarnings').filter(a=>a.casualInputId!==entryId);entry.deletedAt=stamp();entry.deletedBy=id;audit(s,id,'Deleted Casual Input '+entry.instance+' for '+entry.empId+'; settled pay is corrected through retro processing.');
+  s.additionalEarnings=rows(s,'additionalEarnings').filter(a=>a.casualInputId!==entryId);entry.deletedAt=stamp();entry.deletedBy=id;audit(s,id,'Deleted Casual Input '+entry.reference+' for '+entry.empId+'; settled pay is corrected through retro processing.');
+ }
+ function casualReview(s,id,d=today()){
+  payroll(s,id,d);const entries=ensureCasualInputs(s).filter(e=>!e.deletedAt),c=E.currentCycle(s),byId=new Map(entries.map(e=>[e.id,e])),issues=[];
+  const sources=rows(s,'additionalEarnings').filter(a=>a.saved!==false&&byId.has(a.casualInputId));
+  const add=(entry,date,type,detail)=>issues.push({id:entry.id,reference:entry.reference,empId:entry.empId,name:E.employeeDisplayName(person(s,entry.empId)||{id:entry.empId}),date,type,detail});
+  for(const entry of entries)for(const date of casualWorkDates(entry)){
+   const a=sources.find(a=>a.casualInputId===entry.id&&a.startDate===date);
+   if(!a){add(entry,date,'Missing earnings','No linked earnings line for this worked date.');continue;}
+   const rate=casualGross(s,a).rate;
+   if(!Number.isFinite(rate)||rate<=0)add(entry,date,'Missing rate','No positive hourly rate for '+(a.positionName||a.positionNumber||'the replacement position')+'.');
+   if(date>c.end||casualSourcePaid(s,entry,a))continue;
+   for(const dup of casualDuplicates(s,entry,[a]))add(entry,date,'Possible duplicate',dup.reference+' · '+dup.position+' · '+dup.hours+' h · instance '+dup.instance);
+   if(date<c.start){const {reason}=casualPayTarget(s,a,c);add(entry,date,'Unpaid backdated work',reason||'Not yet confirmed in a finalised pay.');}
+  }
+  return issues.sort((a,b)=>a.date.localeCompare(b.date)||a.reference.localeCompare(b.reference));
  }
  function saveResponse(s,id,input,d=today()){payroll(s,id,d);if(!String(input.name||'').trim()||!String(input.body||'').trim())throw Error('Template name and reply are required.');if(input.name.length>100||input.body.length>20000)throw Error('Template name or reply is too long.');let r=rows(s,'supportResponseTemplates').find(r=>r.id===input.id);if(!r){r={id:uid('reply')};s.supportResponseTemplates.push(r);}Object.assign(r,{name:String(input.name).trim(),body:String(input.body),active:input.active!==false,updatedBy:id,updatedAt:stamp()});audit(s,id,'Updated support response template '+r.name);return r;}
  function saveOnCall(s,id,input,d=today()){payroll(s,id,d);if(!person(s,input.empId))throw Error('Select an employee.');if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.start||'')||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(input.end||''))throw Error('Enter start and end date/time.');date(input.start.slice(0,10));date(input.end.slice(0,10));const hours=(new Date(input.end+'+08:00')-new Date(input.start+'+08:00'))/3600000,rate=E.ON_CALL_ALLOWANCE_RATE;if(!Number.isFinite(hours)||hours<=0||hours>336||!Number.isFinite(rate)||rate<=0)throw Error('Enter a positive rate and a period of up to 14 days.');const endDay=input.end.endsWith('T00:00')?E.addDays(input.end.slice(0,10),-1):input.end.slice(0,10);if(!S.isActiveEmployee(s,person(s,input.empId),input.start.slice(0,10))||!S.isActiveEmployee(s,person(s,input.empId),endDay))throw Error('On-call periods must fall within active employment.');const c=E.cycleForDate(input.start.slice(0,10));if(!c||endDay>c.end)throw Error('Split on-call periods at pay-period boundaries.');if(E.isFinalised(s,c))throw Error('Use an open pay period for on-call entries.');if((s.onCallPeriods||[]).some(r=>r.empId===input.empId&&r.start<input.end&&input.start<r.end))throw Error('This on-call period overlaps another entry.');const r={id:uid('oncall'),empId:input.empId,start:input.start,end:input.end,rate,hours:E.round4(hours),superEligible:false,createdBy:id,createdAt:stamp()},a={id:uid('add'),empId:r.empId,cycleId:c.id,earningType:'On-call Allowance',startDate:input.start.slice(0,10),endDate:endDay,hours:r.hours,unitRate:rate,amount:E.round2(r.hours*rate),ote:r.superEligible,accruesLeave:false,saved:true,onCallId:r.id};r.additionalId=a.id;rows(s,'onCallPeriods').push(r);s.additionalEarnings.push(a);audit(s,id,'Recorded on-call period '+r.id);return r;}
@@ -186,7 +318,7 @@ function create(E,S){
   }
   const alerts=rows(s,'alerts'),kept=alerts.filter(a=>a.type!=='Return from Leave Reminder'||desired.has(a.key));let changed=kept.length!==alerts.length;const existing=new Set(kept.map(a=>a.key));for(const a of kept){const latest=desired.get(a.key);if(latest&&a.message!==latest.message){a.message=latest.message;changed=true;}}for(const [key,a]of desired)if(!existing.has(key)){kept.unshift(a);changed=true;}if(changed)s.alerts=kept;return changed;
  }
- return {casualAccess,casualEntryFinalised,commitCasualInputFinalisation,activeCasualRecords,ensureCasualInputs,casualEntries,replacementPosition,saveCasualEntry,deleteCasualEntry,casualRecords,casualInputRows,casualInputRate,saveCasualInput,negativeNetErrors,notifyRecoveryCompletions,leaveOverviewSettings,saveLeaveOverviewSettings,leaveEpisodes,extendedAbsences,ensureReturnLeaveNotifications,validateOnCallAdditional,payroll,scope,attachments,leaveFiles,thresholds,excess,rosterComparison,establishment,acting,expiries,recovery,saveProbation,saveResponse,saveOnCall,removeOnCall,...Time};
+ return {previewCasualEntry,casualPaymentStatus,casualReview,casualInputInstance,casualAccess,casualEntryFinalised,commitCasualInputFinalisation,activeCasualRecords,ensureCasualInputs,casualEntries,replacementPosition,saveCasualEntry,deleteCasualEntry,casualRecords,casualInputRows,casualInputRate,saveCasualInput,negativeNetErrors,notifyRecoveryCompletions,leaveOverviewSettings,saveLeaveOverviewSettings,leaveEpisodes,extendedAbsences,ensureReturnLeaveNotifications,validateOnCallAdditional,payroll,scope,attachments,leaveFiles,thresholds,excess,rosterComparison,establishment,acting,expiries,recovery,saveProbation,saveResponse,saveOnCall,removeOnCall,...Time};
 }
 async function readFiles(files){const list=Array.from(files||[]);if(list.length>5||list.some(f=>f.size>1048576)||list.reduce((n,f)=>n+f.size,0)>2097152)throw Error('Attach up to five files, 1 MB each and 2 MB total.');return Promise.all(list.map(f=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve({name:f.name,size:f.size,data:r.result});r.onerror=()=>reject(Error('Unable to read '+f.name));r.readAsDataURL(f);})));}
 function download(f,doc=g.document){const encoded=f.data.split(',')[1],data=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([data],{type:'application/octet-stream'})),a=doc.createElement('a');a.href=url;a.download=f.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

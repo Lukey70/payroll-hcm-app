@@ -119,6 +119,60 @@
    }
    return result;
   }
+  function jobDataRequestSteps(c){
+   const t=c?.template,type=c?.requestType;
+   if(c?.source!=='mss'||!t||!Object.hasOwn(REASONS,type))return [];
+   if(type==='Commencement'&&t.employmentType==='Fixed Term')return ['main','expiry'];
+   if(type==='Variation'&&t.scheduleDuration==='Temporary'||type==='Movement'&&t.temporary==='Temporary')return ['main','return'];
+   return ['main'];
+  }
+  function jobDataDraftPlan(s,c,empId,jobRecord){
+   const t=c?.template,type=c?.requestType;
+   if(c?.source!=='mss'||!t||!Object.hasOwn(REASONS,type)||!REASONS[type].includes(t.reason))throw Error('This request does not contain a supported manager Job Data template.');
+   const valid=(value,label)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(value||'')||E.iso(E.parseDate(value))!==value)throw Error('The request needs a valid '+label+'.');return value;};
+   const effective=type==='Termination'?E.addDays(valid(t.lastWorkingDay,'last working day'),1):valid(t.effectiveDate,'effective date');
+   const exists=E.jobRecords.records(s,empId).some(r=>r.recordNumber===jobRecord)&&s.employees.some(e=>e.id===empId);
+   const view=exists?E.jobRecords.scope(s,empId,jobRecord):null,employee=view?.employees.find(e=>e.id===empId);
+   const classFor=value=>value==='Fixed Term'?'Fixed-Term':value||'Permanent';
+   const roster=source=>{
+    const pattern=source?.rosterPattern==='2-week'?'2-week':'1-week',one={...(source?.hoursByDayWeek1||source?.hoursByDay||{})},two=pattern==='2-week'?{...(source?.hoursByDayWeek2||one)}:{...one};
+    return {rosterPattern:pattern,hoursByDay:{...one},hoursByDayWeek1:one,hoursByDayWeek2:two};
+   };
+   const assignment=date=>{
+    const job=view&&E.activeJobDataRow(view,employee,date),schedule=view&&E.activeSchedule(view,empId,date);
+    return {positionNumber:job?.positionNumber||'',positionClass:classFor(view&&E.activeEmploymentType(view,employee,date)),...roster(schedule||job)};
+   };
+   const make=(step,fields)=>({empId,jobRecord,saved:false,sourceRequestCaseId:c.id,sourceRequestStep:step,...fields});
+   const base=assignment(type==='Termination'?t.lastWorkingDay:effective);
+   const main=make('main',{...base,effectiveDate:effective,action:type,reason:t.reason});
+   if(type==='Commencement'){
+    const expectedClass=/Casual$/.test(t.reason)?'Casual':/Fixed/.test(t.reason)?'Fixed-Term':'Permanent';
+    if(classFor(t.employmentType)!==expectedClass)throw Error('The commencement reason and employment type on the request do not match.');
+    if(t.reason==='New Fixed Term Contract'&&(c.raisedFor==='new-employee'||t.recordMode==='new-concurrent'||t.jobRecord==='new'))throw Error('A new employee or concurrent record needs a new-hire or rehire commencement, not a contract extension.');
+    Object.assign(main,{positionClass:expectedClass,positionNumber:t.positionNumber||''});
+   }
+   if(type==='Movement')main.positionNumber=t.positionNumber||'';
+   if(t.rosterPattern)Object.assign(main,roster(t));
+   if(t.reason==='Permanency Confirmed')main.positionClass='Permanent';
+   if(main.positionClass==='Casual'&&type!=='Termination')main.positionNumber=E.casualPosition(s)?.positionNumber||'';
+   const drafts=[main],steps=jobDataRequestSteps(c);
+   if(steps.includes('expiry')){
+    const last=valid(t.contractEndDate,'fixed-term last working day');
+    if(last<effective)throw Error('The last working day cannot be before commencement.');
+    drafts.push(make('expiry',{...base,...roster(t),effectiveDate:E.addDays(last,1),action:'Termination',reason:'Expiry of Fixed Term',positionClass:'Fixed-Term',positionNumber:main.positionNumber}));
+   }
+   if(type==='Variation'&&steps.includes('return')){
+    const date=valid(t.returnEffectiveDate,'return effective date');
+    if(date<=effective||!t.returnRoster)throw Error('The request needs a later return effective date and return roster.');
+    drafts.push(make('return',{...base,...roster(t.returnRoster),effectiveDate:date,action:'Variation',reason:'Work Schedule Adjustment'}));
+   }
+   if(type==='Movement'&&steps.includes('return')){
+    const date=valid(t.returnDate,'return effective date');
+    if(date<=effective)throw Error('The return effective date must be after the movement starts.');
+    drafts.push(make('return',{...assignment(E.addDays(effective,-1)),effectiveDate:date,action:'Movement',reason:'Return from Temp Assignment'}));
+   }
+   return drafts;
+  }
   function adjustAbsenceBalances(s,actorId,empId,input,today=E.iso(new Date())){
    if(!E.selfService.profile(s,actorId,today).payroll)throw Error('Payroll Management access is required.');
    const e=s.employees.find(e=>e.id===empId);if(!e)throw Error('Select an employee.');
@@ -171,7 +225,7 @@
    }
    return changes.sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name)||a.type.localeCompare(b.type));
   }
-  return {migrateCashOuts,validateCashDraft,syncCashOuts,statement,validateTemplate,upcomingEmployeeChanges,adjustAbsenceBalances};
+  return {migrateCashOuts,validateCashDraft,syncCashOuts,statement,validateTemplate,jobDataRequestSteps,jobDataDraftPlan,upcomingEmployeeChanges,adjustAbsenceBalances};
  }
  // Standalone PDF letter using the same company heading and footer as Statement of Service.
  function earningsPdf(d){

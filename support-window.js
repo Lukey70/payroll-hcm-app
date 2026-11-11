@@ -10,7 +10,7 @@
  function start(caseId){
   const app=host();actorId=app.getState().employees.find(e=>app.supportWindowAccess(e.id))?.id||'';if(!actorId)throw Error('Payroll Management access is required.');locked=false;
   document.getElementById('supportWindowUser').textContent=E.employeeDisplayName(app.getState().employees.find(e=>e.id===actorId));
-  ui=SupportRequests.createUI({E,S,getState:()=>host().getState(),getUser:()=>{host();return actorId;},esc:PayrollUI.esc,reportError:message=>PayrollUI.error(message),onChange:()=>host().commitSupportWindowChanges(actorId)});
+  ui=SupportRequests.createUI({E,S,getState:()=>host().getState(),getUser:()=>{host();return actorId;},esc:PayrollUI.esc,reportError:message=>PayrollUI.error(message),createJobDataDraft:caseId=>{host().openRequestedJobDataDraft(caseId);window.opener.focus();},onChange:()=>host().commitSupportWindowChanges(actorId)});
   if(!enhanced){enhanced=true;PayrollUI.enhance({E,getState:()=>{try{return host().getState();}catch{return {employees:[],positions:[]};}}});}
   ui.mount('support',{mode:'payroll',caseId});stamp=revision(app.getState());
  }

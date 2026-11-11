@@ -35,12 +35,14 @@ function create(E){
   return view;
  }
  function employee(s,id,n){return scope(s,id,n).employees.find(e=>e.id===id);}
- function add(s,actorId,id){
+ function add(s,actorId,id,recordNumber=null){
   if(!E.selfService.profile(s,actorId).payroll)throw Error('Payroll Management access is required.');
   const e=s.employees.find(e=>e.id===id);if(!e)throw Error('Select an employee.');
+  const n=recordNumber===null?Math.max(...records(s,id).map(r=>r.recordNumber))+1:Number(recordNumber);
+  if(!Number.isSafeInteger(n)||n<1||records(s,id).some(r=>r.recordNumber===n))throw Error('This job record number is already in use. Choose an unused record number.');
   s.jobRecords=s.jobRecords||[];
   if(!explicit(s,id).length)s.jobRecords.push({id:id+':0',empId:id,recordNumber:0,primary:true,employment:snapshot(e)});
-  const n=Math.max(...records(s,id).map(r=>r.recordNumber))+1,r={id:id+':'+n,empId:id,recordNumber:n,primary:false,employment:{startDate:'',originalStartDate:'',type:'Permanent',position:'',department:'',hourlyRate:0,status:'Pending',terminationDate:'',terminationReason:'',contractEndDate:'',autoTerminate:false,employmentSegments:[]},createdAt:new Date().toISOString(),createdBy:actorId};
+  const r={id:id+':'+n,empId:id,recordNumber:n,primary:false,employment:{startDate:'',originalStartDate:'',type:'Permanent',position:'',department:'',hourlyRate:0,status:'Pending',terminationDate:'',terminationReason:'',contractEndDate:'',autoTerminate:false,employmentSegments:[]},createdAt:new Date().toISOString(),createdBy:actorId};
   s.jobRecords.push(r);s.auditLog.unshift(r.createdAt+' — '+actorId+': Added job record '+n+' for '+id);return r;
  }
  function union(segments){
@@ -112,6 +114,48 @@ function create(E){
    const hours=E.ordinaryHours(rows.filter(r=>r.jobEmploymentType!=='Casual')),earned=E.round4(hours*E.ANNUAL_LEAVE_WEEKS_PER_YEAR/52),debit=rows.filter(r=>['Annual Leave','Annual Leave Cash Out','Annual Leave Payout','Annual Leave Overuse Recovery'].includes(r.description)).reduce((n,r)=>n+Number(r.units||0),0)+rows.filter(r=>r.kind==='retro'&&r.description==='Annual Leave Retro').reduce((n,r)=>n+Number(r.balanceUnits||0),0);annual+=earned-debit;accrual+=earned;used+=debit;
   }return {availableBefore:E.round4(annual),balanceAfter:E.round4(annual),currentBalance:Number(e.annualLeaveBalance||0),accrual:E.round4(accrual),used:E.round4(used),asOf:endDate};
  }
+ // A partially processed request must not silently leave a temporary
+ // appointment or roster in place once its agreed end reaches the pay run.
+ function requestCompanionErrors(s,c){
+  const cases=new Map((s.supportRequests||[]).map(x=>[x.id,x])),saved=(s.jobDataRows||[]).filter(r=>r.saved!==false),out=[];
+  const valid=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||'')&&E.iso(E.parseDate(d))===d;
+  for(const row of saved){
+   const request=cases.get(row.sourceRequestCaseId),step=row.sourceRequestStep,t=request?.template;
+   if(!t||!step)continue;
+   const pending=request.correctionPending?.steps?.includes(step),stale=Number(row.sourceRequestRevision||0)<Number(request.jobDataStepRevisions?.[step]||0);
+   if(!pending&&!stale)continue;
+   const employee=s.employees.find(e=>e.id===row.empId);if(!employee)continue;
+   const oldDue=row.action==='Termination'&&valid(row.effectiveDate)?E.addDays(row.effectiveDate,-1):row.effectiveDate;
+   const requested=step==='expiry'?t.contractEndDate:step==='return'?(t.returnEffectiveDate||t.returnDate):request.requestType==='Termination'?t.lastWorkingDay:t.effectiveDate;
+   if(oldDue>c.end&&(!valid(requested)||requested>c.end))continue;
+   out.push({empId:row.empId,employeeName:E.employeeDisplayName(employee),message:`Manager request ${request.number} · Job ${number(row)}: ${pending?'awaiting correction of saved Job Data':'review and save the corrected Job Data draft'} before finalising this pay.`});
+  }
+  for(const main of saved){
+   if(!main.sourceRequestCaseId||main.sourceRequestStep!=='main'||main.effectiveDate>c.end)continue;
+   const request=cases.get(main.sourceRequestCaseId),t=request?.template,employee=s.employees.find(e=>e.id===main.empId);
+   if(!t||!employee||request.source!=='mss')continue;
+   const expiry=main.action==='Commencement'&&t.employmentType==='Fixed Term'&&valid(t.contractEndDate);
+   const variation=main.action==='Variation'&&t.scheduleDuration==='Temporary'&&valid(t.returnEffectiveDate);
+   const movement=main.action==='Movement'&&t.temporary==='Temporary'&&valid(t.returnDate);
+   if(!expiry&&!variation&&!movement)continue;
+   const expected=expiry?E.addDays(t.contractEndDate,1):variation?t.returnEffectiveDate:t.returnDate;
+   // Fixed-term final pay belongs on the last payable day, even if the
+   // termination effective date falls in the following pay cycle.
+   if((expiry?t.contractEndDate:expected)>c.end)continue;
+   const superseded=saved.some(r=>{
+    if(r.empId!==main.empId||number(r)!==number(main)||r.id===main.id||r.effectiveDate<main.effectiveDate||r.effectiveDate===main.effectiveDate&&Number(r.effectiveSequence||0)<=Number(main.effectiveSequence||0))return false;
+    if(r.sourceRequestCaseId===request.id&&r.sourceRequestStep===(expiry?'expiry':'return')&&r.action===(expiry?'Termination':main.action))return true;
+    if(r.effectiveDate>expected)return false;
+    if(r.action==='Termination'||r.action==='Commencement')return true;
+    if(expiry)return r.action==='Variation'&&r.reason==='Permanency Confirmed'&&r.positionClass==='Permanent';
+    return r.action==='Movement'||variation&&r.action==='Variation'&&r.reason==='Work Schedule Adjustment';
+   });
+   if(superseded)continue;
+   const label=expiry?'fixed-term expiry':variation?'return roster':'return from temporary assignment';
+   out.push({empId:main.empId,employeeName:E.employeeDisplayName(employee),message:`Manager request ${request.number} · Job ${number(main)}: save or review the ${label} row effective ${E.fmtPay(expected)} before finalising this pay.`});
+  }
+  return out;
+ }
  function validateLeave(s,input,exclude,base){
   record(s,input.empId,input.jobRecord||0);const reserved={...s,employees:clone(s.employees),leaveBookings:(s.leaveBookings||[]).filter(l=>l.id!==exclude).map(l=>({...l,status:l.status==='Awaiting Manager Approval'?'Approved':l.status}))},person=reserved.employees.find(e=>e.id===input.empId),v=scope(reserved,input.empId,input.jobRecord||0),e=v.employees.find(e=>e.id===input.empId),c=E.currentCycle(s);
   const shared=E.projectedBalances(reserved,person,c),local=E.projectedBalances(v,e,c),horizon=[input.endDate,...reserved.leaveBookings.filter(l=>l.empId===person.id&&l.type==='Annual Leave'&&E.leaveBookingIsApproved(l)).map(l=>l.endDate)].filter(Boolean).sort().at(-1)||c.end;
@@ -126,7 +170,7 @@ function create(E){
    if(shared.lslAccrued-future-result.hours < -0.0001)throw Error('Insufficient shared Long Service Leave credits across job records.');
   }return result;
  }
- return {number,matches,records,leaveRecords,calendarStatus,record,multiple,scope,employee,add,reconcile,activeRecords,combinedSchedule,serviceView,calculate,projected,eligibleForManager,options,snapshot,forecast,validateLeave,canViewPayslip};
+ return {number,matches,records,leaveRecords,calendarStatus,record,multiple,scope,employee,add,reconcile,activeRecords,combinedSchedule,serviceView,calculate,projected,eligibleForManager,options,snapshot,forecast,validateLeave,requestCompanionErrors,canViewPayslip};
 }
 g.JobRecords={create};if(typeof module!=='undefined')module.exports={create};
 })(typeof window!=='undefined'?window:globalThis);

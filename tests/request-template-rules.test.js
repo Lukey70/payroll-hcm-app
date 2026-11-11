@@ -68,4 +68,98 @@ test('temporary schedule return requires a later valid date and complete valid r
 test('structured requests use an explicit existing record, auto-fill single records and queue new concurrent commencements',()=>{
  const s=state(),{addJob}=require('./concurrent-jobs.test');assert.equal(F.validateTemplate('Variation',templates.Variation,'worker',s).jobRecord,0);assert.equal(F.validateTemplate('Commencement',templates.Commencement,'new-employee',s).jobRecord,0);addJob(s,'worker');assert.throws(()=>F.validateTemplate('Variation',templates.Variation,'worker',s),/record number/);assert.equal(F.validateTemplate('Variation',{...templates.Variation,jobRecord:1},'worker',s).jobRecord,1);assert.throws(()=>F.validateTemplate('Variation',{...templates.Variation,jobRecord:99},'worker',s),/record number/);const before=JSON.stringify(s.jobRecords),request=F.validateTemplate('Commencement',{...templates.Commencement,jobRecord:'new'},'worker',s);assert.equal(request.recordMode,'new-concurrent');assert.equal(request.jobRecord,'new');assert.equal(JSON.stringify(s.jobRecords),before);assert.throws(()=>F.validateTemplate('Termination',{...templates.Termination,jobRecord:'new'},'worker',s),/commencement/);
 });
+test('manager draft plan converts inclusive last working days and preserves start and return dates',()=>{
+ const s=state(),before=JSON.stringify(s.jobDataRows),submit=(requestType,template)=>T.submit(s,'manager',{requestType,template,raisedFor:'worker'},'mss',DATE);
+ const fixed=submit('Commencement',{...templates.Commencement,reason:'New Hire Fixed-Term',employmentType:'Fixed Term',effectiveDate:'2026-11-01',contractEndDate:'2026-12-31',jobRecord:'new'});
+ const plan=F.jobDataDraftPlan(s,fixed,'worker',1);
+ assert.deepEqual(plan.map(r=>[r.jobRecord,r.action,r.effectiveDate,r.reason,r.saved]),[[1,'Commencement','2026-11-01','New Hire Fixed-Term',false],[1,'Termination','2027-01-01','Expiry of Fixed Term',false]]);
+ assert.equal(fixed.template.contractEndDate,'2026-12-31');
+ const term=submit('Termination',templates.Termination);assert.equal(F.jobDataDraftPlan(s,term,'worker',0)[0].effectiveDate,'2026-11-01');
+ const move=submit('Movement',{...templates.Movement,reason:'Acting Same Level',temporary:'Temporary',positionNumber:'CREW',returnDate:'2026-11-20'});
+ assert.deepEqual(F.jobDataDraftPlan(s,move,'worker',0).map(r=>[r.effectiveDate,r.positionNumber]),[['2026-11-01','CREW'],['2026-11-20','STAFF']]);
+ const variation=submit('Variation',{...templates.Variation,scheduleDuration:'Temporary',returnEffectiveDate:'2026-11-30',returnRoster:{rosterPattern:'2-week',hoursByDayWeek1:week,hoursByDayWeek2:{...week,1:4}}});
+ const v=F.jobDataDraftPlan(s,variation,'worker',0);assert.equal(v[1].effectiveDate,'2026-11-30');assert.equal(v[1].hoursByDayWeek2[1],4);assert.equal(JSON.stringify(s.jobDataRows),before);
+ assert.throws(()=>F.jobDataDraftPlan(s,{...term,source:'ess'},'worker',0),/manager/);
+ assert.throws(()=>F.jobDataDraftPlan(s,{...fixed,template:{...fixed.template,employmentType:'Permanent'}},'worker',1),/do not match/);
+ assert.throws(()=>F.jobDataDraftPlan(s,{...fixed,template:{...fixed.template,reason:'New Fixed Term Contract'}},'worker',1),/contract extension/);
+ assert.throws(()=>F.jobDataDraftPlan(s,{...term,template:{...term.template,lastWorkingDay:'2026-02-30'}},'worker',0),/valid last working day/);
+});
+test('incomplete linked Job Data changes block finalisation only when the companion is due',()=>{
+ const s=state(),c=E.currentCycle(s),rec=E.jobRecords.add(s,'payroll','worker');
+ const req=T.submit(s,'manager',{requestType:'Commencement',raisedFor:'worker',template:{...templates.Commencement,jobRecord:'new',reason:'New Hire Fixed-Term',employmentType:'Fixed Term',effectiveDate:c.start,contractEndDate:c.end}},'mss',DATE);
+ const [main,expiry]=F.jobDataDraftPlan(s,req,'worker',rec.recordNumber);
+ s.jobDataRows.push({...main,id:'linked-main',saved:true,effectiveSequence:0},{...expiry,id:'draft-expiry',saved:false,effectiveSequence:0});
+ assert.equal(expiry.effectiveDate,E.addDays(c.end,1));
+ assert.deepEqual(E.jobRecords.requestCompanionErrors(s,{...c,end:E.addDays(c.end,-1)}),[]);
+ // A different job's termination cannot satisfy the linked expiry.
+ s.jobDataRows.push({...expiry,id:'other-job',jobRecord:0,saved:true,effectiveSequence:0});
+ const issues=E.jobRecords.requestCompanionErrors(s,c);assert.equal(issues.length,1);assert(issues[0].message.includes(req.number)&&issues[0].message.includes('Job 1'));
+ const before=JSON.stringify(s);assert.throws(()=>E.finaliseCurrentPay(s),/fixed-term expiry/);assert.equal(JSON.stringify(s),before);
+ s.jobDataRows.find(r=>r.id==='draft-expiry').saved=true;assert.deepEqual(E.jobRecords.requestCompanionErrors(s,c),[]);
+});
+test('a due temporary roster or movement requires a saved return or a superseding change on the same job',()=>{
+ for(const type of ['Variation','Movement']){
+  const s=state(),c=E.currentCycle(s),start=E.addDays(c.end,-5),end=E.addDays(c.end,-1);
+  const template=type==='Variation'?{...templates.Variation,effectiveDate:start,scheduleDuration:'Temporary',returnEffectiveDate:end,returnRoster:roster}:{...templates.Movement,reason:'Acting Same Level',temporary:'Temporary',effectiveDate:start,returnDate:end};
+  const request=T.submit(s,'manager',{requestType:type,template,raisedFor:'worker'},'mss',DATE);
+  const [main,back]=F.jobDataDraftPlan(s,request,'worker',0);s.jobDataRows.push({...main,id:'linked-main',saved:true});
+  assert.equal(E.jobRecords.requestCompanionErrors(s,{...c,end:E.addDays(end,-1)}).length,0);
+  assert.equal(E.jobRecords.requestCompanionErrors(s,c).length,1);
+  s.jobDataRows.push({...back,id:'manual-return',sourceRequestCaseId:undefined,sourceRequestStep:undefined,saved:true});
+  assert.equal(E.jobRecords.requestCompanionErrors(s,c).length,0);
+ }
+});
+test('processed resolution notes require every saved step on the same job and use the Perth processing date',()=>{
+ const s=state(),request=T.submit(s,'manager',{requestType:'Commencement',raisedFor:'worker',template:{...templates.Commencement,reason:'New Hire Fixed-Term',employmentType:'Fixed Term',contractEndDate:'2026-12-31',jobRecord:0}},'mss',DATE);
+ const [main,expiry]=F.jobDataDraftPlan(s,request,'worker',0);s.jobDataRows.push({...main,id:'main',saved:true},{...expiry,id:'expiry'});
+ request.history.push({action:'Job Data saved',at:'2026-10-24T17:00:00Z'});
+ assert.equal(T.jobDataResolutionNote(s,request),'');
+ const row=s.jobDataRows.at(-1);row.saved=true;row.jobRecord=1;assert.equal(T.jobDataResolutionNote(s,request),'');
+ row.jobRecord=0;assert.equal(T.jobDataResolutionNote(s,request),'Request processed 25/10/2026');
+ assert.equal(T.jobDataResolutionNote(s,{requestType:'General Enquiry'}),'');
+});
+test('only the requester can resubmit selected correction fields and Job Data stays unchanged',()=>{
+ const s=state(),c=T.submit(s,'manager',{requestType:'Termination',raisedFor:'worker',template:templates.Termination},'mss',DATE);
+ const original=JSON.stringify(s.jobDataRows);
+ assert.throws(()=>T.returnForCorrection(s,'manager',c.id,['lastWorkingDay'],'Check this date',DATE),/Payroll/);
+ T.returnForCorrection(s,'payroll',c.id,['lastWorkingDay'],'Confirm the final day',DATE);
+ const id=c.correctionPending.id;assert.equal(c.status,'Awaiting Correction');assert.equal(c.template.lastWorkingDay,'2026-10-31');
+ T.assign(s,'payroll',c.id,'payroll',DATE);assert.equal(c.status,'Awaiting Correction');
+ T.message(s,'manager',c.id,'I will check.',[],'own',DATE);assert.equal(c.status,'Awaiting Correction');
+ assert.throws(()=>T.status(s,'payroll',c.id,'Resolved','Done',DATE),/corrections/);
+ assert.throws(()=>T.submitCorrection(s,'otherManager',c.id,id,{lastWorkingDay:'2026-11-02'},'mss',DATE),/access/);
+ assert.throws(()=>T.submitCorrection(s,'manager',c.id,id,{lastWorkingDay:'2026-11-02'},'ess',DATE),/Manager Self Service/);
+ assert.throws(()=>T.submitCorrection(s,'manager',c.id,id,{lastWorkingDay:'2026-11-02',reason:'Deceased'},'mss',DATE),/only the requested/);
+ assert.throws(()=>T.submitCorrection(s,'manager',c.id,id,{lastWorkingDay:'2026-02-30'},'mss',DATE),/valid last working day/);
+ T.submitCorrection(s,'manager',c.id,id,{lastWorkingDay:'2026-11-02'},'mss',DATE);
+ assert.equal(c.status,'Open');assert.equal(c.template.lastWorkingDay,'2026-11-02');assert.equal(T.templateAtRevision(c,0).lastWorkingDay,'2026-10-31');assert.equal(c.jobDataStepRevisions.main,1);
+ assert.equal(F.jobDataDraftPlan(s,c,'worker',0)[0].effectiveDate,'2026-11-03');assert.equal(JSON.stringify(s.jobDataRows),original);
+ assert.deepEqual(c.corrections[0].changes.map(x=>[x.before,x.after]),[['2026-10-31','2026-11-02']]);assert(s.alerts.some(a=>a.recipientIds.includes('payroll')&&a.key==='support-corrected:'+id));
+ assert.throws(()=>T.submitCorrection(s,'manager',c.id,id,{lastWorkingDay:'2026-11-03'},'mss',DATE),/no longer current/);
+});
+test('correcting saved expiry flags only the affected row and blocks the affected pay until review',()=>{
+ const s=state(),cycle=E.currentCycle(s),c=T.submit(s,'manager',{requestType:'Commencement',raisedFor:'worker',template:{...templates.Commencement,reason:'Rehire Fixed-Term',employmentType:'Fixed Term',effectiveDate:cycle.start,contractEndDate:cycle.end,jobRecord:0}},'mss',DATE);
+ const [main,expiry]=F.jobDataDraftPlan(s,c,'worker',0);s.jobDataRows.push({...main,id:'linked-main',saved:true},{...expiry,id:'linked-expiry',saved:true});
+ c.history.push({action:'Job Data saved',at:'2026-10-24T12:00:00Z'});
+ assert(T.jobDataResolutionNote(s,c));T.returnForCorrection(s,'payroll',c.id,['contractEndDate'],'Update final day',DATE);
+ assert(E.jobRecords.requestCompanionErrors(s,cycle).some(r=>/awaiting correction/.test(r.message)));
+ T.submitCorrection(s,'manager',c.id,c.correctionPending.id,{contractEndDate:E.addDays(cycle.end,2)},'mss',DATE);
+ assert.deepEqual(c.jobDataStepRevisions,{expiry:1});assert.equal(T.jobDataResolutionNote(s,c),'');
+ assert(E.jobRecords.requestCompanionErrors(s,cycle).some(r=>/corrected Job Data draft/.test(r.message)));
+ assert.throws(()=>T.status(s,'payroll',c.id,'Resolved','Done',DATE),/corrected Job Data/);
+ assert.equal(s.jobDataRows.find(r=>r.id==='linked-expiry').effectiveDate,expiry.effectiveDate);
+});
+test('corrections validate two-week schedules and withdrawn requests cannot be submitted',()=>{
+ const s=state(),c=T.submit(s,'manager',{requestType:'Variation',raisedFor:'worker',template:templates.Variation},'mss',DATE);
+ T.returnForCorrection(s,'payroll',c.id,['roster'],'Please correct the work schedule.',DATE);const first=c.correctionPending.id;
+ assert.throws(()=>T.withdrawCorrection(s,'manager',c.id,first,DATE),/Payroll/);
+ T.withdrawCorrection(s,'payroll',c.id,first,DATE);assert.equal(c.status,'New');
+ assert.throws(()=>T.submitCorrection(s,'manager',c.id,first,{roster},'mss',DATE),/no longer current/);
+ T.returnForCorrection(s,'payroll',c.id,['roster'],'Confirm both weeks.',DATE);
+ const input={rosterPattern:'2-week',hoursByDayWeek1:{...week,1:6},hoursByDayWeek2:{...week,1:4}};
+ T.submitCorrection(s,'manager',c.id,c.correctionPending.id,{roster:input},'mss',DATE);
+ assert.equal(c.template.hoursByDayWeek2[1],4);assert.equal(T.templateAtRevision(c,0).hoursByDayWeek1[1],7.5);
+ assert.equal(c.corrections[0].changes[0].before.rosterPattern,'1-week');
+ assert.equal(c.corrections[0].changes[0].after.rosterPattern,'2-week');
+});
 console.log(`PASS: ${count} simplified request template rule groups.`);

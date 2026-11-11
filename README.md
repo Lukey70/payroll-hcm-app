@@ -1,10 +1,20 @@
-# Payroll/HCM App v1.2.13
+# Payroll/HCM App v1.2.14
 
 Static payroll/HCM application for GitHub Pages. Open `index.html` or serve the repository root with a static web server. Upload the complete root application files together so the browser loads matching versions of every script. The release uses no build step or external runtime CDN.
 
 The app stores payroll data in the browser's localStorage. Export data before replacing files or changing browsers/devices. Browser data is not automatically shared between users or devices. Portal permissions and support notifications operate within that saved browser dataset; this prototype does not provide server-side authentication, authorization or real-time cross-device messaging.
 
 Default test password: `1234`. Existing stored credentials remain in use. New installations contain no demonstration employees.
+
+## v1.2.14
+
+- Payroll can return selected manager request fields for correction on the same case. Managers update only those fields; Payroll reviews the changes before saving revised Job Data.
+- Create linked Job Data drafts from manager commencement, variation, movement and termination requests. Fixed-term expiry and termination start the day after the last working day; temporary returns use the requested return effective date.
+- Job Data keeps separate unsaved row drafts while switching rows, records or employees. Due expiry, return and corrected rows are checked before finalisation.
+- After the last required Job Data row saves, Payroll can explicitly resolve the request with an editable note prefilled with the Perth processing date.
+- Casual Input shows pay estimates before saving, possible duplicates, permanent references and payment status by work date. Payroll has a dedicated review list; instance numbering starts at 1 for each distinct work date.
+
+See RELEASE-NOTES-v1.2.14.md, TEST-RESULTS-v1.2.14.md and IMPLEMENTATION-NOTES-v1.2.14.md.
 
 ## v1.2.13
 
